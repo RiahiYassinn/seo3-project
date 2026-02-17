@@ -1,0 +1,147 @@
+version: '3.8'
+
+services:
+  # PostgreSQL - Main application database
+  postgres:
+    image: postgres:15-alpine
+    container_name: seo3-postgres
+    environment:
+      POSTGRES_USER: seo3_user
+      POSTGRES_PASSWORD: seo3_password
+      POSTGRES_DB: seo3_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d
+    networks:
+      - seo3-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U seo3_user -d seo3_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # pgAdmin - Database Management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: seo3-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: yassineriahi540@gmail.com
+      PGADMIN_DEFAULT_PASSWORD: admin_password
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"   # http://localhost:5050
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - seo3-network
+    depends_on:
+      - postgres
+
+  # MongoDB - NLP and Analytics data
+  mongodb:
+    image: mongo:6
+    container_name: seo3-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: seo3_user
+      MONGO_INITDB_ROOT_PASSWORD: seo3_password
+      MONGO_INITDB_DATABASE: seo3_analytics
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - ./infrastructure/mongodb/init:/docker-entrypoint-initdb.d
+    networks:
+      - seo3-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis - Cache and session management
+  redis:
+    image: redis:7-alpine
+    container_name: seo3-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - seo3-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: redis-server --appendonly yes
+
+  # Apache Kafka - Message broker
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: seo3-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - seo3-network
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_logs:/var/lib/zookeeper/log
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: seo3-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    networks:
+      - seo3-network
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # Kafka UI for development
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: seo3-kafka-ui
+    depends_on:
+      - kafka
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+    networks:
+      - seo3-network
+
+volumes:
+  postgres_data:
+  pgadmin_data:
+  mongodb_data:
+  redis_data:
+  zookeeper_data:
+  zookeeper_logs:
+  kafka_data:
+
+networks:
+  seo3-network:
+    driver: bridge

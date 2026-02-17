@@ -1,0 +1,14 @@
+{
+  "name": "@seo3/types",
+  "version": "1.0.0",
+  "description": "Shared TypeScript types for SEO3 Platform",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}

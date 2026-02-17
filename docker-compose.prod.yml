@@ -1,0 +1,219 @@
+version: '3.8'
+
+services:
+  # Infrastructure Services
+  postgres:
+    image: postgres:15-alpine
+    container_name: seo3-postgres
+    environment:
+      POSTGRES_USER: seo3_user
+      POSTGRES_PASSWORD: seo3_password
+      POSTGRES_DB: seo3_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - seo3-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U seo3_user -d seo3_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongodb:
+    image: mongo:6
+    container_name: seo3-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: seo3_user
+      MONGO_INITDB_ROOT_PASSWORD: seo3_password
+      MONGO_INITDB_DATABASE: seo3_analytics
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - seo3-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: seo3-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - seo3-network
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: seo3-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - seo3-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: seo3-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - seo3-network
+
+  # Application Services
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: seo3-api-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://seo3_user:seo3_password@postgres:5432/seo3_db
+      - REDIS_URL=redis://redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    depends_on:
+      - postgres
+      - redis
+      - kafka
+    networks:
+      - seo3-network
+
+  developer-service:
+    build:
+      context: ./services/developer-service
+      dockerfile: Dockerfile
+    container_name: seo3-developer-service
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://seo3_user:seo3_password@postgres:5432/seo3_db
+      - KAFKA_BROKERS=kafka:9092
+    depends_on:
+      - postgres
+      - kafka
+    networks:
+      - seo3-network
+
+  skill-service:
+    build:
+      context: ./services/skill-service
+      dockerfile: Dockerfile
+    container_name: seo3-skill-service
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URL=mongodb://seo3_user:seo3_password@mongodb:27017/seo3_analytics?authSource=admin
+      - KAFKA_BROKERS=kafka:9092
+    depends_on:
+      - mongodb
+      - kafka
+    networks:
+      - seo3-network
+
+  analysis-service:
+    build:
+      context: ./services/analysis-service
+      dockerfile: Dockerfile
+    container_name: seo3-analysis-service
+    ports:
+      - "3003:3003"
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URL=mongodb://seo3_user:seo3_password@mongodb:27017/seo3_analytics?authSource=admin
+      - KAFKA_BROKERS=kafka:9092
+    depends_on:
+      - mongodb
+      - kafka
+    networks:
+      - seo3-network
+
+  recommendation-service:
+    build:
+      context: ./services/recommendation-service
+      dockerfile: Dockerfile
+    container_name: seo3-recommendation-service
+    ports:
+      - "3004:3004"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://seo3_user:seo3_password@postgres:5432/seo3_db
+      - KAFKA_BROKERS=kafka:9092
+    depends_on:
+      - postgres
+      - kafka
+    networks:
+      - seo3-network
+
+  notification-service:
+    build:
+      context: ./services/notification-service
+      dockerfile: Dockerfile
+    container_name: seo3-notification-service
+    ports:
+      - "3005:3005"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://seo3_user:seo3_password@postgres:5432/seo3_db
+      - KAFKA_BROKERS=kafka:9092
+    depends_on:
+      - postgres
+      - kafka
+    networks:
+      - seo3-network
+
+  nlp-service:
+    build:
+      context: ./services/nlp-service
+      dockerfile: Dockerfile
+    container_name: seo3-nlp-service
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGODB_URL=mongodb://seo3_user:seo3_password@mongodb:27017/seo3_analytics?authSource=admin
+      - KAFKA_BROKERS=kafka:9092
+    depends_on:
+      - mongodb
+      - kafka
+    networks:
+      - seo3-network
+
+  web-client:
+    build:
+      context: ./client/web
+      dockerfile: Dockerfile
+    container_name: seo3-web-client
+    ports:
+      - "3010:3000"
+    environment:
+      - API_GATEWAY_URL=http://api-gateway:3000
+    depends_on:
+      - api-gateway
+    networks:
+      - seo3-network
+
+volumes:
+  postgres_data:
+  mongodb_data:
+  redis_data:
+
+networks:
+  seo3-network:
+    driver: bridge
