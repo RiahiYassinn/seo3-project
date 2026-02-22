@@ -18,6 +18,9 @@ build/
 .next/
 out/
 
+# Turborepo
+.turbo/
+
 # Environment variables
 .env
 .env.local

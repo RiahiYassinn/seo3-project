@@ -1,0 +1,14 @@
+{
+  "name": "nlp-service",
+  "version": "1.0.0",
+  "description": "NLP microservice for SEO3 Platform (Python)",
+  "private": true,
+  "scripts": {
+    "dev": "python main.py",
+    "start": "python main.py",
+    "install": "pip install -r requirements.txt",
+    "lint": "echo 'Python linting not configured'",
+    "test": "pytest",
+    "clean": "find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true"
+  }
+}

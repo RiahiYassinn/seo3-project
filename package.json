@@ -1,39 +1,44 @@
 {
-  "name": "seo3-developer-platform",
-  "version": "1.0.0",
-  "description": "Microservices-based developer analytics and learning platform",
-  "private": true,
-  "workspaces": [
-    "api-gateway",
-    "services/*",
-    "client/*",
-    "shared/*"
-  ],
-  "scripts": {
-    "install:all": "npm install && npm run install:services && npm run install:client",
-    "install:services": "npm install --workspace=api-gateway && npm install --workspaces --if-present",
-    "install:client": "cd client/web && npm install",
-    "dev:gateway": "npm run dev --workspace=api-gateway",
-    "dev:developer": "npm run dev --workspace=services/developer-service",
-    "dev:skill": "npm run dev --workspace=services/skill-service",
-    "dev:analysis": "npm run dev --workspace=services/analysis-service",
-    "dev:recommendation": "npm run dev --workspace=services/recommendation-service",
-    "dev:notification": "npm run dev --workspace=services/notification-service",
-    "dev:client": "cd client/web && npm run dev",
-    "dev:all": "concurrently \"npm run dev:gateway\" \"npm run dev:developer\" \"npm run dev:skill\" \"npm run dev:analysis\" \"npm run dev:recommendation\" \"npm run dev:notification\" \"npm run dev:client\"",
-    "build:all": "npm run build --workspaces --if-present",
-    "test:all": "npm test --workspaces --if-present",
-    "lint:all": "npm run lint --workspaces --if-present",
-    "docker:up": "docker-compose up -d",
-    "docker:down": "docker-compose down",
-    "docker:logs": "docker-compose logs -f"
-  },
-  "devDependencies": {
-    "concurrently": "^8.2.2",
-    "typescript": "^5.3.3"
-  },
-  "engines": {
-    "node": ">=18.0.0",
-    "npm": ">=9.0.0"
-  }
+    "name": "seo3-developer-platform",
+    "version": "1.0.0",
+    "description": "Microservices-based developer analytics and learning platform",
+    "private": true,
+    "workspaces": [
+        "api-gateway",
+        "services/*",
+        "client/*",
+        "shared/*"
+    ],
+    "scripts": {
+        "dev": "turbo run dev --ui=tui",
+        "dev:stream": "turbo run dev --ui=stream",
+        "dev:gateway": "turbo run dev --filter=api-gateway",
+        "dev:developer": "turbo run dev --filter=developer-service",
+        "dev:skill": "turbo run dev --filter=skill-service",
+        "dev:analysis": "turbo run dev --filter=analysis-service",
+        "dev:recommendation": "turbo run dev --filter=recommendation-service",
+        "dev:notification": "turbo run dev --filter=notification-service",
+        "dev:client": "turbo run dev --filter=web",
+        "build": "turbo run build",
+        "test": "turbo run test",
+        "lint": "turbo run lint",
+        "clean": "turbo run clean",
+        "docker:up": "docker-compose up -d",
+        "docker:down": "docker-compose down",
+        "docker:logs": "docker-compose logs -f",
+        "docker:postgres": "docker logs -f seo3-postgres",
+        "docker:mongodb": "docker logs -f seo3-mongodb",
+        "docker:redis": "docker logs -f seo3-redis",
+        "docker:kafka": "docker logs -f seo3-kafka"
+    },
+    "devDependencies": {
+        "concurrently": "^8.2.2",
+        "turbo": "^2.8.9",
+        "typescript": "^5.3.3"
+    },
+    "engines": {
+        "node": ">=18.0.0",
+        "npm": ">=9.0.0"
+    },
+    "packageManager": "npm@10.2.4"
 }
