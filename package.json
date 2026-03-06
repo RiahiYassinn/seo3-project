@@ -40,5 +40,10 @@
         "node": ">=18.0.0",
         "npm": ">=9.0.0"
     },
-    "packageManager": "npm@10.2.4"
+    "packageManager": "npm@10.2.4",
+    "dependencies": {
+        "clsx": "^2.1.1",
+        "framer-motion": "^12.34.5",
+        "tailwind-merge": "^3.5.0"
+    }
 }
