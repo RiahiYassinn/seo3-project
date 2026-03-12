@@ -1,22 +1,58 @@
+// apps/api-gateway/src/auth/auth.module.ts
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ClientsModule, Transport } from '@nestjs/microservices';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { LocalStrategy } from './strategies/local.strategy';
+import { RefreshTokenStrategy } from './strategies/refresh-token.strategy';
+import { LocalAuthGuard } from './guards/local-auth.guard';
+import { RefreshTokenGuard } from './guards/refresh-token.guard';
+import { RedisModule } from '../../redis/redis.module'; // Import Redis module
+import { RateLimiterMemory } from '../../middleware/rate-limiter.memory'; // Import rate limiter
 
 @Module({
   imports: [
-    PassportModule.register({ defaultStrategy: 'jwt' }),
-    JwtModule.register({
-      secret: process.env.JWT_SECRET,
-      signOptions: {
-        expiresIn: process.env.JWT_EXPIRES_IN || '7d',
-      },
+    PassportModule,
+    RedisModule, // Add Redis module here
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      useFactory: async (configService: ConfigService) => ({
+        secret: configService.get('JWT_ACCESS_SECRET'),
+        signOptions: { 
+          expiresIn: configService.get('JWT_ACCESS_EXPIRATION', '15m') 
+        },
+      }),
+      inject: [ConfigService],
     }),
+    ClientsModule.registerAsync([
+      {
+        name: 'DEVELOPER_SERVICE',
+        imports: [ConfigModule],
+        useFactory: (configService: ConfigService) => ({
+          transport: Transport.TCP,
+          options: {
+            host: configService.get('DEVELOPER_SERVICE_HOST', 'localhost'),
+            port: configService.get('DEVELOPER_SERVICE_PORT', 3001),
+          },
+        }),
+        inject: [ConfigService],
+      },
+    ]),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
-  exports: [JwtStrategy, PassportModule],
+  providers: [
+    AuthService, 
+    JwtStrategy, 
+    LocalStrategy, 
+    RefreshTokenStrategy,
+    LocalAuthGuard,
+    RefreshTokenGuard,
+    RateLimiterMemory, // Add rate limiter as provider
+  ],
+  exports: [AuthService, LocalAuthGuard, RefreshTokenGuard]
 })
 export class AuthModule {}

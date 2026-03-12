@@ -32,6 +32,7 @@
         "docker:kafka": "docker logs -f seo3-kafka"
     },
     "devDependencies": {
+        "@types/bcryptjs": "^2.4.6",
         "concurrently": "^8.2.2",
         "turbo": "^2.8.9",
         "typescript": "^5.3.3"
@@ -42,6 +43,7 @@
     },
     "packageManager": "npm@10.2.4",
     "dependencies": {
+        "bcryptjs": "^3.0.3",
         "clsx": "^2.1.1",
         "framer-motion": "^12.34.5",
         "tailwind-merge": "^3.5.0"
