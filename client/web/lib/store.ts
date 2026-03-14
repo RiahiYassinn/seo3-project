@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
+import { authAPI } from './auth'
 
 interface User {
   id: string
@@ -12,7 +13,8 @@ interface User {
 
 interface AuthState {
   user: User | null
-  token: string | null
+  hasHydrated: boolean
+  setHasHydrated: (value: boolean) => void
   setAuth: (user: User, token: string) => void
   logout: (logoutAllDevices?: boolean) => Promise<void>
   updateUser: (userData: Partial<User>) => void
@@ -22,32 +24,24 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       user: null,
-      token: null,
+      hasHydrated: false,
+      setHasHydrated: (value) => set({ hasHydrated: value }),
       setAuth: (user, token) => {
         localStorage.setItem('access_token', token)
-        set({ user, token })
+        set({ user })
       },
       logout: async (logoutAllDevices = false) => {
         try {
           const refreshToken = localStorage.getItem('refresh_token')
           if (refreshToken) {
-            // Call logout API
-            await fetch(`${process.env.NEXT_PUBLIC_API_GATEWAY_URL}/api/v1/auth/logout`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ 
-                refresh_token: refreshToken,
-                logout_all_devices: logoutAllDevices 
-              })
-            })
+            await authAPI.logout(refreshToken, logoutAllDevices)
           }
         } catch (error) {
           console.error('Logout error:', error)
         } finally {
-          // Always clear local storage
           localStorage.removeItem('access_token')
           localStorage.removeItem('refresh_token')
-          set({ user: null, token: null })
+          set({ user: null })
         }
       },
       updateUser: (userData) => {
@@ -60,7 +54,10 @@ export const useAuthStore = create<AuthState>()(
     {
       name: 'auth-storage',
       storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({ user: state.user }), // Don't persist token
+      partialize: (state) => ({ user: state.user }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true)
+      },
     }
   )
 )

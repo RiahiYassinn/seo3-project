@@ -8,7 +8,6 @@ import {
   TechOrbitDisplay,
 } from "@/components/ui/modern-animated-sign-in";
 import { authAPI } from "@/lib/auth";
-import { useAuthStore } from "@/lib/store";
 
 interface OrbitIcon {
   component: () => ReactNode;
@@ -167,7 +166,6 @@ const iconsArray: OrbitIcon[] = [
 
 export default function RegisterPage() {
   const router = useRouter();
-  const setAuth = useAuthStore((state) => state.setAuth);
   const [formData, setFormData] = useState({
     first_name: "", // Split name into first_name and last_name
     last_name: "",
@@ -177,6 +175,7 @@ export default function RegisterPage() {
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
 
   const handleInputChange = (
     event: ChangeEvent<HTMLInputElement>,
@@ -196,18 +195,9 @@ export default function RegisterPage() {
     setError("");
 
     try {
-      const response = await authAPI.register(formData);
-
-      // Show success message
-      setError(""); // Clear any existing errors
-
-      // Show success notification (you might want to add a toast component)
-      alert(
-        "Registration successful! Please check your email to verify your account.",
-      );
-
-      // Redirect to login or verification page
-      router.push("/login?verified=false");
+      await authAPI.register(formData);
+      setSuccess(true);
+      setTimeout(() => router.push("/login"), 5000);
     } catch (err: any) {
       setError(
         err.response?.data?.message || "Registration failed. Please try again.",
@@ -283,14 +273,51 @@ export default function RegisterPage() {
 
       {/* Right Side */}
       <span className="w-1/2 h-[100dvh] flex flex-col justify-center items-center max-lg:w-full max-lg:px-[10%]">
-        <AnimatedForm
-          {...formFields}
-          fieldPerRow={1}
-          onSubmit={handleSubmit}
-          goTo={goToLogin}
-          googleLogin="Sign up with Google"
-          errorField={error}
-        />
+        {success ? (
+          <div className="w-full max-w-sm text-center space-y-4">
+            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+              <svg
+                className="w-8 h-8 text-primary"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+            </div>
+            <h2 className="text-2xl font-bold">Check your email</h2>
+            <p className="text-muted-foreground text-sm">
+              Registration successful! We sent a verification link to{" "}
+              <span className="font-medium text-foreground">
+                {formData.email}
+              </span>
+              . Verify your email before logging in.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Redirecting to login in 5 seconds…
+            </p>
+            <button
+              onClick={() => router.push("/login")}
+              className="w-full py-2 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+            >
+              Go to Login
+            </button>
+          </div>
+        ) : (
+          <AnimatedForm
+            {...formFields}
+            fieldPerRow={1}
+            onSubmit={handleSubmit}
+            goTo={goToLogin}
+            googleLogin="Sign up with Google"
+            errorField={error}
+          />
+        )}
       </span>
 
       {error && (

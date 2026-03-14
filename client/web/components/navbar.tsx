@@ -1,7 +1,7 @@
 "use client";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,6 +17,8 @@ import { useAuthStore } from "@/lib/store";
 export function Navbar() {
   const { user, logout } = useAuthStore();
   const router = useRouter();
+  const pathname = usePathname();
+  const isLanding = pathname === "/";
 
   const handleLogout = async () => {
     await logout();
@@ -44,18 +46,22 @@ export function Navbar() {
           </Link>
 
           <div className="flex items-center gap-6">
-            <Link
-              href="#features"
-              className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Features
-            </Link>
-            <Link
-              href="#how-it-works"
-              className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-            >
-              How It Works
-            </Link>
+            {isLanding && (
+              <>
+                <Link
+                  href="#features"
+                  className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Features
+                </Link>
+                <Link
+                  href="#how-it-works"
+                  className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  How It Works
+                </Link>
+              </>
+            )}
 
             {user ? (
               <DropdownMenu>
@@ -78,14 +84,23 @@ export function Navbar() {
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem>
-                    <User className="mr-2 h-4 w-4" />
-                    <span>Profile</span>
+                  <DropdownMenuItem asChild>
+                    <Link href="/dashboard" className="cursor-pointer">
+                      <User className="mr-2 h-4 w-4" />
+                      <span>Profile</span>
+                    </Link>
                   </DropdownMenuItem>
-                  <DropdownMenuItem>
-                    <Code2 className="mr-2 h-4 w-4" />
-                    <span>My Skills</span>
-                  </DropdownMenuItem>
+                  {user.role === "developer" && (
+                    <DropdownMenuItem asChild>
+                      <Link
+                        href="/dashboard/developer"
+                        className="cursor-pointer"
+                      >
+                        <Code2 className="mr-2 h-4 w-4" />
+                        <span>My Skills</span>
+                      </Link>
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onClick={handleLogout}

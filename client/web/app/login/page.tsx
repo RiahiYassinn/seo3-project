@@ -201,8 +201,8 @@ export default function LoginPage() {
       setAuth(user, access_token);
       localStorage.setItem("refresh_token", refresh_token);
 
-      // Redirect to dashboard
-      router.push("/");
+      // Redirect to role-based dashboard
+      router.push("/dashboard");
     } catch (err: any) {
       setError(
         err.response?.data?.message || "Login failed. Please try again.",

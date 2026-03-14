@@ -1,5 +1,4 @@
 import axios from 'axios'
-import { authAPI } from './auth' 
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:3000'
 
