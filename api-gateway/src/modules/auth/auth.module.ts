@@ -9,14 +9,17 @@ import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { LocalStrategy } from './strategies/local.strategy';
 import { RefreshTokenStrategy } from './strategies/refresh-token.strategy';
+import { GoogleStrategy } from './strategies/google.strategy';
 import { LocalAuthGuard } from './guards/local-auth.guard';
 import { RefreshTokenGuard } from './guards/refresh-token.guard';
+import { GoogleAuthGuard } from './guards/google-auth.guard';
 import { RedisModule } from '../../redis/redis.module'; // Import Redis module
 import { RateLimiterMemory } from '../../middleware/rate-limiter.memory'; // Import rate limiter
 
 @Module({
   imports: [
     PassportModule,
+    ConfigModule,
     RedisModule, // Add Redis module here
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -45,14 +48,16 @@ import { RateLimiterMemory } from '../../middleware/rate-limiter.memory'; // Imp
   ],
   controllers: [AuthController],
   providers: [
-    AuthService, 
-    JwtStrategy, 
-    LocalStrategy, 
+    AuthService,
+    JwtStrategy,
+    LocalStrategy,
     RefreshTokenStrategy,
+    GoogleStrategy,
     LocalAuthGuard,
     RefreshTokenGuard,
+    GoogleAuthGuard,
     RateLimiterMemory, // Add rate limiter as provider
   ],
-  exports: [AuthService, LocalAuthGuard, RefreshTokenGuard]
+  exports: [AuthService, LocalAuthGuard, RefreshTokenGuard, GoogleAuthGuard]
 })
 export class AuthModule {}

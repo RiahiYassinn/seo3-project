@@ -38,6 +38,9 @@ export class Developer {
   @Column({ name: 'is_active', default: true })
   isActive: boolean;
 
+  @Column({ name: 'google_id', nullable: true, unique: true })
+  googleId: string;
+
   @Column({ name: 'last_login_at', type: 'timestamp', nullable: true })
   lastLoginAt: Date;
 

@@ -37,10 +37,10 @@ export function Navbar() {
         <div className="flex justify-between h-16 items-center">
           <Link href="/" className="flex items-center gap-3">
             <Image
-              src="/Capture_d'ecran_2026-03-03_121957.png"
+              src="/wevioo.png"
               alt="Wevioo Logo"
-              width={120}
-              height={40}
+              width={400}
+              height={150}
               className="h-8 w-auto"
             />
           </Link>

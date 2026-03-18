@@ -389,6 +389,77 @@ export class AuthService {
     }
   }
 
+  async googleLogin(googleUser: any) {
+    try {
+      // Try to find existing user by email
+      let user = await firstValueFrom(
+        this.developerService.send('find_user_by_email', { email: googleUser.email })
+      ).catch(() => null);
+
+      if (!user) {
+        // Auto-register via Google
+        const username = googleUser.email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_');
+        user = await firstValueFrom(
+          this.developerService.send('create_google_user', {
+            email: googleUser.email,
+            first_name: googleUser.first_name,
+            last_name: googleUser.last_name,
+            google_id: googleUser.google_id,
+            username,
+            is_email_verified: true,
+          })
+        );
+      } else if (!user.google_id) {
+        // Link Google to existing account
+        await firstValueFrom(
+          this.developerService.send('link_google_account', {
+            userId: user.id,
+            google_id: googleUser.google_id,
+          })
+        );
+      }
+
+      const payload = {
+        sub: user.id,
+        email: user.email,
+        username: user.username,
+        role: user.role,
+      };
+
+      const [accessToken, refreshToken] = await Promise.all([
+        this.generateAccessToken(payload),
+        this.generateRefreshToken(),
+      ]);
+
+      const hashedRefreshToken = hashToken(refreshToken);
+      await firstValueFrom(
+        this.developerService.send('store_refresh_token', {
+          userId: user.id,
+          tokenHash: hashedRefreshToken,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        })
+      );
+
+      return {
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        token_type: 'Bearer',
+        expires_in: 900,
+        user: {
+          id: user.id,
+          email: user.email,
+          username: user.username,
+          first_name: user.first_name,
+          last_name: user.last_name,
+          role: user.role,
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Google login failed: ${error.message}`);
+      throw error;
+    }
+  }
+
   private async generateAccessToken(payload: any): Promise<string> {
     return this.jwtService.sign(payload);
   }

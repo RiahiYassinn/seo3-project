@@ -213,6 +213,10 @@ export default function RegisterPage() {
     router.push("/login");
   };
 
+  const handleGoogleLogin = () => {
+    window.location.href = authAPI.getGoogleAuthUrl();
+  };
+
   const formFields = {
     header: "Create an account",
     subHeader: "Sign up to get started with SEO3 Platform",
@@ -315,6 +319,7 @@ export default function RegisterPage() {
             onSubmit={handleSubmit}
             goTo={goToLogin}
             googleLogin="Sign up with Google"
+            onGoogleLogin={handleGoogleLogin}
             errorField={error}
           />
         )}

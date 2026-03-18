@@ -9,6 +9,7 @@ import { AnalysisModule } from './modules/analysis/analysis.module';
 import { RecommendationModule } from './modules/recommendation/recommendation.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { HealthModule } from './modules/health/health.module';
+import { GitHubModule } from './modules/github/github.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { HealthModule } from './modules/health/health.module';
     // Feature modules
     AuthModule,
     DeveloperModule,
+    GitHubModule,
     SkillModule,
     AnalysisModule,
     RecommendationModule,

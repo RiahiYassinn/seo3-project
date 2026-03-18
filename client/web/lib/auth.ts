@@ -80,6 +80,11 @@ class AuthAPI {
     })
     return response.data
   }
+
+  getGoogleAuthUrl(): string {
+    const apiBase = process.env.NEXT_PUBLIC_API_GATEWAY_URL ?? 'http://localhost:3006'
+    return `${apiBase}/api/v1/auth/google`
+  }
 }
 
 export const authAPI = new AuthAPI()

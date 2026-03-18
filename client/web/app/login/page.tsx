@@ -1,7 +1,7 @@
 "use client";
-import { useState, ChangeEvent, FormEvent, ReactNode } from "react";
+import { useState, ChangeEvent, FormEvent, ReactNode, useEffect } from "react";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Ripple,
   AuthTabs,
@@ -167,13 +167,23 @@ const iconsArray: OrbitIcon[] = [
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const setAuth = useAuthStore((state) => state.setAuth);
   const [formData, setFormData] = useState({
-    username_or_email: "", // Changed from 'email' to match backend
+    username_or_email: "",
     password: "",
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const urlError = searchParams.get("error");
+    if (urlError) setError(decodeURIComponent(urlError));
+  }, [searchParams]);
+
+  const handleGoogleLogin = () => {
+    window.location.href = authAPI.getGoogleAuthUrl();
+  };
 
   const handleInputChange = (
     event: ChangeEvent<HTMLInputElement>,
@@ -257,18 +267,17 @@ export default function LoginPage() {
           formFields={formFields}
           goTo={goToRegister}
           handleSubmit={handleSubmit}
+          onGoogleLogin={handleGoogleLogin}
         />
+        <div className="mt-2 text-center">
+          <button
+            onClick={() => router.push("/forgot-password")}
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Forgot your password?
+          </button>
+        </div>
       </span>
-
-      {/* Add forgot password link */}
-      <div className="fixed bottom-4 right-4">
-        <button
-          onClick={() => router.push("/forgot-password")}
-          className="text-sm text-primary-600 hover:text-primary-800"
-        >
-          Forgot password?
-        </button>
-      </div>
 
       {error && (
         <div className="fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded-md shadow-lg z-50">

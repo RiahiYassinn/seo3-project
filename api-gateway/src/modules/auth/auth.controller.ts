@@ -1,21 +1,26 @@
 // apps/api-gateway/src/auth/auth.controller.ts
-import { 
-  Controller, 
-  Post, 
-  Body, 
-  HttpCode, 
-  HttpStatus, 
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  HttpCode,
+  HttpStatus,
   UseGuards,
   Req,
+  Res,
   Ip,
   Headers
 } from '@nestjs/common';
+import { Response } from 'express';
+import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { LocalAuthGuard } from './guards/local-auth.guard';
 import { RefreshTokenGuard } from './guards/refresh-token.guard';
-import { 
-  RegisterDto, 
-  LoginDto, 
+import { GoogleAuthGuard } from './guards/google-auth.guard';
+import {
+  RegisterDto,
+  LoginDto,
   RefreshTokenDto,
   LogoutDto,
   VerifyEmailDto,
@@ -23,17 +28,20 @@ import {
   ForgotPasswordDto,
   ResetPasswordDto
 } from './dto/auth.dto';
-import { 
-  ApiTags, 
-  ApiOperation, 
-  ApiResponse, 
-  ApiBearerAuth 
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth
 } from '@nestjs/swagger';
 
 @ApiTags('Authentication')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly configService: ConfigService,
+  ) {}
 
   @Post('register')
   @ApiOperation({ summary: 'Register a new user' })
@@ -132,5 +140,31 @@ export class AuthController {
       resetPasswordDto.token,
       resetPasswordDto.new_password
     );
+  }
+
+  @Get('google')
+  @UseGuards(GoogleAuthGuard)
+  @ApiOperation({ summary: 'Initiate Google OAuth login' })
+  googleAuth() {
+    // Guard redirects to Google
+  }
+
+  @Get('google/callback')
+  @UseGuards(GoogleAuthGuard)
+  @ApiOperation({ summary: 'Google OAuth callback' })
+  async googleAuthCallback(@Req() req, @Res() res: Response) {
+    try {
+      const result = await this.authService.googleLogin(req.user);
+      const frontendUrl = this.configService.get('FRONTEND_URL', 'http://localhost:3001');
+      const params = new URLSearchParams({
+        access_token: result.access_token,
+        refresh_token: result.refresh_token,
+        user: JSON.stringify(result.user),
+      });
+      res.redirect(`${frontendUrl}/auth/google/callback?${params.toString()}`);
+    } catch (error) {
+      const frontendUrl = this.configService.get('FRONTEND_URL', 'http://localhost:3001');
+      res.redirect(`${frontendUrl}/auth/google/callback?error=${encodeURIComponent(error.message)}`);
+    }
   }
 }

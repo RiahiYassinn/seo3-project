@@ -44,6 +44,9 @@ interface Repository {
   language: string;
   stars: number;
   forks: number;
+  is_analyzed: boolean;
+  analysis_status: string | null;
+  last_analyzed_at: string | null;
   last_synced: string;
 }
 
@@ -58,6 +61,7 @@ export default function GitHubPage() {
   const [linking, setLinking] = useState(false);
   const [unlinking, setUnlinking] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [analyzing, setAnalyzing] = useState<string | null>(null); // Track which repo is being analyzed
   const [token, setToken] = useState("");
   const [username, setUsername] = useState("");
   const [error, setError] = useState("");
@@ -187,6 +191,41 @@ export default function GitHubPage() {
       );
     } finally {
       setUnlinking(false);
+    }
+  };
+
+  const handleAnalyzeRepository = async (
+    repositoryId: string,
+    repoName: string,
+  ) => {
+    setAnalyzing(repositoryId);
+    setError("");
+    setSuccess("");
+
+    try {
+      const { data } = await api.post("/github/analyze", {
+        repository_id: repositoryId,
+      });
+
+      setSuccess(`Analysis started for ${repoName}!`);
+      setTimeout(() => setSuccess(""), 3000);
+
+      // Update the repository status in the local state
+      setRepositories((prevRepos) =>
+        prevRepos.map((repo) =>
+          repo.id === repositoryId
+            ? { ...repo, analysis_status: "pending" }
+            : repo,
+        ),
+      );
+    } catch (err: any) {
+      setError(
+        err?.response?.data?.message ??
+          err.message ??
+          `Failed to start analysis for ${repoName}`,
+      );
+    } finally {
+      setAnalyzing(null);
     }
   };
 
@@ -439,25 +478,49 @@ export default function GitHubPage() {
                     ) : (
                       <div className="space-y-3">
                         {repositories.map((repo) => (
-                          <a
+                          <div
                             key={repo.id}
-                            href={repo.repo_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="block p-4 rounded-lg border border-border hover:bg-muted/50 transition-colors hover:border-primary/50"
+                            className="p-4 rounded-lg border border-border hover:bg-muted/50 transition-colors"
                           >
                             <div className="flex items-start justify-between mb-2">
                               <div className="flex-1">
-                                <h4 className="font-semibold text-primary hover:underline">
-                                  {repo.repo_name}
-                                </h4>
+                                <div className="flex items-center gap-2 mb-1">
+                                  <a
+                                    href={repo.repo_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="font-semibold text-primary hover:underline"
+                                  >
+                                    {repo.repo_name}
+                                  </a>
+                                  {repo.analysis_status && (
+                                    <Badge
+                                      variant={
+                                        repo.analysis_status === "completed"
+                                          ? "default"
+                                          : repo.analysis_status === "failed"
+                                            ? "destructive"
+                                            : "secondary"
+                                      }
+                                      className="text-xs"
+                                    >
+                                      {repo.analysis_status === "pending" &&
+                                        "Pending"}
+                                      {repo.analysis_status === "in_progress" &&
+                                        "Analyzing"}
+                                      {repo.analysis_status === "completed" &&
+                                        "Analyzed"}
+                                      {repo.analysis_status === "failed" &&
+                                        "Failed"}
+                                    </Badge>
+                                  )}
+                                </div>
                                 {repo.repo_description && (
                                   <p className="text-sm text-muted-foreground mt-1">
                                     {repo.repo_description}
                                   </p>
                                 )}
                               </div>
-                              <ExternalLink className="w-4 h-4 text-muted-foreground flex-shrink-0 ml-2" />
                             </div>
 
                             <div className="flex items-center gap-4 flex-wrap mt-3">
@@ -474,8 +537,61 @@ export default function GitHubPage() {
                                 <GitFork className="w-3 h-3" />
                                 {repo.forks}
                               </div>
+
+                              <div className="ml-auto">
+                                <Button
+                                  size="sm"
+                                  variant={
+                                    repo.is_analyzed ? "outline" : "default"
+                                  }
+                                  onClick={() =>
+                                    handleAnalyzeRepository(
+                                      repo.id,
+                                      repo.repo_name,
+                                    )
+                                  }
+                                  disabled={
+                                    analyzing === repo.id ||
+                                    repo.analysis_status === "pending" ||
+                                    repo.analysis_status === "in_progress"
+                                  }
+                                  className="gap-2"
+                                >
+                                  {analyzing === repo.id ? (
+                                    <>
+                                      <Loader className="w-3 h-3 animate-spin" />
+                                      Starting...
+                                    </>
+                                  ) : repo.is_analyzed ? (
+                                    <>
+                                      <CheckCircle className="w-3 h-3" />
+                                      Re-analyze
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Code className="w-3 h-3" />
+                                      Analyze with NLP
+                                    </>
+                                  )}
+                                </Button>
+                              </div>
                             </div>
-                          </a>
+
+                            {repo.last_analyzed_at && (
+                              <div className="mt-2 pt-2 border-t border-border">
+                                <p className="text-xs text-muted-foreground">
+                                  Last analyzed:{" "}
+                                  {new Date(
+                                    repo.last_analyzed_at,
+                                  ).toLocaleDateString()}{" "}
+                                  at{" "}
+                                  {new Date(
+                                    repo.last_analyzed_at,
+                                  ).toLocaleTimeString()}
+                                </p>
+                              </div>
+                            )}
+                          </div>
                         ))}
                       </div>
                     )}
@@ -491,6 +607,13 @@ export default function GitHubPage() {
                 <CardTitle className="text-lg">Why Connect GitHub?</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
+                <div className="space-y-2">
+                  <h5 className="font-semibold text-sm">NLP Code Analysis</h5>
+                  <p className="text-xs text-muted-foreground">
+                    Use advanced NLP to analyze your code patterns, detect
+                    skills, and identify expertise areas
+                  </p>
+                </div>
                 <div className="space-y-2">
                   <h5 className="font-semibold text-sm">Automatic Analysis</h5>
                   <p className="text-xs text-muted-foreground">
