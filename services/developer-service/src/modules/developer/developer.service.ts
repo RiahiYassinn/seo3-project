@@ -188,6 +188,12 @@ export class DeveloperService {
     });
   }
 
+  async findRefreshTokenByHash(tokenHash: string): Promise<RefreshToken | null> {
+    return this.refreshTokenRepository.findOne({
+      where: { tokenHash },
+    });
+  }
+
   async rotateRefreshToken(data: {
     oldTokenId: string;
     newTokenHash: string;

@@ -384,5 +384,115 @@ export class DeveloperController {
   ) {
     return this.developerService.analyzeRepository(data);
   }
+
+  // ─── Admin message pattern handlers ────────────────────────────────────────
+
+  @MessagePattern('get_all_users')
+  async handleGetAllUsers() {
+    const developers = await this.developerService.findAll();
+    const users = developers.map((dev) => this.developerService.toUserDto(dev));
+
+    // Calculate active today (users who logged in within last 24 hours)
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const active_today = users.filter(
+      (user) => user.last_login_at && new Date(user.last_login_at) > twentyFourHoursAgo,
+    ).length;
+
+    return { users, active_today };
+  }
+
+  @MessagePattern('get_user_by_id')
+  async handleGetUserById(@Payload() data: { userId: string }) {
+    const dev = await this.developerService.findOne(data.userId);
+    return this.developerService.toUserDto(dev);
+  }
+
+  @MessagePattern('admin_create_user')
+  async handleAdminCreateUser(
+    @Payload()
+    data: {
+      email: string;
+      username: string;
+      password: string;
+      first_name: string;
+      last_name: string;
+      role: string;
+    },
+  ) {
+    const dev = await this.developerService.createUser({
+      email: data.email,
+      username: data.username,
+      firstName: data.first_name,
+      lastName: data.last_name,
+      password: data.password,
+    });
+
+    // Update role if provided
+    if (data.role) {
+      dev.role = data.role;
+      await this.developerService.update(dev.id, { role: data.role });
+    }
+
+    return this.developerService.toUserDto(dev);
+  }
+
+  @MessagePattern('admin_update_user')
+  async handleAdminUpdateUser(
+    @Payload()
+    data: {
+      userId: string;
+      email?: string;
+      username?: string;
+      first_name?: string;
+      last_name?: string;
+      role?: string;
+    },
+  ) {
+    const updateData: any = {};
+    if (data.email) updateData.email = data.email;
+    if (data.username) updateData.username = data.username;
+    if (data.first_name) updateData.firstName = data.first_name;
+    if (data.last_name) updateData.lastName = data.last_name;
+    if (data.role) updateData.role = data.role;
+
+    const updated = await this.developerService.update(data.userId, updateData);
+    return this.developerService.toUserDto(updated);
+  }
+
+  @MessagePattern('admin_delete_user')
+  async handleAdminDeleteUser(@Payload() data: { userId: string }) {
+    await this.developerService.remove(data.userId);
+    return { success: true };
+  }
+
+  @MessagePattern('get_user_stats')
+  async handleGetUserStats() {
+    const developers = await this.developerService.findAll();
+    const users = developers.map((dev) => this.developerService.toUserDto(dev));
+
+    const total = users.length;
+    const admins = users.filter((user) => user.role === 'admin').length;
+    const tech_leads = users.filter((user) => user.role === 'tech_lead').length;
+    const developersCount = users.filter((user) => user.role === 'developer').length;
+
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const active_today = users.filter(
+      (user) => user.last_login_at && new Date(user.last_login_at) > twentyFourHoursAgo,
+    ).length;
+
+    return {
+      total,
+      admins,
+      tech_leads,
+      developers: developersCount,
+      active_today,
+    };
+  }
+
+  @MessagePattern('check_refresh_token_revoked')
+  async handleCheckRefreshTokenRevoked(@Payload() data: { token: string }) {
+    const tokenRecord = await this.developerService.findRefreshTokenByHash(data.token);
+    return { isRevoked: tokenRecord?.isRevoked || false };
+  }
 }
 

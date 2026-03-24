@@ -10,6 +10,7 @@ import { RecommendationModule } from './modules/recommendation/recommendation.mo
 import { NotificationModule } from './modules/notification/notification.module';
 import { HealthModule } from './modules/health/health.module';
 import { GitHubModule } from './modules/github/github.module';
+import { AdminModule } from './modules/admin/admin.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { GitHubModule } from './modules/github/github.module';
 
     // Feature modules
     AuthModule,
+    AdminModule,
     DeveloperModule,
     GitHubModule,
     SkillModule,
