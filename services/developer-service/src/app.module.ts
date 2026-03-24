@@ -26,13 +26,14 @@ import { Repository } from './modules/github/entities/repository.entity';
         username: configService.get('POSTGRES_USER'),
         password: configService.get('POSTGRES_PASSWORD'),
         database: configService.get('POSTGRES_DB'),
-        entities: [Developer, GitHubModule,RefreshToken, VerificationToken, PasswordResetToken, GitHubIntegration, Repository],
+        entities: [Developer, RefreshToken, VerificationToken, PasswordResetToken, GitHubIntegration, Repository],
         synchronize: configService.get('NODE_ENV') === 'development',
         logging: configService.get('NODE_ENV') === 'development',
       }),
       inject: [ConfigService],
     }),
     DeveloperModule,
+    GitHubModule,
   ],
 })
 export class AppModule {}
