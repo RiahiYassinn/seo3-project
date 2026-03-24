@@ -23,7 +23,7 @@ async function bootstrap() {
   const port = process.env.SKILL_SERVICE_PORT || 3002;
   await app.listen(port);
   
-  console.log(`🚀 Skill Service is running on: http://localhost:${port}`);
+  console.log(`Skill Service is running on: http://localhost:${port}`);
 }
 
 bootstrap();

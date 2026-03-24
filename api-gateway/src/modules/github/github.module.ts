@@ -11,12 +11,13 @@ import { GitHubService } from './github.service';
         transport: Transport.TCP,
         options: {
           host: process.env.DEVELOPER_SERVICE_HOST || 'localhost',
-          port: parseInt(process.env.DEVELOPER_SERVICE_PORT || '3002'),
+          port: parseInt(process.env.DEVELOPER_SERVICE_PORT) || 3001,
         },
       },
     ]),
   ],
   controllers: [GitHubController],
   providers: [GitHubService],
+  exports: [GitHubService],
 })
 export class GitHubModule {}

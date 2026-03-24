@@ -7,8 +7,9 @@ import { Developer } from './modules/developer/entities/developer.entity';
 import { RefreshToken } from './modules/developer/entities/refresh-token.entity';
 import { VerificationToken } from './modules/developer/entities/verification-token.entity';
 import { PasswordResetToken } from './modules/developer/entities/password-reset-token.entity';
-import { GitHubIntegration } from './modules/developer/entities/github-integration.entity';
-import { GitHubRepository } from './modules/developer/entities/github-repository.entity'; 
+import { GitHubModule } from './modules/github/github.module';
+import { GitHubIntegration } from './modules/github/entities/github-integration.entity';
+import { Repository } from './modules/github/entities/repository.entity';
 
 @Module({
   imports: [
@@ -25,7 +26,7 @@ import { GitHubRepository } from './modules/developer/entities/github-repository
         username: configService.get('POSTGRES_USER'),
         password: configService.get('POSTGRES_PASSWORD'),
         database: configService.get('POSTGRES_DB'),
-        entities: [Developer, RefreshToken, VerificationToken, PasswordResetToken, GitHubIntegration, GitHubRepository],
+        entities: [Developer, GitHubModule,RefreshToken, VerificationToken, PasswordResetToken, GitHubIntegration, Repository],
         synchronize: configService.get('NODE_ENV') === 'development',
         logging: configService.get('NODE_ENV') === 'development',
       }),

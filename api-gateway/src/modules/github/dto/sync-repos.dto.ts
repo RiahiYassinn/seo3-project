@@ -1,7 +1,7 @@
 import { IsString, IsNotEmpty, IsUUID } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
-export class SyncReposDto {
+export class SyncRepositoriesDto {
   @ApiProperty({ description: 'GitHub integration ID' })
   @IsUUID()
   @IsNotEmpty()

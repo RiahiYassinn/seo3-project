@@ -23,7 +23,7 @@ async function bootstrap() {
   const port = process.env.ANALYSIS_SERVICE_PORT || 3003;
   await app.listen(port);
   
-  console.log(`🚀 Analysis Service is running on: http://localhost:${port}`);
+  console.log(`Analysis Service is running on: http://localhost:${port}`);
 }
 
 bootstrap();

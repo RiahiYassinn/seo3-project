@@ -1,7 +1,7 @@
 import { IsString, IsNotEmpty } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
-export class LinkGitHubDto {
+export class LinkGitHubDto{
   @ApiProperty({ example: 'octocat', description: 'GitHub username' })
   @IsString()
   @IsNotEmpty()

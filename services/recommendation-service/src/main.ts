@@ -23,7 +23,7 @@ async function bootstrap() {
   const port = process.env.RECOMMENDATION_SERVICE_PORT || 3004;
   await app.listen(port);
   
-  console.log(`🚀 Recommendation Service is running on: http://localhost:${port}`);
+  console.log(`Recommendation Service is running on: http://localhost:${port}`);
 }
 
 bootstrap();

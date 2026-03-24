@@ -1,73 +1,61 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Delete,
-  Body,
-  UseGuards,
-  Request,
-  HttpCode,
-  HttpStatus,
-} from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
-import { AuthGuard } from '@nestjs/passport';
+// api-gateway/src/github/github.controller.ts
+import { Controller, Get, Post, Delete, Body, UseGuards, Request } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { GitHubService } from './github.service';
+import { AuthGuard } from '@nestjs/passport';
 import { LinkGitHubDto } from './dto/link-github.dto';
-import { SyncReposDto } from './dto/sync-repos.dto';
-import { AnalyzeRepoDto } from './dto/analyze-repo.dto';
+import { SyncRepositoriesDto } from './dto/sync-repos.dto';
+import { AnalyzeRepositoryDto } from './dto/analyze-repo.dto';
 
-@ApiTags('github')
+@ApiTags('GitHub Integration')
 @Controller('github')
 @UseGuards(AuthGuard('jwt'))
 @ApiBearerAuth()
 export class GitHubController {
-  constructor(private readonly githubService: GitHubService) {}
+  constructor(private readonly gitHubService: GitHubService) {}
 
   @Get('integration')
-  @ApiOperation({ summary: 'Get GitHub integration status' })
-  @ApiResponse({ status: 200, description: 'Integration found' })
-  @ApiResponse({ status: 404, description: 'No integration found' })
-  async getIntegration(@Request() req: any) {
-    return this.githubService.getIntegration(req.user.id);
+  @ApiOperation({ summary: 'Get GitHub integration details' })
+  @ApiResponse({ status: 200, description: 'Returns GitHub integration' })
+  @ApiResponse({ status: 404, description: 'Integration not found' })
+  async getIntegration(@Request() req) {
+    return this.gitHubService.getIntegration(req.user.id);
   }
 
   @Post('integration')
   @ApiOperation({ summary: 'Link GitHub account' })
   @ApiResponse({ status: 201, description: 'GitHub account linked successfully' })
-  @ApiResponse({ status: 400, description: 'Invalid credentials or account already linked' })
-  async linkGitHub(@Request() req: any, @Body() linkGitHubDto: LinkGitHubDto) {
-    return this.githubService.linkGitHub(req.user.id, linkGitHubDto);
+  @ApiResponse({ status: 400, description: 'Invalid GitHub credentials' })
+  async linkGitHub(@Request() req, @Body() linkGitHubDto: LinkGitHubDto) {
+    return this.gitHubService.linkGitHub(req.user.id, linkGitHubDto);
   }
 
   @Delete('integration')
-  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Unlink GitHub account' })
   @ApiResponse({ status: 200, description: 'GitHub account unlinked successfully' })
-  @ApiResponse({ status: 404, description: 'No integration found' })
-  async unlinkGitHub(@Request() req: any) {
-    return this.githubService.unlinkGitHub(req.user.id);
+  @ApiResponse({ status: 404, description: 'Integration not found' })
+  async unlinkGitHub(@Request() req) {
+    return this.gitHubService.unlinkGitHub(req.user.id);
   }
 
   @Get('repositories')
   @ApiOperation({ summary: 'Get synced repositories' })
-  @ApiResponse({ status: 200, description: 'List of repositories' })
-  async getRepositories(@Request() req: any) {
-    return this.githubService.getRepositories(req.user.id);
+  @ApiResponse({ status: 200, description: 'Returns list of repositories' })
+  async getRepositories(@Request() req) {
+    return this.gitHubService.getRepositories(req.user.id);
   }
 
   @Post('sync')
   @ApiOperation({ summary: 'Sync repositories from GitHub' })
   @ApiResponse({ status: 200, description: 'Repositories synced successfully' })
-  @ApiResponse({ status: 404, description: 'No integration found' })
-  async syncRepositories(@Request() req: any, @Body() syncReposDto: SyncReposDto) {
-    return this.githubService.syncRepositories(req.user.id, syncReposDto);
+  async syncRepositories(@Request() req, @Body() syncDto: SyncRepositoriesDto) {
+    return this.gitHubService.syncRepositories(req.user.id, syncDto);
   }
 
   @Post('analyze')
-  @ApiOperation({ summary: 'Analyze a repository with NLP' })
+  @ApiOperation({ summary: 'Analyze a repository (placeholder)' })
   @ApiResponse({ status: 200, description: 'Analysis started' })
-  @ApiResponse({ status: 404, description: 'Repository not found' })
-  async analyzeRepository(@Request() req: any, @Body() analyzeRepoDto: AnalyzeRepoDto) {
-    return this.githubService.analyzeRepository(req.user.id, analyzeRepoDto.repository_id);
+  async analyzeRepository(@Request() req, @Body() analyzeDto: AnalyzeRepositoryDto) {
+    return this.gitHubService.analyzeRepository(req.user.id, analyzeDto);
   }
 }

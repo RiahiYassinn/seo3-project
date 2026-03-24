@@ -19,7 +19,7 @@ export class DeveloperController {
   constructor(
     private readonly developerService: DeveloperService,
     private readonly emailService: EmailService,
-  ) {}
+  ) {this.logger.log('DeveloperController initialized with GitHub message patterns');}
 
   // ─── HTTP endpoints ────────────────────────────────────────────────────────
 
@@ -258,131 +258,6 @@ export class DeveloperController {
   ) {
     await this.developerService.linkGoogleAccount(data.userId, data.google_id);
     return { success: true };
-  }
-
-  // ─── GitHub Integration message pattern handlers ─────────────────────────
-
-  @MessagePattern('get_github_integration')
-  async handleGetGitHubIntegration(@Payload() data: { developerId: string }) {
-    const integration = await this.developerService.getGitHubIntegration(data.developerId);
-    if (!integration) {
-      throw new NotFoundException('GitHub integration not found');
-    }
-    return {
-      id: integration.id,
-      github_username: integration.githubUsername,
-      github_token: integration.githubToken,
-      connected_at: integration.connectedAt,
-    };
-  }
-
-  @MessagePattern('link_github')
-  async handleLinkGitHub(
-    @Payload()
-    data: {
-      developerId: string;
-      github_username: string;
-      github_token: string;
-      github_id: number;
-      avatar_url?: string;
-    },
-  ) {
-    const integration = await this.developerService.linkGitHub(data);
-    return {
-      id: integration.id,
-      github_username: integration.githubUsername,
-      connected_at: integration.connectedAt,
-    };
-  }
-
-  @MessagePattern('unlink_github')
-  async handleUnlinkGitHub(@Payload() data: { developerId: string }) {
-    await this.developerService.unlinkGitHub(data.developerId);
-    return { success: true };
-  }
-
-  @MessagePattern('get_github_repositories')
-  async handleGetGitHubRepositories(@Payload() data: { developerId: string }) {
-    const repositories = await this.developerService.getGitHubRepositories(data.developerId);
-    return repositories.map((repo) => ({
-      id: repo.id,
-      repo_name: repo.repoName,
-      repo_url: repo.repoUrl,
-      repo_description: repo.repoDescription,
-      language: repo.language,
-      stars: repo.stars,
-      forks: repo.forks,
-      is_private: repo.isPrivate,
-      is_analyzed: repo.isAnalyzed,
-      analysis_status: repo.analysisStatus,
-      last_analyzed_at: repo.lastAnalyzedAt,
-      last_synced: repo.lastSynced,
-    }));
-  }
-
-  @MessagePattern('sync_github_repositories')
-  async handleSyncGitHubRepositories(
-    @Payload()
-    data: {
-      developerId: string;
-      integrationId: string;
-      repositories: Array<{
-        github_repo_id: number;
-        repo_name: string;
-        repo_url: string;
-        repo_description: string;
-        language: string;
-        stars: number;
-        forks: number;
-        is_private: boolean;
-        default_branch: string;
-      }>;
-    },
-  ) {
-    const repositories = await this.developerService.syncGitHubRepositories(data);
-    return {
-      synced: repositories.length,
-      repositories: repositories.map((repo) => ({
-        id: repo.id,
-        repo_name: repo.repoName,
-        repo_url: repo.repoUrl,
-      })),
-    };
-  }
-
-  @MessagePattern('get_repository_by_id')
-  async handleGetRepositoryById(
-    @Payload() data: { developerId: string; repositoryId: string },
-  ) {
-    const repository = await this.developerService.getRepositoryById(
-      data.developerId,
-      data.repositoryId,
-    );
-    if (!repository) {
-      throw new NotFoundException('Repository not found');
-    }
-    return {
-      id: repository.id,
-      repo_name: repository.repoName,
-      repo_url: repository.repoUrl,
-      repo_description: repository.repoDescription,
-      language: repository.language,
-      default_branch: repository.defaultBranch,
-    };
-  }
-
-  @MessagePattern('analyze_repository')
-  async handleAnalyzeRepository(
-    @Payload()
-    data: {
-      developerId: string;
-      repositoryId: string;
-      repoName: string;
-      repoUrl: string;
-      githubToken: string;
-    },
-  ) {
-    return this.developerService.analyzeRepository(data);
   }
 }
 
