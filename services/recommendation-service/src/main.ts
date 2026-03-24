@@ -20,10 +20,13 @@ async function bootstrap() {
 
   await app.startAllMicroservices();
   
-  const port = process.env.RECOMMENDATION_SERVICE_PORT || 3004;
+  // Parse URL to get port (format: tcp://host:port)
+  const serviceUrl = process.env.RECOMMENDATION_SERVICE_URL || 'tcp://localhost:3004';
+  const port = parseInt(serviceUrl.split(':')[2]) || 3004;
+  
   await app.listen(port);
   
-  console.log(`🚀 Recommendation Service is running on: http://localhost:${port}`);
+  console.log(`Recommendation Service is running on: http://localhost:${port}`);
 }
 
 bootstrap();

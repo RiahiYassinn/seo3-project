@@ -7,8 +7,6 @@ import { Developer } from './entities/developer.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { VerificationToken } from './entities/verification-token.entity';
 import { PasswordResetToken } from './entities/password-reset-token.entity';
-import { GitHubIntegration } from './entities/github-integration.entity';
-import { GitHubRepository } from './entities/github-repository.entity';
 
 @Module({
   imports: [
@@ -17,8 +15,6 @@ import { GitHubRepository } from './entities/github-repository.entity';
       RefreshToken,
       VerificationToken,
       PasswordResetToken,
-      GitHubIntegration,
-      GitHubRepository,
     ]),
   ],
   controllers: [DeveloperController],

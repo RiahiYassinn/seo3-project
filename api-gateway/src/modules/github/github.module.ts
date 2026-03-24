@@ -1,22 +1,16 @@
 import { Module } from '@nestjs/common';
-import { ClientsModule, Transport } from '@nestjs/microservices';
-import { GitHubController } from './github.controller';
-import { GitHubService } from './github.service';
+import { HttpModule } from '@nestjs/axios';
+import { GithubController } from './github.controller';
+import { GithubProxyService } from './github.proxy.service';
 
 @Module({
   imports: [
-    ClientsModule.register([
-      {
-        name: 'DEVELOPER_SERVICE',
-        transport: Transport.TCP,
-        options: {
-          host: process.env.DEVELOPER_SERVICE_HOST || 'localhost',
-          port: parseInt(process.env.DEVELOPER_SERVICE_PORT || '3002'),
-        },
-      },
-    ]),
+HttpModule.register({
+  baseURL: `${process.env.DEVELOPER_SERVICE_HTTP_URL || 'http://localhost:3002'}/api/v1`,
+  timeout: 15_000,
+}),
   ],
-  controllers: [GitHubController],
-  providers: [GitHubService],
+  controllers: [GithubController],
+  providers: [GithubProxyService],
 })
-export class GitHubModule {}
+export class GithubModule {}
