@@ -251,7 +251,7 @@ export default function GitHubPage() {
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <Button
+          {/* <Button
             variant="outline"
             size="sm"
             onClick={() => router.back()}
@@ -259,7 +259,7 @@ export default function GitHubPage() {
           >
             <ArrowLeft className="w-4 h-4" />
             Back
-          </Button>
+          </Button> */}
           <h1 className="text-4xl font-bold mb-2 flex items-center gap-3">
             <Github className="w-8 h-8" />
             GitHub Integration

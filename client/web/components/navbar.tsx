@@ -31,6 +31,9 @@ export function Navbar() {
       user.email?.charAt(0).toUpperCase()
     : "";
 
+  const isDeveloperPage = pathname.startsWith("/dashboard/developer");
+  const isActive = (href: string) => pathname === href;
+
   return (
     <nav className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -63,6 +66,52 @@ export function Navbar() {
               </>
             )}
 
+            {/* Developer Dashboard Navigation */}
+            {user?.role === "developer" && isDeveloperPage && (
+              <div className="flex items-center gap-1">
+                <Link
+                  href="/dashboard/developer/overview"
+                  className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
+                    isActive("/dashboard/developer/overview")
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Overview
+                </Link>
+                <Link
+                  href="/dashboard/developer/github"
+                  className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
+                    isActive("/dashboard/developer/github")
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  GitHub
+                </Link>
+                <Link
+                  href="/dashboard/developer/team"
+                  className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
+                    isActive("/dashboard/developer/team")
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Team
+                </Link>
+                <Link
+                  href="/dashboard/developer/profile"
+                  className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
+                    isActive("/dashboard/developer/profile")
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Profile
+                </Link>
+              </div>
+            )}
+
             {user ? (
               <DropdownMenu>
                 <DropdownMenuTrigger className="outline-none">
@@ -93,7 +142,7 @@ export function Navbar() {
                   {user.role === "developer" && (
                     <DropdownMenuItem asChild>
                       <Link
-                        href="/dashboard/developer"
+                        href="/dashboard/developer/overview"
                         className="cursor-pointer"
                       >
                         <Code2 className="mr-2 h-4 w-4" />
