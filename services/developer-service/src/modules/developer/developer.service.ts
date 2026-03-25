@@ -5,8 +5,6 @@ import { Developer } from './entities/developer.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { VerificationToken } from './entities/verification-token.entity';
 import { PasswordResetToken } from './entities/password-reset-token.entity';
-import { GitHubIntegration } from './entities/github-integration.entity';
-import { GitHubRepository } from './entities/github-repository.entity';
 
 @Injectable()
 export class DeveloperService {
@@ -21,10 +19,6 @@ export class DeveloperService {
     private readonly verificationTokenRepository: Repository<VerificationToken>,
     @InjectRepository(PasswordResetToken)
     private readonly passwordResetTokenRepository: Repository<PasswordResetToken>,
-    @InjectRepository(GitHubIntegration)
-    private readonly githubIntegrationRepository: Repository<GitHubIntegration>,
-    @InjectRepository(GitHubRepository)
-    private readonly githubRepositoryRepository: Repository<GitHubRepository>,
   ) {}
 
   /** Serialize a Developer entity to the snake_case DTO expected by the api-gateway. */
@@ -188,6 +182,12 @@ export class DeveloperService {
     });
   }
 
+  async findRefreshTokenByHash(tokenHash: string): Promise<RefreshToken | null> {
+    return this.refreshTokenRepository.findOne({
+      where: { tokenHash },
+    });
+  }
+
   async rotateRefreshToken(data: {
     oldTokenId: string;
     newTokenHash: string;
@@ -278,161 +278,6 @@ export class DeveloperService {
 
   async markPasswordResetTokenUsed(token: string): Promise<void> {
     await this.passwordResetTokenRepository.update({ token }, { isUsed: true });
-  }
-
-  // ─── GitHub Integration ───────────────────────────────────────────────────
-
-  async getGitHubIntegration(developerId: string): Promise<GitHubIntegration | null> {
-    return this.githubIntegrationRepository.findOne({
-      where: { developerId },
-      relations: ['repositories'],
-    });
-  }
-
-  async linkGitHub(data: {
-    developerId: string;
-    github_username: string;
-    github_token: string;
-    github_id: number;
-    avatar_url?: string;
-  }): Promise<GitHubIntegration> {
-    // Check if integration already exists
-    const existing = await this.githubIntegrationRepository.findOne({
-      where: { developerId: data.developerId },
-    });
-
-    if (existing) {
-      // Update existing integration
-      await this.githubIntegrationRepository.update(existing.id, {
-        githubUsername: data.github_username,
-        githubToken: data.github_token,
-        githubId: data.github_id,
-        avatarUrl: data.avatar_url,
-      });
-      return this.githubIntegrationRepository.findOne({
-        where: { id: existing.id },
-      });
-    }
-
-    // Create new integration
-    const integration = this.githubIntegrationRepository.create({
-      developerId: data.developerId,
-      githubUsername: data.github_username,
-      githubToken: data.github_token,
-      githubId: data.github_id,
-      avatarUrl: data.avatar_url,
-    });
-    return this.githubIntegrationRepository.save(integration);
-  }
-
-  async unlinkGitHub(developerId: string): Promise<void> {
-    const integration = await this.githubIntegrationRepository.findOne({
-      where: { developerId },
-    });
-
-    if (!integration) {
-      throw new NotFoundException('GitHub integration not found');
-    }
-
-    await this.githubIntegrationRepository.remove(integration);
-  }
-
-  async getGitHubRepositories(developerId: string): Promise<GitHubRepository[]> {
-    const integration = await this.githubIntegrationRepository.findOne({
-      where: { developerId },
-      relations: ['repositories'],
-    });
-
-    if (!integration) {
-      return [];
-    }
-
-    return integration.repositories || [];
-  }
-
-  async syncGitHubRepositories(data: {
-    developerId: string;
-    integrationId: string;
-    repositories: Array<{
-      github_repo_id: number;
-      repo_name: string;
-      repo_url: string;
-      repo_description: string;
-      language: string;
-      stars: number;
-      forks: number;
-      is_private: boolean;
-      default_branch: string;
-    }>;
-  }): Promise<GitHubRepository[]> {
-    const integration = await this.githubIntegrationRepository.findOne({
-      where: { id: data.integrationId, developerId: data.developerId },
-    });
-
-    if (!integration) {
-      throw new NotFoundException('GitHub integration not found');
-    }
-
-    // Delete existing repositories for this integration
-    await this.githubRepositoryRepository.delete({ integrationId: integration.id });
-
-    // Create new repository entries
-    const repos = data.repositories.map((repo) =>
-      this.githubRepositoryRepository.create({
-        integrationId: integration.id,
-        githubRepoId: repo.github_repo_id,
-        repoName: repo.repo_name,
-        repoUrl: repo.repo_url,
-        repoDescription: repo.repo_description,
-        language: repo.language,
-        stars: repo.stars,
-        forks: repo.forks,
-        isPrivate: repo.is_private,
-        defaultBranch: repo.default_branch,
-      }),
-    );
-
-    return this.githubRepositoryRepository.save(repos);
-  }
-
-  async getRepositoryById(
-    developerId: string,
-    repositoryId: string,
-  ): Promise<GitHubRepository | null> {
-    const integration = await this.githubIntegrationRepository.findOne({
-      where: { developerId },
-    });
-
-    if (!integration) {
-      return null;
-    }
-
-    return this.githubRepositoryRepository.findOne({
-      where: { id: repositoryId, integrationId: integration.id },
-    });
-  }
-
-  async analyzeRepository(data: {
-    developerId: string;
-    repositoryId: string;
-    repoName: string;
-    repoUrl: string;
-    githubToken: string;
-  }): Promise<{ analysisId: string }> {
-    // Update repository status
-    await this.githubRepositoryRepository.update(data.repositoryId, {
-      analysisStatus: 'pending',
-    });
-
-    // TODO: Send to Kafka or NLP service for actual analysis
-    // For now, just return a mock analysis ID
-    const analysisId = `analysis_${Date.now()}`;
-
-    this.logger.log(
-      `Analysis triggered for repository ${data.repoName} (${data.repositoryId})`,
-    );
-
-    return { analysisId };
   }
 }
 

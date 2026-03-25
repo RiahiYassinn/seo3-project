@@ -85,6 +85,14 @@ export class DeveloperController {
     return this.developerService.toUserDto(dev);
   }
 
+  @MessagePattern('find_user_by_id')
+  async handleFindUserById(@Payload() data: { id: string }) {
+    const dev = await this.developerService.findOne(data.id);
+    if (!dev) return null;
+    const userDto = this.developerService.toUserDto(dev);
+    return { ...userDto, is_active: true }; // Add is_active field for JWT validation
+  }
+
   @MessagePattern('create_verification_token')
   handleCreateVerificationToken(@Payload() data: { userId: string; token: string }) {
     return this.developerService.createVerificationToken(data.userId, data.token);
@@ -260,129 +268,114 @@ export class DeveloperController {
     return { success: true };
   }
 
-  // ─── GitHub Integration message pattern handlers ─────────────────────────
+  // ─── Admin message pattern handlers ────────────────────────────────────────
 
-  @MessagePattern('get_github_integration')
-  async handleGetGitHubIntegration(@Payload() data: { developerId: string }) {
-    const integration = await this.developerService.getGitHubIntegration(data.developerId);
-    if (!integration) {
-      throw new NotFoundException('GitHub integration not found');
-    }
-    return {
-      id: integration.id,
-      github_username: integration.githubUsername,
-      github_token: integration.githubToken,
-      connected_at: integration.connectedAt,
-    };
+  @MessagePattern('get_all_users')
+  async handleGetAllUsers() {
+    const developers = await this.developerService.findAll();
+    const users = developers.map((dev) => this.developerService.toUserDto(dev));
+
+    // Calculate active today (users who logged in within last 24 hours)
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const active_today = users.filter(
+      (user) => user.last_login_at && new Date(user.last_login_at) > twentyFourHoursAgo,
+    ).length;
+
+    return { users, active_today };
   }
 
-  @MessagePattern('link_github')
-  async handleLinkGitHub(
+  @MessagePattern('get_user_by_id')
+  async handleGetUserById(@Payload() data: { userId: string }) {
+    const dev = await this.developerService.findOne(data.userId);
+    return this.developerService.toUserDto(dev);
+  }
+
+  @MessagePattern('admin_create_user')
+  async handleAdminCreateUser(
     @Payload()
     data: {
-      developerId: string;
-      github_username: string;
-      github_token: string;
-      github_id: number;
-      avatar_url?: string;
+      email: string;
+      username: string;
+      password: string;
+      first_name: string;
+      last_name: string;
+      role: string;
     },
   ) {
-    const integration = await this.developerService.linkGitHub(data);
-    return {
-      id: integration.id,
-      github_username: integration.githubUsername,
-      connected_at: integration.connectedAt,
-    };
+    const dev = await this.developerService.createUser({
+      email: data.email,
+      username: data.username,
+      firstName: data.first_name,
+      lastName: data.last_name,
+      password: data.password,
+    });
+
+    // Update role if provided
+    if (data.role) {
+      dev.role = data.role;
+      await this.developerService.update(dev.id, { role: data.role });
+    }
+
+    return this.developerService.toUserDto(dev);
   }
 
-  @MessagePattern('unlink_github')
-  async handleUnlinkGitHub(@Payload() data: { developerId: string }) {
-    await this.developerService.unlinkGitHub(data.developerId);
+  @MessagePattern('admin_update_user')
+  async handleAdminUpdateUser(
+    @Payload()
+    data: {
+      userId: string;
+      email?: string;
+      username?: string;
+      first_name?: string;
+      last_name?: string;
+      role?: string;
+    },
+  ) {
+    const updateData: any = {};
+    if (data.email) updateData.email = data.email;
+    if (data.username) updateData.username = data.username;
+    if (data.first_name) updateData.firstName = data.first_name;
+    if (data.last_name) updateData.lastName = data.last_name;
+    if (data.role) updateData.role = data.role;
+
+    const updated = await this.developerService.update(data.userId, updateData);
+    return this.developerService.toUserDto(updated);
+  }
+
+  @MessagePattern('admin_delete_user')
+  async handleAdminDeleteUser(@Payload() data: { userId: string }) {
+    await this.developerService.remove(data.userId);
     return { success: true };
   }
 
-  @MessagePattern('get_github_repositories')
-  async handleGetGitHubRepositories(@Payload() data: { developerId: string }) {
-    const repositories = await this.developerService.getGitHubRepositories(data.developerId);
-    return repositories.map((repo) => ({
-      id: repo.id,
-      repo_name: repo.repoName,
-      repo_url: repo.repoUrl,
-      repo_description: repo.repoDescription,
-      language: repo.language,
-      stars: repo.stars,
-      forks: repo.forks,
-      is_private: repo.isPrivate,
-      is_analyzed: repo.isAnalyzed,
-      analysis_status: repo.analysisStatus,
-      last_analyzed_at: repo.lastAnalyzedAt,
-      last_synced: repo.lastSynced,
-    }));
-  }
+  @MessagePattern('get_user_stats')
+  async handleGetUserStats() {
+    const developers = await this.developerService.findAll();
+    const users = developers.map((dev) => this.developerService.toUserDto(dev));
 
-  @MessagePattern('sync_github_repositories')
-  async handleSyncGitHubRepositories(
-    @Payload()
-    data: {
-      developerId: string;
-      integrationId: string;
-      repositories: Array<{
-        github_repo_id: number;
-        repo_name: string;
-        repo_url: string;
-        repo_description: string;
-        language: string;
-        stars: number;
-        forks: number;
-        is_private: boolean;
-        default_branch: string;
-      }>;
-    },
-  ) {
-    const repositories = await this.developerService.syncGitHubRepositories(data);
+    const total = users.length;
+    const admins = users.filter((user) => user.role === 'admin').length;
+    const tech_leads = users.filter((user) => user.role === 'tech_lead').length;
+    const developersCount = users.filter((user) => user.role === 'developer').length;
+
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const active_today = users.filter(
+      (user) => user.last_login_at && new Date(user.last_login_at) > twentyFourHoursAgo,
+    ).length;
+
     return {
-      synced: repositories.length,
-      repositories: repositories.map((repo) => ({
-        id: repo.id,
-        repo_name: repo.repoName,
-        repo_url: repo.repoUrl,
-      })),
+      total,
+      admins,
+      tech_leads,
+      developers: developersCount,
+      active_today,
     };
   }
 
-  @MessagePattern('get_repository_by_id')
-  async handleGetRepositoryById(
-    @Payload() data: { developerId: string; repositoryId: string },
-  ) {
-    const repository = await this.developerService.getRepositoryById(
-      data.developerId,
-      data.repositoryId,
-    );
-    if (!repository) {
-      throw new NotFoundException('Repository not found');
-    }
-    return {
-      id: repository.id,
-      repo_name: repository.repoName,
-      repo_url: repository.repoUrl,
-      repo_description: repository.repoDescription,
-      language: repository.language,
-      default_branch: repository.defaultBranch,
-    };
-  }
-
-  @MessagePattern('analyze_repository')
-  async handleAnalyzeRepository(
-    @Payload()
-    data: {
-      developerId: string;
-      repositoryId: string;
-      repoName: string;
-      repoUrl: string;
-      githubToken: string;
-    },
-  ) {
-    return this.developerService.analyzeRepository(data);
+  @MessagePattern('check_refresh_token_revoked')
+  async handleCheckRefreshTokenRevoked(@Payload() data: { token: string }) {
+    const tokenRecord = await this.developerService.findRefreshTokenByHash(data.token);
+    return { isRevoked: tokenRecord?.isRevoked || false };
   }
 }
 

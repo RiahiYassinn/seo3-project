@@ -20,10 +20,13 @@ async function bootstrap() {
 
   await app.startAllMicroservices();
   
-  const port = process.env.NOTIFICATION_SERVICE_PORT || 3005;
+  // Parse URL to get port (format: tcp://host:port)
+  const serviceUrl = process.env.NOTIFICATION_SERVICE_URL || 'tcp://localhost:3005';
+  const port = parseInt(serviceUrl.split(':')[2]) || 3005;
+  
   await app.listen(port);
   
-  console.log(`🚀 Notification Service is running on: http://localhost:${port}`);
+  console.log(`Notification Service is running on: http://localhost:${port}`);
 }
 
 bootstrap();

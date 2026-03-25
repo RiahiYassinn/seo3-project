@@ -1,22 +1,27 @@
 import { Module } from '@nestjs/common';
 import { ClientsModule, Transport } from '@nestjs/microservices';
-import { GitHubController } from './github.controller';
-import { GitHubService } from './github.service';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { GithubController } from './github.controller';
+import { GithubService } from './github.service';
 
 @Module({
   imports: [
-    ClientsModule.register([
+    ClientsModule.registerAsync([
       {
         name: 'DEVELOPER_SERVICE',
-        transport: Transport.TCP,
-        options: {
-          host: process.env.DEVELOPER_SERVICE_HOST || 'localhost',
-          port: parseInt(process.env.DEVELOPER_SERVICE_PORT || '3002'),
-        },
+        imports: [ConfigModule],
+        useFactory: (configService: ConfigService) => ({
+          transport: Transport.TCP,
+          options: {
+            host: configService.get('DEVELOPER_SERVICE_HOST', 'localhost'),
+            port: configService.get('DEVELOPER_SERVICE_PORT', 3001),
+          },
+        }),
+        inject: [ConfigService],
       },
     ]),
   ],
-  controllers: [GitHubController],
-  providers: [GitHubService],
+  controllers: [GithubController],
+  providers: [GithubService],
 })
-export class GitHubModule {}
+export class GithubModule {}

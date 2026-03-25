@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:3000'
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_GATEWAY || 'http://localhost:3006'
 
 export const api = axios.create({
   baseURL: `${API_BASE_URL}/api/v1`,

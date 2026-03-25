@@ -13,7 +13,9 @@ export default function DashboardPage() {
       router.replace("/login");
       return;
     }
-    if (user.role === "tech_lead") {
+    if (user.role === "admin") {
+      router.replace("/dashboard/admin");
+    } else if (user.role === "tech_lead") {
       router.replace("/dashboard/tech_lead");
     } else {
       router.replace("/dashboard/developer");

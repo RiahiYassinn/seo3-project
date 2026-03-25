@@ -20,10 +20,13 @@ async function bootstrap() {
 
   await app.startAllMicroservices();
   
-  const port = process.env.SKILL_SERVICE_PORT || 3002;
+  // Parse URL to get port (format: tcp://host:port)
+  const serviceUrl = process.env.SKILL_SERVICE_URL || 'tcp://localhost:3011';
+  const port = parseInt(serviceUrl.split(':')[2]) || 3011;
+  
   await app.listen(port);
   
-  console.log(`🚀 Skill Service is running on: http://localhost:${port}`);
+  console.log(`Skill Service is running on: http://localhost:${port}`);
 }
 
 bootstrap();

@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { LogOut, User, Code as Code2 } from "lucide-react";
+import { LogOut, User, Code as Code2, Shield } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
 
 export function Navbar() {
@@ -30,6 +30,10 @@ export function Navbar() {
     ? `${user.first_name?.charAt(0) ?? ""}${user.last_name?.charAt(0) ?? ""}`.toUpperCase() ||
       user.email?.charAt(0).toUpperCase()
     : "";
+
+  const isDeveloperPage = pathname.startsWith("/dashboard/developer");
+  const isAdminPage = pathname.startsWith("/dashboard/admin");
+  const isActive = (href: string) => pathname === href;
 
   return (
     <nav className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
@@ -63,6 +67,88 @@ export function Navbar() {
               </>
             )}
 
+            {/* Developer Dashboard Navigation */}
+            {user?.role === "developer" && isDeveloperPage && (
+              <div className="flex items-center gap-1">
+                <Link
+                  href="/dashboard/developer/overview"
+                  className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
+                    isActive("/dashboard/developer/overview")
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Overview
+                </Link>
+                <Link
+                  href="/dashboard/developer/github"
+                  className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
+                    isActive("/dashboard/developer/github")
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  GitHub
+                </Link>
+                <Link
+                  href="/dashboard/developer/team"
+                  className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
+                    isActive("/dashboard/developer/team")
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Team
+                </Link>
+                <Link
+                  href="/dashboard/developer/profile"
+                  className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
+                    isActive("/dashboard/developer/profile")
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Profile
+                </Link>
+              </div>
+            )}
+
+            {/* Admin Dashboard Navigation */}
+            {user?.role === "admin" && isAdminPage && (
+              <div className="flex items-center gap-1">
+                <Link
+                  href="/dashboard/admin/users"
+                  className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
+                    isActive("/dashboard/admin/users")
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Users
+                </Link>
+                <Link
+                  href="/dashboard/admin/roles"
+                  className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
+                    isActive("/dashboard/admin/roles")
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Roles
+                </Link>
+                <Link
+                  href="/dashboard/admin/analytics"
+                  className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
+                    isActive("/dashboard/admin/analytics")
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Analytics
+                </Link>
+              </div>
+            )}
+
             {user ? (
               <DropdownMenu>
                 <DropdownMenuTrigger className="outline-none">
@@ -90,10 +176,21 @@ export function Navbar() {
                       <span>Profile</span>
                     </Link>
                   </DropdownMenuItem>
+                  {user.role === "admin" && (
+                    <DropdownMenuItem asChild>
+                      <Link
+                        href="/dashboard/admin/users"
+                        className="cursor-pointer"
+                      >
+                        <Shield className="mr-2 h-4 w-4" />
+                        <span>Admin Panel</span>
+                      </Link>
+                    </DropdownMenuItem>
+                  )}
                   {user.role === "developer" && (
                     <DropdownMenuItem asChild>
                       <Link
-                        href="/dashboard/developer"
+                        href="/dashboard/developer/overview"
                         className="cursor-pointer"
                       >
                         <Code2 className="mr-2 h-4 w-4" />
