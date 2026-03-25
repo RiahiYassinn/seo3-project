@@ -9,45 +9,45 @@ import {
   HttpStatus,
   UseGuards,
 } from '@nestjs/common';
-import { GithubProxyService } from './github.proxy.service';
-import { AuthGuard } from '@nestjs/passport'; 
+import { GithubService } from './github.service';
+import { AuthGuard } from '@nestjs/passport';
 
-// The JWT guard must populate req.user.sub = developerId
+// The JWT guard populates req.user with user data including req.user.id
 @UseGuards(AuthGuard('jwt'))
 @Controller('github')
 export class GithubController {
-  constructor(private readonly proxy: GithubProxyService) {}
+  constructor(private readonly githubService: GithubService) {}
 
   @Get('integration')
   getIntegration(@Req() req: any) {
-    return this.proxy.forward('get', 'integration', req.user.sub);
+    return this.githubService.getIntegration(req.user.id);
   }
 
   @Post('integration')
   @HttpCode(HttpStatus.CREATED)
   linkGithub(@Req() req: any, @Body() body: any) {
-    return this.proxy.forward('post', 'integration', req.user.sub, body);
+    return this.githubService.linkGithub(req.user.id, body);
   }
 
   @Delete('integration')
   @HttpCode(HttpStatus.NO_CONTENT)
   unlinkGithub(@Req() req: any) {
-    return this.proxy.forward('delete', 'integration', req.user.sub);
+    return this.githubService.unlinkGithub(req.user.id);
   }
 
   @Get('repositories')
   getRepositories(@Req() req: any) {
-    return this.proxy.forward('get', 'repositories', req.user.sub);
+    return this.githubService.getRepositories(req.user.id);
   }
 
   @Post('sync')
-  syncRepositories(@Req() req: any, @Body() body: any) {
-    return this.proxy.forward('post', 'sync', req.user.sub, body);
+  syncRepositories(@Req() req: any) {
+    return this.githubService.syncRepositories(req.user.id);
   }
 
   @Post('analyze')
   @HttpCode(HttpStatus.ACCEPTED)
   triggerAnalysis(@Req() req: any, @Body() body: any) {
-    return this.proxy.forward('post', 'analyze', req.user.sub, body);
+    return this.githubService.triggerAnalysis(req.user.id, body.repository_id);
   }
 }

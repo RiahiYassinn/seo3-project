@@ -21,8 +21,8 @@ async function bootstrap() {
   await app.startAllMicroservices();
   
   // Parse URL to get port (format: tcp://host:port)
-  const serviceUrl = process.env.SKILL_SERVICE_URL || 'tcp://localhost:3002';
-  const port = parseInt(serviceUrl.split(':')[2]) || 3002;
+  const serviceUrl = process.env.SKILL_SERVICE_URL || 'tcp://localhost:3011';
+  const port = parseInt(serviceUrl.split(':')[2]) || 3011;
   
   await app.listen(port);
   

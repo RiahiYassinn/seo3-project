@@ -17,7 +17,7 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
-
+import { UpdateUserDto, CreateUserDto } from './dto/user.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './decorators/roles.decorator';
@@ -55,8 +55,8 @@ export class AdminController {
   @ApiResponse({ status: 201, description: 'User created successfully' })
   @ApiResponse({ status: 400, description: 'Bad request' })
   @ApiResponse({ status: 403, description: 'Forbidden - Admin access required' })
-  async createUser(@Body() createUserDto: any) {
-    return this.adminService.createUser();
+  async createUser(@Body() createUserDto: CreateUserDto) {
+    return this.adminService.createUser(createUserDto);
   }
 
   @Patch('users/:id')
@@ -67,7 +67,7 @@ export class AdminController {
   @ApiResponse({ status: 403, description: 'Forbidden - Admin access required' })
   async updateUser(
     @Param('id') id: string,
-    @Body() updateUserDto: any,
+    @Body() updateUserDto: UpdateUserDto,
   ) {
     return this.adminService.updateUser(id, updateUserDto);
   }

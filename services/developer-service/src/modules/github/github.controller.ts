@@ -1,54 +1,47 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Delete,
-  Body,
-  Req,
-  HttpCode,
-  HttpStatus,
-} from '@nestjs/common';
+import { Controller } from '@nestjs/common';
+import { MessagePattern, Payload } from '@nestjs/microservices';
 import { GithubService } from './github.service';
 import { LinkGithubDto } from './dto/link-github.dto';
-import { SyncReposDto } from './dto/sync-repos.dto';
 import { AnalyzeRepoDto } from './dto/analyze-repo.dto';
+import { GithubIntegrationResponseDto } from './dto/github-integration-response.dto';
+import { RepositoryResponseDto } from './dto/repository-response.dto';
 
-// developerId is injected by the API Gateway via x-developer-id header
-// and extracted in a middleware — see note below
-@Controller('github')
+@Controller()
 export class GithubController {
   constructor(private readonly githubService: GithubService) {}
 
-  @Get('integration')
-  getIntegration(@Req() req: any) {
-    return this.githubService.getIntegration(req.developerId);
+  @MessagePattern('github_get_integration')
+  async getIntegration(@Payload() data: { userId: string }) {
+    const integration = await this.githubService.getIntegration(data.userId);
+    return GithubIntegrationResponseDto.fromEntity(integration);
   }
 
-  @Post('integration')
-  @HttpCode(HttpStatus.CREATED)
-  linkGithub(@Req() req: any, @Body() dto: LinkGithubDto) {
-    return this.githubService.linkGithub(req.developerId, dto);
+  @MessagePattern('github_link_account')
+  async linkGithub(@Payload() data: { userId: string } & LinkGithubDto) {
+    const { userId, ...dto } = data;
+    const integration = await this.githubService.linkGithub(userId, dto);
+    return GithubIntegrationResponseDto.fromEntity(integration);
   }
 
-  @Delete('integration')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  unlinkGithub(@Req() req: any) {
-    return this.githubService.unlinkGithub(req.developerId);
+  @MessagePattern('github_unlink_account')
+  unlinkGithub(@Payload() data: { userId: string }) {
+    return this.githubService.unlinkGithub(data.userId);
   }
 
-  @Get('repositories')
-  getRepositories(@Req() req: any) {
-    return this.githubService.getRepositories(req.developerId);
+  @MessagePattern('github_get_repositories')
+  async getRepositories(@Payload() data: { userId: string }) {
+    const repos = await this.githubService.getRepositories(data.userId);
+    return repos.map(repo => RepositoryResponseDto.fromEntity(repo));
   }
 
-  @Post('sync')
-  syncRepositories(@Req() req: any) {
-    return this.githubService.syncRepositories(req.developerId);
+  @MessagePattern('github_sync_repositories')
+  async syncRepositories(@Payload() data: { userId: string }) {
+    const repos = await this.githubService.syncRepositories(data.userId);
+    return repos.map(repo => RepositoryResponseDto.fromEntity(repo));
   }
 
-  @Post('analyze')
-  @HttpCode(HttpStatus.ACCEPTED)
-  triggerAnalysis(@Req() req: any, @Body() dto: AnalyzeRepoDto) {
-    return this.githubService.triggerAnalysis(req.developerId, dto.repository_id);
+  @MessagePattern('github_trigger_analysis')
+  triggerAnalysis(@Payload() data: { userId: string; repositoryId: string }) {
+    return this.githubService.triggerAnalysis(data.userId, data.repositoryId);
   }
 }

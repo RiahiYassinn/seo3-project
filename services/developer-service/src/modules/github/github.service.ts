@@ -1,10 +1,8 @@
 import {
   Injectable,
-  NotFoundException,
-  ConflictException,
-  UnauthorizedException,
   Inject,
 } from '@nestjs/common';
+import { RpcException } from '@nestjs/microservices';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository as TypeOrmRepository } from 'typeorm';
 import { ClientKafka } from '@nestjs/microservices';
@@ -65,14 +63,24 @@ export class GithubService {
     const integration = await this.integrationRepo.findOne({
       where: { developerId },
     });
-    if (!integration) throw new NotFoundException('No GitHub integration found');
+    if (!integration) {
+      throw new RpcException({
+        statusCode: 404,
+        message: 'No GitHub integration found',
+      });
+    }
     return integration;
   }
 
   async linkGithub(developerId: string, dto: LinkGithubDto): Promise<GithubIntegration> {
     // Prevent duplicate integrations
     const existing = await this.integrationRepo.findOne({ where: { developerId } });
-    if (existing) throw new ConflictException('GitHub account already linked');
+    if (existing) {
+      throw new RpcException({
+        statusCode: 409,
+        message: 'GitHub account already linked',
+      });
+    }
 
     // Validate token against GitHub API before storing
     const octokit = new Octokit({ auth: dto.github_token });
@@ -80,13 +88,17 @@ export class GithubService {
       const { data: ghUser } = await octokit.users.getAuthenticated();
       // Ensure the username matches the authenticated GitHub user
       if (ghUser.login.toLowerCase() !== dto.github_username.toLowerCase()) {
-        throw new UnauthorizedException(
-          'Token does not belong to the provided GitHub username',
-        );
+        throw new RpcException({
+          statusCode: 401,
+          message: 'Token does not belong to the provided GitHub username',
+        });
       }
     } catch (err) {
-      if (err instanceof UnauthorizedException) throw err;
-      throw new UnauthorizedException('Invalid GitHub token');
+      if (err instanceof RpcException) throw err;
+      throw new RpcException({
+        statusCode: 401,
+        message: 'Invalid GitHub token',
+      });
     }
 
     const integration = this.integrationRepo.create({
@@ -100,7 +112,15 @@ export class GithubService {
   }
 
   async unlinkGithub(developerId: string): Promise<void> {
-    const integration = await this.getIntegration(developerId);
+    const integration = await this.integrationRepo.findOne({
+      where: { developerId },
+    });
+    if (!integration) {
+      throw new RpcException({
+        statusCode: 404,
+        message: 'No GitHub integration found',
+      });
+    }
     // Cascade delete removes all repositories too
     await this.integrationRepo.remove(integration);
   }
@@ -111,7 +131,12 @@ export class GithubService {
       select: ['id', 'developerId', 'githubUsername', 'githubTokenEncrypted', 'connectedAt'],
     }) as GithubIntegration & { githubTokenEncrypted: string };
 
-    if (!integration) throw new NotFoundException('No GitHub integration found');
+    if (!integration) {
+      throw new RpcException({
+        statusCode: 404,
+        message: 'No GitHub integration found',
+      });
+    }
 
     const octokit = this.getOctokit(integration);
 
@@ -177,12 +202,22 @@ export class GithubService {
     const integration = await this.integrationRepo.findOne({
       where: { developerId },
     });
-    if (!integration) throw new NotFoundException('No GitHub integration found');
+    if (!integration) {
+      throw new RpcException({
+        statusCode: 404,
+        message: 'No GitHub integration found',
+      });
+    }
 
     const repo = await this.repositoryRepo.findOne({
       where: { id: repositoryId, integrationId: integration.id },
     });
-    if (!repo) throw new NotFoundException('Repository not found');
+    if (!repo) {
+      throw new RpcException({
+        statusCode: 404,
+        message: 'Repository not found',
+      });
+    }
 
     // Mark as pending immediately
     repo.analysisStatus = 'pending';

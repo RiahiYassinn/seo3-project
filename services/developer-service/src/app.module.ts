@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DeveloperModule } from './modules/developer/developer.module';
-import {GithubModule} from "./modules/github/github.module";
+import { GithubModule } from "./modules/github/github.module";
 
 import { Developer } from './modules/developer/entities/developer.entity';
 import { RefreshToken } from './modules/developer/entities/refresh-token.entity';

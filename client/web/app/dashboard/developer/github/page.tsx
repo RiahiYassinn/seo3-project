@@ -28,6 +28,7 @@ import {
   CircleCheck as CheckCircle,
   CircleAlert as AlertCircle,
   ArrowLeft,
+  Search,
 } from "lucide-react";
 
 interface GitHubIntegration {
@@ -52,7 +53,7 @@ interface Repository {
 
 export default function GitHubPage() {
   const router = useRouter();
-  const { user } = useAuthStore();
+  const { user, hasHydrated } = useAuthStore();
   const [integration, setIntegration] = useState<GitHubIntegration | null>(
     null,
   );
@@ -66,8 +67,12 @@ export default function GitHubPage() {
   const [username, setUsername] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
+    // Wait for auth state to rehydrate from localStorage
+    if (!hasHydrated) return;
+
     if (!user) {
       router.replace("/login");
       return;
@@ -104,7 +109,7 @@ export default function GitHubPage() {
     };
 
     fetchData();
-  }, [user, router]);
+  }, [user, router, hasHydrated]);
 
   const handleLinkGitHub = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -228,6 +233,11 @@ export default function GitHubPage() {
       setAnalyzing(null);
     }
   };
+
+  // Filter repositories based on search query
+  const filteredRepositories = repositories.filter((repo) =>
+    repo.repo_name.toLowerCase().includes(searchQuery.toLowerCase()),
+  );
 
   if (loading) {
     return (
@@ -476,124 +486,165 @@ export default function GitHubPage() {
                         </Button>
                       </div>
                     ) : (
-                      <div className="space-y-3">
-                        {repositories.map((repo) => (
-                          <div
-                            key={repo.id}
-                            className="p-4 rounded-lg border border-border hover:bg-muted/50 transition-colors"
-                          >
-                            <div className="flex items-start justify-between mb-2">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <a
-                                    href={repo.repo_url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="font-semibold text-primary hover:underline"
-                                  >
-                                    {repo.repo_name}
-                                  </a>
-                                  {repo.analysis_status && (
+                      <>
+                        {/* Search Bar */}
+                        <div className="mb-4">
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <Input
+                              placeholder="Search repositories by name..."
+                              value={searchQuery}
+                              onChange={(e) => setSearchQuery(e.target.value)}
+                              className="pl-10"
+                            />
+                          </div>
+                          {searchQuery && (
+                            <p className="text-xs text-muted-foreground mt-2">
+                              Found {filteredRepositories.length} of{" "}
+                              {repositories.length} repositories
+                            </p>
+                          )}
+                        </div>
+
+                        {filteredRepositories.length === 0 ? (
+                          <div className="text-center py-12">
+                            <Code className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                            <p className="text-muted-foreground mb-4">
+                              No repositories match your search
+                            </p>
+                            <Button
+                              onClick={() => setSearchQuery("")}
+                              variant="outline"
+                              size="sm"
+                            >
+                              Clear Search
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {filteredRepositories.map((repo) => (
+                              <div
+                                key={repo.id}
+                                className="p-4 rounded-lg border border-border hover:bg-muted/50 transition-colors"
+                              >
+                                <div className="flex items-start justify-between mb-2">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <a
+                                        href={repo.repo_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="font-semibold text-primary hover:underline"
+                                      >
+                                        {repo.repo_name}
+                                      </a>
+                                      {repo.analysis_status && (
+                                        <Badge
+                                          variant={
+                                            repo.analysis_status === "completed"
+                                              ? "default"
+                                              : repo.analysis_status ===
+                                                  "failed"
+                                                ? "destructive"
+                                                : "secondary"
+                                          }
+                                          className="text-xs"
+                                        >
+                                          {repo.analysis_status === "pending" &&
+                                            "Pending"}
+                                          {repo.analysis_status ===
+                                            "in_progress" && "Analyzing"}
+                                          {repo.analysis_status ===
+                                            "completed" && "Analyzed"}
+                                          {repo.analysis_status === "failed" &&
+                                            "Failed"}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    {repo.repo_description && (
+                                      <p className="text-sm text-muted-foreground mt-1">
+                                        {repo.repo_description}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-4 flex-wrap mt-3">
+                                  {repo.language && (
                                     <Badge
-                                      variant={
-                                        repo.analysis_status === "completed"
-                                          ? "default"
-                                          : repo.analysis_status === "failed"
-                                            ? "destructive"
-                                            : "secondary"
-                                      }
+                                      variant="outline"
                                       className="text-xs"
                                     >
-                                      {repo.analysis_status === "pending" &&
-                                        "Pending"}
-                                      {repo.analysis_status === "in_progress" &&
-                                        "Analyzing"}
-                                      {repo.analysis_status === "completed" &&
-                                        "Analyzed"}
-                                      {repo.analysis_status === "failed" &&
-                                        "Failed"}
+                                      {repo.language}
                                     </Badge>
                                   )}
+                                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                    <Star className="w-3 h-3" />
+                                    {repo.stars}
+                                  </div>
+                                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                    <GitFork className="w-3 h-3" />
+                                    {repo.forks}
+                                  </div>
+
+                                  <div className="ml-auto">
+                                    <Button
+                                      size="sm"
+                                      variant={
+                                        repo.is_analyzed ? "outline" : "default"
+                                      }
+                                      onClick={() =>
+                                        handleAnalyzeRepository(
+                                          repo.id,
+                                          repo.repo_name,
+                                        )
+                                      }
+                                      disabled={
+                                        analyzing === repo.id ||
+                                        repo.analysis_status === "pending" ||
+                                        repo.analysis_status === "in_progress"
+                                      }
+                                      className="gap-2"
+                                    >
+                                      {analyzing === repo.id ? (
+                                        <>
+                                          <Loader className="w-3 h-3 animate-spin" />
+                                          Starting...
+                                        </>
+                                      ) : repo.is_analyzed ? (
+                                        <>
+                                          <CheckCircle className="w-3 h-3" />
+                                          Re-analyze
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Code className="w-3 h-3" />
+                                          Analyze with NLP
+                                        </>
+                                      )}
+                                    </Button>
+                                  </div>
                                 </div>
-                                {repo.repo_description && (
-                                  <p className="text-sm text-muted-foreground mt-1">
-                                    {repo.repo_description}
-                                  </p>
+
+                                {repo.last_analyzed_at && (
+                                  <div className="mt-2 pt-2 border-t border-border">
+                                    <p className="text-xs text-muted-foreground">
+                                      Last analyzed:{" "}
+                                      {new Date(
+                                        repo.last_analyzed_at,
+                                      ).toLocaleDateString()}{" "}
+                                      at{" "}
+                                      {new Date(
+                                        repo.last_analyzed_at,
+                                      ).toLocaleTimeString()}
+                                    </p>
+                                  </div>
                                 )}
                               </div>
-                            </div>
-
-                            <div className="flex items-center gap-4 flex-wrap mt-3">
-                              {repo.language && (
-                                <Badge variant="outline" className="text-xs">
-                                  {repo.language}
-                                </Badge>
-                              )}
-                              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                                <Star className="w-3 h-3" />
-                                {repo.stars}
-                              </div>
-                              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                                <GitFork className="w-3 h-3" />
-                                {repo.forks}
-                              </div>
-
-                              <div className="ml-auto">
-                                <Button
-                                  size="sm"
-                                  variant={
-                                    repo.is_analyzed ? "outline" : "default"
-                                  }
-                                  onClick={() =>
-                                    handleAnalyzeRepository(
-                                      repo.id,
-                                      repo.repo_name,
-                                    )
-                                  }
-                                  disabled={
-                                    analyzing === repo.id ||
-                                    repo.analysis_status === "pending" ||
-                                    repo.analysis_status === "in_progress"
-                                  }
-                                  className="gap-2"
-                                >
-                                  {analyzing === repo.id ? (
-                                    <>
-                                      <Loader className="w-3 h-3 animate-spin" />
-                                      Starting...
-                                    </>
-                                  ) : repo.is_analyzed ? (
-                                    <>
-                                      <CheckCircle className="w-3 h-3" />
-                                      Re-analyze
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Code className="w-3 h-3" />
-                                      Analyze with NLP
-                                    </>
-                                  )}
-                                </Button>
-                              </div>
-                            </div>
-
-                            {repo.last_analyzed_at && (
-                              <div className="mt-2 pt-2 border-t border-border">
-                                <p className="text-xs text-muted-foreground">
-                                  Last analyzed:{" "}
-                                  {new Date(
-                                    repo.last_analyzed_at,
-                                  ).toLocaleDateString()}{" "}
-                                  at{" "}
-                                  {new Date(
-                                    repo.last_analyzed_at,
-                                  ).toLocaleTimeString()}
-                                </p>
-                              </div>
-                            )}
+                            ))}
                           </div>
-                        ))}
-                      </div>
+                        )}
+                      </>
                     )}
                   </CardContent>
                 </Card>
