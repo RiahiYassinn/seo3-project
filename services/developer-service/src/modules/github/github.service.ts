@@ -89,14 +89,14 @@ export class GithubService {
       // Ensure the username matches the authenticated GitHub user
       if (ghUser.login.toLowerCase() !== dto.github_username.toLowerCase()) {
         throw new RpcException({
-          statusCode: 401,
+          statusCode: 400,
           message: 'Token does not belong to the provided GitHub username',
         });
       }
     } catch (err) {
       if (err instanceof RpcException) throw err;
       throw new RpcException({
-        statusCode: 401,
+        statusCode: 400,
         message: 'Invalid GitHub token',
       });
     }
