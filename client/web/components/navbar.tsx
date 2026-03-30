@@ -171,7 +171,10 @@ export function Navbar() {
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem asChild>
-                    <Link href="/dashboard" className="cursor-pointer">
+                    <Link
+                      href="/dashboard/developer/profile"
+                      className="cursor-pointer"
+                    >
                       <User className="mr-2 h-4 w-4" />
                       <span>Profile</span>
                     </Link>
@@ -212,15 +215,9 @@ export function Navbar() {
               <div className="flex items-center gap-3">
                 <Link
                   href="/login"
-                  className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Login
-                </Link>
-                <Link
-                  href="/register"
                   className="text-sm font-medium px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
                 >
-                  Get Started
+                  Login
                 </Link>
               </div>
             )}

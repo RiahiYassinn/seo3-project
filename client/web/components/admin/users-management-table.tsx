@@ -9,7 +9,6 @@ import {
   Mail,
   Shield,
   CheckCircle,
-  XCircle,
   AlertCircle,
 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -50,7 +49,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 
 interface User {
   id: string;
@@ -59,7 +57,7 @@ interface User {
   first_name: string;
   last_name: string;
   role: string;
-  email_verified: boolean;
+  is_email_verified: boolean;
   created_at: string;
   last_login?: string;
 }
@@ -86,6 +84,7 @@ export const UsersManagementTable = () => {
   const [roleFilter, setRoleFilter] = useState("all");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [editForm, setEditForm] = useState({
     email: "",
@@ -94,6 +93,24 @@ export const UsersManagementTable = () => {
     last_name: "",
     role: "",
   });
+  const [addForm, setAddForm] = useState({
+    first_name: "",
+    last_name: "",
+    email: "",
+    username: "",
+    password: "",
+    role: "developer", // Add role field with default value
+  });
+  const [addFormErrors, setAddFormErrors] = useState<{
+    first_name?: string;
+    last_name?: string;
+    email?: string;
+    username?: string;
+    password?: string;
+    role?: string;
+  }>({});
+  const [addSuccess, setAddSuccess] = useState(false);
+  const [addSuccessEmail, setAddSuccessEmail] = useState("");
 
   useEffect(() => {
     fetchUsers();
@@ -102,11 +119,9 @@ export const UsersManagementTable = () => {
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      // This is a placeholder - you'll need to create these endpoints in your backend
       const response = await api.get("/admin/users");
       setUsers(response.data.users || []);
 
-      // Calculate stats from users data
       const total = response.data.users?.length || 0;
       const admins =
         response.data.users?.filter((u: User) => u.role === "admin").length ||
@@ -131,6 +146,94 @@ export const UsersManagementTable = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const validateAddForm = () => {
+    const errors: typeof addFormErrors = {};
+
+    if (!addForm.first_name) {
+      errors.first_name = "First name is required";
+    }
+
+    if (!addForm.last_name) {
+      errors.last_name = "Last name is required";
+    }
+
+    if (!addForm.email) {
+      errors.email = "Email is required";
+    } else if (!/\S+@\S+\.\S+/.test(addForm.email)) {
+      errors.email = "Please enter a valid email address";
+    }
+
+    if (!addForm.username) {
+      errors.username = "Username is required";
+    } else if (addForm.username.length < 3) {
+      errors.username = "Username must be at least 3 characters";
+    }
+
+    if (!addForm.password) {
+      errors.password = "Password is required";
+    } else {
+      const passwordRegex =
+        /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+      if (!passwordRegex.test(addForm.password)) {
+        errors.password =
+          "Password must be at least 8 characters and include uppercase, lowercase, number, and special character";
+      }
+    }
+
+    if (!addForm.role) {
+      errors.role = "Role is required";
+    }
+
+    setAddFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleAddUser = async () => {
+    if (!validateAddForm()) return;
+
+    try {
+      // Include role in the registration data
+      await api.post("/auth/register", {
+        first_name: addForm.first_name,
+        last_name: addForm.last_name,
+        email: addForm.email,
+        username: addForm.username,
+        password: addForm.password,
+        role: addForm.role,
+      });
+      setAddSuccessEmail(addForm.email);
+      setAddSuccess(true);
+
+      setTimeout(() => {
+        setAddDialogOpen(false);
+        setAddSuccess(false);
+        resetAddForm();
+        fetchUsers();
+      }, 3000);
+
+      toast.success(
+        `User ${addForm.username} created successfully with role ${addForm.role}! Verification email sent.`,
+      );
+    } catch (error: any) {
+      console.error("Failed to create user:", error);
+      toast.error(error.response?.data?.message || "Failed to create user");
+    }
+  };
+
+  const resetAddForm = () => {
+    setAddForm({
+      first_name: "",
+      last_name: "",
+      email: "",
+      username: "",
+      password: "",
+      role: "developer",
+    });
+    setAddFormErrors({});
+    setAddSuccess(false);
+    setAddSuccessEmail("");
   };
 
   const handleDeleteUser = async () => {
@@ -178,6 +281,11 @@ export const UsersManagementTable = () => {
   const openDeleteDialog = (user: User) => {
     setSelectedUser(user);
     setDeleteDialogOpen(true);
+  };
+
+  const openAddDialog = () => {
+    resetAddForm();
+    setAddDialogOpen(true);
   };
 
   const filteredUsers = users.filter((user) => {
@@ -314,7 +422,10 @@ export const UsersManagementTable = () => {
               <option value="developer">Developer</option>
             </select>
 
-            <button className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2">
+            <button
+              onClick={openAddDialog}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+            >
               <UserPlus className="h-4 w-4" />
               Add User
             </button>
@@ -384,7 +495,7 @@ export const UsersManagementTable = () => {
                     </span>
                   </td>
                   <td className="py-4 px-4">
-                    {user.email_verified ? (
+                    {user.is_email_verified ? (
                       <div className="flex items-center gap-2">
                         <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
                         <span className="text-sm text-green-700 dark:text-green-400">
@@ -476,7 +587,8 @@ export const UsersManagementTable = () => {
           <DialogHeader>
             <DialogTitle>Edit User</DialogTitle>
             <DialogDescription>
-              Make changes to the user account. Click save when you're done.
+              Make changes to the user account. Click save when you&apos;re
+              done.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -548,6 +660,202 @@ export const UsersManagementTable = () => {
             </Button>
             <Button onClick={handleEditUser}>Save Changes</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add User Dialog */}
+      <Dialog
+        open={addDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            resetAddForm();
+          }
+          setAddDialogOpen(open);
+        }}
+      >
+        <DialogContent className="sm:max-w-[500px]">
+          {addSuccess ? (
+            <div className="text-center space-y-4 py-8">
+              <div className="w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/20 flex items-center justify-center mx-auto">
+                <CheckCircle className="h-8 w-8 text-green-600 dark:text-green-400" />
+              </div>
+              <DialogHeader>
+                <DialogTitle>Check your email</DialogTitle>
+                <DialogDescription>
+                  Registration successful! A verification link has been sent to{" "}
+                  <span className="font-medium text-foreground">
+                    {addSuccessEmail}
+                  </span>
+                  . The user needs to verify their email before logging in.
+                </DialogDescription>
+              </DialogHeader>
+              <p className="text-xs text-muted-foreground">
+                Closing this dialog in a moment...
+              </p>
+            </div>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle>Add New User</DialogTitle>
+                <DialogDescription>
+                  Create a new user account. Fill in the details below. A
+                  verification email will be sent to the user.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="add-first_name">
+                      First Name <span className="text-red-500">*</span>
+                    </Label>
+                    <Input
+                      id="add-first_name"
+                      placeholder="John"
+                      value={addForm.first_name}
+                      onChange={(e) =>
+                        setAddForm({ ...addForm, first_name: e.target.value })
+                      }
+                      className={
+                        addFormErrors.first_name ? "border-red-500" : ""
+                      }
+                    />
+                    {addFormErrors.first_name && (
+                      <p className="text-xs text-red-500">
+                        {addFormErrors.first_name}
+                      </p>
+                    )}
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="add-last_name">
+                      Last Name <span className="text-red-500">*</span>
+                    </Label>
+                    <Input
+                      id="add-last_name"
+                      placeholder="Doe"
+                      value={addForm.last_name}
+                      onChange={(e) =>
+                        setAddForm({ ...addForm, last_name: e.target.value })
+                      }
+                      className={
+                        addFormErrors.last_name ? "border-red-500" : ""
+                      }
+                    />
+                    {addFormErrors.last_name && (
+                      <p className="text-xs text-red-500">
+                        {addFormErrors.last_name}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="add-email">
+                    Email <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="add-email"
+                    type="email"
+                    placeholder="user@example.com"
+                    value={addForm.email}
+                    onChange={(e) =>
+                      setAddForm({ ...addForm, email: e.target.value })
+                    }
+                    className={addFormErrors.email ? "border-red-500" : ""}
+                  />
+                  {addFormErrors.email && (
+                    <p className="text-xs text-red-500">
+                      {addFormErrors.email}
+                    </p>
+                  )}
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="add-username">
+                    Username <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="add-username"
+                    placeholder="johndoe"
+                    value={addForm.username}
+                    onChange={(e) =>
+                      setAddForm({ ...addForm, username: e.target.value })
+                    }
+                    className={addFormErrors.username ? "border-red-500" : ""}
+                  />
+                  {addFormErrors.username && (
+                    <p className="text-xs text-red-500">
+                      {addFormErrors.username}
+                    </p>
+                  )}
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="add-role">
+                    Role <span className="text-red-500">*</span>
+                  </Label>
+                  <Select
+                    value={addForm.role}
+                    onValueChange={(value) =>
+                      setAddForm({ ...addForm, role: value })
+                    }
+                  >
+                    <SelectTrigger
+                      className={addFormErrors.role ? "border-red-500" : ""}
+                    >
+                      <SelectValue placeholder="Select a role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="developer">Developer</SelectItem>
+                      <SelectItem value="tech_lead">Tech Lead</SelectItem>
+                      <SelectItem value="admin">Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {addFormErrors.role && (
+                    <p className="text-xs text-red-500">{addFormErrors.role}</p>
+                  )}
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="add-password">
+                    Password <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="add-password"
+                    type="password"
+                    placeholder="Create a password (min 8 chars, with uppercase, lowercase, number, special char)"
+                    value={addForm.password}
+                    onChange={(e) =>
+                      setAddForm({ ...addForm, password: e.target.value })
+                    }
+                    className={addFormErrors.password ? "border-red-500" : ""}
+                  />
+                  {addFormErrors.password && (
+                    <p className="text-xs text-red-500">
+                      {addFormErrors.password}
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-500">
+                    Password must be at least 8 characters and include
+                    uppercase, lowercase, number, and special character.
+                  </p>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setAddDialogOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleAddUser}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  Create User
+                </Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>

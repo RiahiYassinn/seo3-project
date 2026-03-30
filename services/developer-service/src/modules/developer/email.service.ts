@@ -93,4 +93,35 @@ export class EmailService {
 
     this.logger.log(`Password reset email sent to ${to}`);
   }
+
+  async sendCredentialsEmail(to: string, name: string, username: string, password: string): Promise<void> {
+    const from = process.env.EMAIL_FROM || process.env.SMTP_USER;
+
+    await this.transporter.sendMail({
+      from: `"SEO3 Platform" <${from}>`,
+      to,
+      subject: 'Your account credentials',
+      html: `
+      <!DOCTYPE html>
+      <html>
+        <body style="font-family: Arial, sans-serif; background: #f4f4f4; padding: 20px;">
+          <div style="max-width: 560px; margin: 0 auto; background: #fff; border-radius: 8px; padding: 32px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+            <h2 style="color: #1a1a1a; margin-top: 0;">Welcome to SEO3 Platform 🎉</h2>
+            <p style="color: #444;">Hi ${name},</p>
+            <p style="color: #444;">Your account has been created. Here are your login credentials:</p>
+            <div style="background: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 6px; padding: 16px 24px; margin: 24px 0;">
+              <p style="margin: 8px 0; color: #333;"><strong>Username:</strong> ${username}</p>
+              <p style="margin: 8px 0; color: #333;"><strong>Password:</strong> ${password}</p>
+            </div>
+            <p style="color: #e53e3e; font-size: 13px;">⚠️ Please change your password after your first login for security.</p>
+            <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;"/>
+            <p style="color: #aaa; font-size: 12px;">If you didn't register for this account, please contact support immediately.</p>
+          </div>
+        </body>
+      </html>
+    `,
+    });
+
+    this.logger.log(`Credentials email sent to ${to}`);
+  }
 }

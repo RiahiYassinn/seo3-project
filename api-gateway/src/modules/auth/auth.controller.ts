@@ -1,4 +1,3 @@
-// apps/api-gateway/src/auth/auth.controller.ts
 import {
   Controller,
   Post,
@@ -41,7 +40,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
-  ) {}
+  ) { }
 
   @Post('register')
   @ApiOperation({ summary: 'Register a new user' })
@@ -68,8 +67,8 @@ export class AuthController {
     @Ip() ip: string,
     @Headers('user-agent') userAgent: string
   ) {
-    return this.authService.login(req.user, { 
-      ip, 
+    return this.authService.login(req.user, {
+      ip,
       userAgent,
       deviceInfo: req.headers['x-device-info']
     });
@@ -104,7 +103,7 @@ export class AuthController {
     @Req() req
   ) {
     return this.authService.logout(
-      req.user?.id, 
+      req.user?.id,
       logoutDto.refresh_token,
       logoutDto.logout_all_devices || false
     );

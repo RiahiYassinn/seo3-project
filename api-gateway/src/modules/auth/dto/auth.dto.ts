@@ -1,15 +1,16 @@
 // apps/api-gateway/src/auth/dto/auth.dto.ts
-import { 
-  IsEmail, 
-  IsString, 
-  MinLength, 
-  MaxLength, 
+import {
+  IsEmail,
+  IsString,
+  MinLength,
+  MaxLength,
   Matches,
   IsOptional,
   IsBoolean,
-  IsNotEmpty
+  IsNotEmpty,
+  IsIn
 } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class RegisterDto {
   @ApiProperty({ example: 'john@example.com' })
@@ -46,6 +47,18 @@ export class RegisterDto {
     message: 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character'
   })
   password: string;
+
+  @ApiPropertyOptional({
+    example: 'developer',
+    description: 'User role (defaults to "developer" if not provided)',
+    enum: ['developer', 'tech_lead', 'admin']
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['developer', 'tech_lead', 'admin'], {
+    message: 'Role must be one of: developer, tech_lead, admin'
+  })
+  role?: string;
 }
 
 export class LoginDto {
@@ -108,4 +121,17 @@ export class ResetPasswordDto {
   @IsString()
   @MinLength(8)
   new_password: string;
+}
+
+// Optional: Add a DTO for updating user role (for admin use)
+export class UpdateUserRoleDto {
+  @ApiProperty({
+    enum: ['developer', 'tech_lead', 'admin'],
+    description: 'New role for the user'
+  })
+  @IsString()
+  @IsIn(['developer', 'tech_lead', 'admin'], {
+    message: 'Role must be one of: developer, tech_lead, admin'
+  })
+  role: string;
 }

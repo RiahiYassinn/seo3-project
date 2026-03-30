@@ -19,7 +19,7 @@ export class DeveloperService {
     private readonly verificationTokenRepository: Repository<VerificationToken>,
     @InjectRepository(PasswordResetToken)
     private readonly passwordResetTokenRepository: Repository<PasswordResetToken>,
-  ) {}
+  ) { }
 
   /** Serialize a Developer entity to the snake_case DTO expected by the api-gateway. */
   toUserDto(dev: Developer) {
@@ -87,7 +87,12 @@ export class DeveloperService {
     lastName: string;
     /** already-hashed password */
     password: string;
+    role?: string; // Add optional role parameter
   }): Promise<Developer> {
+    // Validate role
+    const validRoles = ['developer', 'tech_lead', 'admin'];
+    const userRole = data.role && validRoles.includes(data.role) ? data.role : 'developer';
+
     const developer = this.developerRepository.create({
       email: data.email,
       username: data.username,
@@ -96,7 +101,7 @@ export class DeveloperService {
       passwordHash: data.password,
       isEmailVerified: false,
       isActive: true,
-      role: 'developer',
+      role: userRole, // Set the role
     });
     return this.developerRepository.save(developer);
   }
