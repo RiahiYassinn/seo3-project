@@ -19,7 +19,7 @@ export class DeveloperController {
   constructor(
     private readonly developerService: DeveloperService,
     private readonly emailService: EmailService,
-  ) {}
+  ) { }
 
   // ─── HTTP endpoints ────────────────────────────────────────────────────────
 
@@ -56,17 +56,19 @@ export class DeveloperController {
     data: {
       email: string;
       username?: string;
-      first_name: string;
-      last_name: string;
+      firstName: string;
+      lastName: string;
       password: string;
+      role?: string;
     },
   ) {
     const dev = await this.developerService.createUser({
       email: data.email,
       username: data.username,
-      firstName: data.first_name,
-      lastName: data.last_name,
+      firstName: data.firstName,
+      lastName: data.lastName,
       password: data.password,
+      role: data.role,
     });
     return this.developerService.toUserDto(dev);
   }
@@ -125,6 +127,19 @@ export class DeveloperController {
       return { sent: true };
     } catch (error) {
       this.logger.error(`Failed to send password reset email to ${data.email}: ${error.message}`);
+      return { sent: false, error: error.message };
+    }
+  }
+
+  @MessagePattern('send_credentials_email')
+  async handleSendCredentialsEmail(
+    @Payload() data: { email: string; name: string; username: string; password: string },
+  ) {
+    try {
+      await this.emailService.sendCredentialsEmail(data.email, data.name, data.username, data.password);
+      return { sent: true };
+    } catch (error) {
+      this.logger.error(`Failed to send credentials email to ${data.email}: ${error.message}`);
       return { sent: false, error: error.message };
     }
   }

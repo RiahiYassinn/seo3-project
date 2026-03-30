@@ -1,6 +1,6 @@
-import { 
-  Injectable, 
-  UnauthorizedException, 
+import {
+  Injectable,
+  UnauthorizedException,
   ConflictException,
   BadRequestException,
   Inject,
@@ -27,7 +27,7 @@ export class AuthService {
     private jwtService: JwtService,
     private configService: ConfigService,
     @Inject('DEVELOPER_SERVICE') private developerService: ClientProxy
-  ) {}
+  ) { }
 
   async register(registerDto: any, metadata: any) {
     try {
@@ -43,17 +43,28 @@ export class AuthService {
         throw new ConflictException('Email or username already exists');
       }
 
+      // Validate role (optional: add role validation)
+      const validRoles = ['developer', 'tech_lead', 'admin'];
+      const userRole = registerDto.role && validRoles.includes(registerDto.role)
+        ? registerDto.role
+        : 'developer';
+
+      const plainPassword = registerDto.password;
       // Hash password
       const hashedPassword = await bcrypt.hash(
-        registerDto.password, 
+        registerDto.password,
         parseInt(this.configService.get('BCRYPT_ROUNDS', '10'))
       );
 
-      // Create user in developer service
+      // Create user in developer service with role
       const user = await firstValueFrom(
         this.developerService.send('create_user', {
-          ...registerDto,
-          password: hashedPassword
+          email: registerDto.email,
+          username: registerDto.username,
+          firstName: registerDto.first_name,
+          lastName: registerDto.last_name,
+          password: hashedPassword,
+          role: userRole, // Add role here
         })
       );
 
@@ -75,6 +86,14 @@ export class AuthService {
         })
       );
 
+      await firstValueFrom(
+        this.developerService.send('send_credentials_email', {
+          email: user.email,
+          name: `${user.first_name} ${user.last_name}`,
+          username: user.username,
+          password: plainPassword,  // plain text, captured before hashing
+        })
+      );
       // Log registration
       await this.logActivity(user.id, 'registration', metadata);
 
@@ -85,7 +104,8 @@ export class AuthService {
           email: user.email,
           username: user.username,
           first_name: user.first_name,
-          last_name: user.last_name
+          last_name: user.last_name,
+          role: user.role
         }
       };
     } catch (error) {
@@ -107,7 +127,7 @@ export class AuthService {
       }
 
       const isPasswordValid = await bcrypt.compare(password, user.password_hash);
-      
+
       if (!isPasswordValid) {
         return null;
       }

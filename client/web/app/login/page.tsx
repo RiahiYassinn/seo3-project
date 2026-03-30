@@ -181,10 +181,6 @@ export default function LoginPage() {
     if (urlError) setError(decodeURIComponent(urlError));
   }, [searchParams]);
 
-  const handleGoogleLogin = () => {
-    window.location.href = authAPI.getGoogleAuthUrl();
-  };
-
   const handleInputChange = (
     event: ChangeEvent<HTMLInputElement>,
     name: "username_or_email" | "password",
@@ -233,9 +229,9 @@ export default function LoginPage() {
     subHeader: "Sign in to your account to continue",
     fields: [
       {
-        label: "Email or Username", // Updated label
+        label: "Email or Username",
         required: true,
-        type: "text" as const, // Changed from 'email' to 'text'
+        type: "text" as const,
         placeholder: "Enter your email or username",
         onChange: (event: ChangeEvent<HTMLInputElement>) =>
           handleInputChange(event, "username_or_email"),
@@ -250,7 +246,7 @@ export default function LoginPage() {
       },
     ],
     submitButton: loading ? "Signing in..." : "Sign in",
-    textVariantButton: "Don't have an account? Sign up",
+    // textVariantButton: "Don't have an account? Sign up",
   };
 
   return (
@@ -267,7 +263,6 @@ export default function LoginPage() {
           formFields={formFields}
           goTo={goToRegister}
           handleSubmit={handleSubmit}
-          onGoogleLogin={handleGoogleLogin}
         />
         <div className="mt-2 text-center">
           <button

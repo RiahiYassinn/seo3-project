@@ -38,9 +38,6 @@ export class Developer {
   @Column({ name: 'is_active', default: true })
   isActive: boolean;
 
-  @Column({ name: 'google_id', nullable: true, unique: true })
-  googleId: string;
-
   @Column({ name: 'last_login_at', type: 'timestamp', nullable: true })
   lastLoginAt: Date;
 
@@ -56,12 +53,6 @@ export class Developer {
 
   @Column({ nullable: true })
   website: string;
-
-  @Column('simple-array', { nullable: true })
-  githubRepos: string[];
-
-  @Column('simple-array', { nullable: true })
-  gitlabRepos: string[];
 
   @Column({ default: false })
   isMentor: boolean;
