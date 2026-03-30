@@ -25,18 +25,22 @@ function parseCookies(cookieHeader?: string) {
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.setGlobalPrefix('api/v1');
 
-  // Swagger documentation - must be set up BEFORE middleware
   const config = new DocumentBuilder()
     .setTitle('SEO3 Developer Platform API')
     .setDescription('API Gateway for Developer Analytics Platform')
     .setVersion('1.0')
     .addBearerAuth()
+    .addTag('Authentication', 'Authentication and session management')
+    .addTag('Admin', 'Admin management')
     .addTag('developers', 'Developer management')
+    .addTag('github', 'GitHub integration')
     .addTag('skills', 'Skill management')
     .addTag('analysis', 'Code analysis')
     .addTag('recommendations', 'Learning recommendations')
     .addTag('notifications', 'Notification management')
+    .addTag('health', 'Health checks')
     .build();
 
   const document = SwaggerModule.createDocument(app, config, {
@@ -49,9 +53,6 @@ async function bootstrap() {
       'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.11.0/swagger-ui-standalone-preset.min.js',
     ],
   });
-
- 
-  app.setGlobalPrefix('api/v1');
 
   // Security - configure helmet to allow Swagger UI
   app.use(

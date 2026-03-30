@@ -27,8 +27,11 @@ import {
   Loader,
   CircleCheck as CheckCircle,
   CircleAlert as AlertCircle,
-  ArrowLeft,
   Search,
+  RefreshCw,
+  Clock3,
+  FolderGit2,
+  DatabaseZap,
 } from "lucide-react";
 
 interface GitHubIntegration {
@@ -238,6 +241,41 @@ export default function GitHubPage() {
   const filteredRepositories = repositories.filter((repo) =>
     repo.repo_name.toLowerCase().includes(searchQuery.toLowerCase()),
   );
+  const analyzedRepositories = repositories.filter(
+    (repo) => repo.analysis_status === "completed" || repo.is_analyzed,
+  ).length;
+  const pendingRepositories = repositories.filter(
+    (repo) =>
+      repo.analysis_status === "pending" ||
+      repo.analysis_status === "in_progress",
+  ).length;
+  const totalStars = repositories.reduce((sum, repo) => sum + repo.stars, 0);
+
+  const formatDateTime = (value: string | null) => {
+    if (!value) return "Not available";
+    return new Date(value).toLocaleString();
+  };
+
+  const getAnalysisTone = (status: string | null, isAnalyzed: boolean) => {
+    if (status === "completed" || isAnalyzed) {
+      return "bg-green-500/10 text-green-700 border-green-500/20";
+    }
+    if (status === "failed") {
+      return "bg-red-500/10 text-red-700 border-red-500/20";
+    }
+    if (status === "pending" || status === "in_progress") {
+      return "bg-amber-500/10 text-amber-700 border-amber-500/20";
+    }
+    return "bg-muted text-muted-foreground border-border";
+  };
+
+  const getAnalysisLabel = (status: string | null, isAnalyzed: boolean) => {
+    if (status === "completed" || isAnalyzed) return "Analyzed";
+    if (status === "failed") return "Failed";
+    if (status === "pending") return "Pending";
+    if (status === "in_progress") return "In Progress";
+    return "Not analyzed";
+  };
 
   if (loading) {
     return (
@@ -259,7 +297,7 @@ export default function GitHubPage() {
     <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-secondary/5">
       <Navbar />
 
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
           {/* <Button
             variant="outline"
@@ -435,7 +473,7 @@ export default function GitHubPage() {
 
                 <Card>
                   <CardHeader>
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
                       <div>
                         <CardTitle className="flex items-center gap-2">
                           <Code className="w-5 h-5" />
@@ -450,23 +488,34 @@ export default function GitHubPage() {
                             : "Never"}
                         </CardDescription>
                       </div>
-                      <Button
-                        onClick={handleSyncRepositories}
-                        disabled={syncing}
-                        className="gap-2"
-                      >
-                        {syncing ? (
-                          <>
-                            <Loader className="w-4 h-4 animate-spin" />
-                            Syncing...
-                          </>
-                        ) : (
-                          <>
-                            <ExternalLink className="w-4 h-4" />
-                            Sync Repos
-                          </>
-                        )}
-                      </Button>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                        <div className="relative min-w-[240px] flex-1">
+                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <Input
+                            placeholder="Search repositories by name..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="pl-10"
+                          />
+                        </div>
+                        <Button
+                          onClick={handleSyncRepositories}
+                          disabled={syncing}
+                          className="gap-2"
+                        >
+                          {syncing ? (
+                            <>
+                              <Loader className="w-4 h-4 animate-spin" />
+                              Syncing...
+                            </>
+                          ) : (
+                            <>
+                              <RefreshCw className="w-4 h-4" />
+                              Sync Repos
+                            </>
+                          )}
+                        </Button>
+                      </div>
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -487,23 +536,55 @@ export default function GitHubPage() {
                       </div>
                     ) : (
                       <>
-                        {/* Search Bar */}
-                        <div className="mb-4">
-                          <div className="relative">
-                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                            <Input
-                              placeholder="Search repositories by name..."
-                              value={searchQuery}
-                              onChange={(e) => setSearchQuery(e.target.value)}
-                              className="pl-10"
-                            />
-                          </div>
-                          {searchQuery && (
-                            <p className="text-xs text-muted-foreground mt-2">
-                              Found {filteredRepositories.length} of{" "}
-                              {repositories.length} repositories
+                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 mb-6">
+                          <div className="rounded-2xl border bg-background p-4">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                Repositories
+                              </span>
+                              <FolderGit2 className="h-4 w-4 text-primary" />
+                            </div>
+                            <p className="text-3xl font-semibold">{repositories.length}</p>
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Total synced from GitHub
                             </p>
-                          )}
+                          </div>
+                          <div className="rounded-2xl border bg-background p-4">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                Analyzed
+                              </span>
+                              <DatabaseZap className="h-4 w-4 text-green-600" />
+                            </div>
+                            <p className="text-3xl font-semibold">{analyzedRepositories}</p>
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Repositories with completed analysis
+                            </p>
+                          </div>
+                          <div className="rounded-2xl border bg-background p-4">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                In Queue
+                              </span>
+                              <Clock3 className="h-4 w-4 text-amber-600" />
+                            </div>
+                            <p className="text-3xl font-semibold">{pendingRepositories}</p>
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Pending or running analyses
+                            </p>
+                          </div>
+                          <div className="rounded-2xl border bg-background p-4">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                Total Stars
+                              </span>
+                              <Star className="h-4 w-4 text-yellow-500" />
+                            </div>
+                            <p className="text-3xl font-semibold">{totalStars}</p>
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Combined public traction across repos
+                            </p>
+                          </div>
                         </div>
 
                         {filteredRepositories.length === 0 ? (
@@ -521,128 +602,157 @@ export default function GitHubPage() {
                             </Button>
                           </div>
                         ) : (
-                          <div className="space-y-3">
-                            {filteredRepositories.map((repo) => (
-                              <div
-                                key={repo.id}
-                                className="p-4 rounded-lg border border-border hover:bg-muted/50 transition-colors"
-                              >
-                                <div className="flex items-start justify-between mb-2">
-                                  <div className="flex-1">
-                                    <div className="flex items-center gap-2 mb-1">
-                                      <a
-                                        href={repo.repo_url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="font-semibold text-primary hover:underline"
-                                      >
-                                        {repo.repo_name}
-                                      </a>
-                                      {repo.analysis_status && (
-                                        <Badge
-                                          variant={
-                                            repo.analysis_status === "completed"
-                                              ? "default"
-                                              : repo.analysis_status ===
-                                                  "failed"
-                                                ? "destructive"
-                                                : "secondary"
-                                          }
-                                          className="text-xs"
-                                        >
-                                          {repo.analysis_status === "pending" &&
-                                            "Pending"}
-                                          {repo.analysis_status ===
-                                            "in_progress" && "Analyzing"}
-                                          {repo.analysis_status ===
-                                            "completed" && "Analyzed"}
-                                          {repo.analysis_status === "failed" &&
-                                            "Failed"}
-                                        </Badge>
-                                      )}
-                                    </div>
-                                    {repo.repo_description && (
-                                      <p className="text-sm text-muted-foreground mt-1">
-                                        {repo.repo_description}
-                                      </p>
-                                    )}
-                                  </div>
-                                </div>
-
-                                <div className="flex items-center gap-4 flex-wrap mt-3">
-                                  {repo.language && (
-                                    <Badge
-                                      variant="outline"
-                                      className="text-xs"
-                                    >
-                                      {repo.language}
-                                    </Badge>
-                                  )}
-                                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                                    <Star className="w-3 h-3" />
-                                    {repo.stars}
-                                  </div>
-                                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                                    <GitFork className="w-3 h-3" />
-                                    {repo.forks}
-                                  </div>
-
-                                  <div className="ml-auto">
-                                    <Button
-                                      size="sm"
-                                      variant={
-                                        repo.is_analyzed ? "outline" : "default"
-                                      }
-                                      onClick={() =>
-                                        handleAnalyzeRepository(
-                                          repo.id,
-                                          repo.repo_name,
-                                        )
-                                      }
-                                      disabled={
-                                        analyzing === repo.id ||
-                                        repo.analysis_status === "pending" ||
-                                        repo.analysis_status === "in_progress"
-                                      }
-                                      className="gap-2"
-                                    >
-                                      {analyzing === repo.id ? (
-                                        <>
-                                          <Loader className="w-3 h-3 animate-spin" />
-                                          Starting...
-                                        </>
-                                      ) : repo.is_analyzed ? (
-                                        <>
-                                          <CheckCircle className="w-3 h-3" />
-                                          Re-analyze
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Code className="w-3 h-3" />
-                                          Analyze with NLP
-                                        </>
-                                      )}
-                                    </Button>
-                                  </div>
-                                </div>
-
-                                {repo.last_analyzed_at && (
-                                  <div className="mt-2 pt-2 border-t border-border">
-                                    <p className="text-xs text-muted-foreground">
-                                      Last analyzed:{" "}
-                                      {new Date(
-                                        repo.last_analyzed_at,
-                                      ).toLocaleDateString()}{" "}
-                                      at{" "}
-                                      {new Date(
-                                        repo.last_analyzed_at,
-                                      ).toLocaleTimeString()}
-                                    </p>
-                                  </div>
-                                )}
+                          <>
+                            <div className="mb-4 flex items-center justify-between rounded-xl border bg-muted/30 px-4 py-3">
+                              <div>
+                                <p className="text-sm font-medium">
+                                  {filteredRepositories.length} repositories visible
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  Scan analysis status, sync freshness, and repo health at a glance
+                                </p>
                               </div>
-                            ))}
-                          </div>
+                              {searchQuery && (
+                                <Badge variant="outline">Filter: {searchQuery}</Badge>
+                              )}
+                            </div>
+                            <div className="grid gap-5 md:grid-cols-2">
+                              {filteredRepositories.map((repo) => (
+                                <Card
+                                  key={repo.id}
+                                  className="h-full border-border/60 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:border-primary/30 hover:shadow-lg"
+                                >
+                                  <CardContent className="p-5">
+                                    <div className="flex items-start justify-between gap-4 mb-4">
+                                      <div className="min-w-0 flex-1">
+                                        <div className="flex flex-wrap items-center gap-2 mb-2">
+                                          <Badge
+                                            variant="outline"
+                                            className={getAnalysisTone(
+                                              repo.analysis_status,
+                                              repo.is_analyzed,
+                                            )}
+                                          >
+                                            {getAnalysisLabel(
+                                              repo.analysis_status,
+                                              repo.is_analyzed,
+                                            )}
+                                          </Badge>
+                                          {repo.language && (
+                                            <Badge variant="secondary">
+                                              {repo.language}
+                                            </Badge>
+                                          )}
+                                        </div>
+                                        <a
+                                          href={repo.repo_url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="inline-flex items-center gap-2 text-lg font-semibold text-primary hover:underline"
+                                        >
+                                          {repo.repo_name}
+                                          <ExternalLink className="h-4 w-4 opacity-70" />
+                                        </a>
+                                        <p className="mt-2 min-h-[3rem] text-sm leading-6 text-muted-foreground">
+                                          {repo.repo_description ||
+                                            "No description provided for this repository yet."}
+                                        </p>
+                                      </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-3 mb-4">
+                                      <div className="rounded-xl border bg-muted/20 p-3">
+                                        <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground mb-1">
+                                          <Star className="w-3 h-3" />
+                                          Stars
+                                        </div>
+                                        <p className="text-lg font-semibold">{repo.stars}</p>
+                                      </div>
+                                      <div className="rounded-xl border bg-muted/20 p-3">
+                                        <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground mb-1">
+                                          <GitFork className="w-3 h-3" />
+                                          Forks
+                                        </div>
+                                        <p className="text-lg font-semibold">{repo.forks}</p>
+                                      </div>
+                                    </div>
+
+                                    <div className="grid gap-3 text-sm mb-5">
+                                      <div className="flex items-start justify-between gap-3 rounded-xl border border-border/70 px-3 py-2">
+                                        <span className="text-muted-foreground">Last synced</span>
+                                        <span className="text-right font-medium">
+                                          {formatDateTime(repo.last_synced)}
+                                        </span>
+                                      </div>
+                                      <div className="flex items-start justify-between gap-3 rounded-xl border border-border/70 px-3 py-2">
+                                        <span className="text-muted-foreground">Last analyzed</span>
+                                        <span className="text-right font-medium">
+                                          {repo.last_analyzed_at
+                                            ? formatDateTime(repo.last_analyzed_at)
+                                            : "Not analyzed yet"}
+                                        </span>
+                                      </div>
+                                      <div className="flex items-start justify-between gap-3 rounded-xl border border-border/70 px-3 py-2">
+                                        <span className="text-muted-foreground">Analysis readiness</span>
+                                        <span className="text-right font-medium">
+                                          {repo.analysis_status === "pending" ||
+                                          repo.analysis_status === "in_progress"
+                                            ? "Currently processing"
+                                            : repo.is_analyzed
+                                              ? "Ready for re-analysis"
+                                              : "Ready to analyze"}
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-between gap-3">
+                                      <div className="text-xs text-muted-foreground">
+                                        Repo ID:{" "}
+                                        <span className="font-mono">
+                                          {repo.id.slice(0, 8)}
+                                        </span>
+                                      </div>
+                                      <Button
+                                        size="sm"
+                                        variant={
+                                          repo.is_analyzed ? "outline" : "default"
+                                        }
+                                        onClick={() =>
+                                          handleAnalyzeRepository(
+                                            repo.id,
+                                            repo.repo_name,
+                                          )
+                                        }
+                                        disabled={
+                                          analyzing === repo.id ||
+                                          repo.analysis_status === "pending" ||
+                                          repo.analysis_status === "in_progress"
+                                        }
+                                        className="gap-2"
+                                      >
+                                        {analyzing === repo.id ? (
+                                          <>
+                                            <Loader className="w-3 h-3 animate-spin" />
+                                            Starting...
+                                          </>
+                                        ) : repo.is_analyzed ? (
+                                          <>
+                                            <CheckCircle className="w-3 h-3" />
+                                            Re-analyze
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Code className="w-3 h-3" />
+                                            Analyze with NLP
+                                          </>
+                                        )}
+                                      </Button>
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                              ))}
+                            </div>
+                          </>
                         )}
                       </>
                     )}
@@ -717,18 +827,37 @@ export default function GitHubPage() {
 
                 {integration && (
                   <>
-                    <div className="pt-2 border-t border-border">
-                      <p className="text-xs font-medium mb-1">Repositories</p>
+                    <div className="rounded-xl border p-3">
+                      <p className="text-xs font-medium mb-1 text-muted-foreground">
+                        Connected Account
+                      </p>
+                      <p className="text-base font-semibold">
+                        @{integration.github_username}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border p-3">
+                      <p className="text-xs font-medium mb-1 text-muted-foreground">
+                        Repositories
+                      </p>
                       <p className="text-lg font-bold">{repositories.length}</p>
                     </div>
-                    <div className="pt-2 border-t border-border">
-                      <p className="text-xs font-medium mb-1">
+                    <div className="rounded-xl border p-3">
+                      <p className="text-xs font-medium mb-1 text-muted-foreground">
                         Connected Since
                       </p>
                       <p className="text-sm">
                         {new Date(
                           integration.connected_at,
                         ).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border p-3">
+                      <p className="text-xs font-medium mb-1 text-muted-foreground">
+                        Analysis Progress
+                      </p>
+                      <p className="text-sm">
+                        {analyzedRepositories} analyzed, {pendingRepositories} in
+                        queue
                       </p>
                     </div>
                   </>
