@@ -1,12 +1,16 @@
-import { Injectable, NotFoundException, BadRequestException, Inject } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, Inject } from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
 import { firstValueFrom } from 'rxjs';
 import { UpdateUserDto, CreateUserDto } from './dto/user.dto';
+import { ConfigService } from '@nestjs/config';
+import * as bcrypt from 'bcryptjs';
+import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class AdminService {
   constructor(
     @Inject('DEVELOPER_SERVICE') private developerService: ClientProxy,
+    private readonly configService: ConfigService,
   ) {}
 
   async getAllUsers() {
@@ -42,11 +46,65 @@ export class AdminService {
 
   async createUser(createUserDto: CreateUserDto) {
     try {
-      const newUser = await firstValueFrom(
-        this.developerService.send('admin_create_user', createUserDto)
+      const existingUser = await firstValueFrom(
+        this.developerService.send('check_user_exists', {
+          email: createUserDto.email,
+          username: createUserDto.username,
+        })
       );
+
+      if (existingUser.exists) {
+        throw new ConflictException('Email or username already exists');
+      }
+
+      const plainPassword = createUserDto.password;
+      const hashedPassword = await bcrypt.hash(
+        createUserDto.password,
+        parseInt(this.configService.get('BCRYPT_ROUNDS', '10'))
+      );
+
+      const newUser = await firstValueFrom(
+        this.developerService.send('create_user', {
+          email: createUserDto.email,
+          username: createUserDto.username,
+          firstName: createUserDto.first_name,
+          lastName: createUserDto.last_name,
+          password: hashedPassword,
+          role: createUserDto.role,
+        })
+      );
+
+      const verificationToken = uuidv4();
+
+      await firstValueFrom(
+        this.developerService.send('create_verification_token', {
+          userId: newUser.id,
+          token: verificationToken,
+        })
+      );
+
+      await firstValueFrom(
+        this.developerService.send('send_verification_email', {
+          email: newUser.email,
+          name: `${newUser.first_name} ${newUser.last_name}`,
+          token: verificationToken,
+        })
+      );
+
+      await firstValueFrom(
+        this.developerService.send('send_credentials_email', {
+          email: newUser.email,
+          name: `${newUser.first_name} ${newUser.last_name}`,
+          username: newUser.username,
+          password: plainPassword,
+        })
+      );
+
       return newUser;
     } catch (error) {
+      if (error instanceof ConflictException) {
+        throw error;
+      }
       throw new BadRequestException(error.message || 'Failed to create user');
     }
   }

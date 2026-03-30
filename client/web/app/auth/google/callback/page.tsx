@@ -9,29 +9,34 @@ function GoogleCallbackHandler() {
   const setAuth = useAuthStore((state) => state.setAuth);
 
   useEffect(() => {
-    const error = searchParams.get("error");
-    if (error) {
-      router.replace(`/login?error=${encodeURIComponent(error)}`);
-      return;
-    }
+    const completeGoogleLogin = async () => {
+      const error = searchParams.get("error");
+      if (error) {
+        router.replace(`/login?error=${encodeURIComponent(error)}`);
+        return;
+      }
 
-    const accessToken = searchParams.get("access_token");
-    const refreshToken = searchParams.get("refresh_token");
-    const userParam = searchParams.get("user");
+      try {
+        const response = await fetch(
+          `${process.env.NEXT_PUBLIC_API_GATEWAY || "http://localhost:3006"}/api/v1/auth/me`,
+          {
+            credentials: "include",
+          }
+        );
 
-    if (!accessToken || !refreshToken || !userParam) {
-      router.replace("/login?error=Google+authentication+failed");
-      return;
-    }
+        if (!response.ok) {
+          throw new Error("Google authentication failed");
+        }
 
-    try {
-      const user = JSON.parse(userParam);
-      setAuth(user, accessToken);
-      localStorage.setItem("refresh_token", refreshToken);
-      router.replace("/dashboard");
-    } catch {
-      router.replace("/login?error=Google+authentication+failed");
-    }
+        const currentUser = await response.json();
+        setAuth(currentUser);
+        router.replace("/dashboard");
+      } catch {
+        router.replace("/login?error=Google+authentication+failed");
+      }
+    };
+
+    completeGoogleLogin();
   }, [searchParams, setAuth, router]);
 
   return (

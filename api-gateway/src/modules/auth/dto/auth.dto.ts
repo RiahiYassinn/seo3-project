@@ -76,8 +76,9 @@ export class LoginDto {
 export class RefreshTokenDto {
   @ApiProperty()
   @IsString()
+  @IsOptional()
   @IsNotEmpty()
-  refresh_token: string;
+  refresh_token?: string;
 }
 
 export class LogoutDto {
@@ -117,6 +118,13 @@ export class ResetPasswordDto {
   @IsNotEmpty()
   token: string;
 
+  @ApiProperty()
+  @IsString()
+  @MinLength(8)
+  new_password: string;
+}
+
+export class ChangePasswordDto {
   @ApiProperty()
   @IsString()
   @MinLength(8)

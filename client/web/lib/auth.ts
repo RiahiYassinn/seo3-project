@@ -14,8 +14,6 @@ export interface RegisterData {
 }
 
 export interface AuthResponse {
-  access_token: string
-  refresh_token: string
   token_type: string
   expires_in: number
   user: {
@@ -25,7 +23,18 @@ export interface AuthResponse {
     first_name: string
     last_name: string
     role: string
+    is_first_login?: boolean
   }
+}
+
+export interface UserProfile {
+  id: string
+  email: string
+  username: string
+  first_name: string
+  last_name: string
+  role: string
+  is_first_login?: boolean
 }
 
 export interface MessageResponse {
@@ -43,10 +52,13 @@ class AuthAPI {
     return response.data
   }
 
-  async refreshToken(refreshToken: string): Promise<{ access_token: string; refresh_token: string }> {
-    const response = await api.post('/auth/refresh', {
-      refresh_token: refreshToken
-    })
+  async refreshToken(): Promise<{ token_type: string; expires_in: number; user: UserProfile }> {
+    const response = await api.post('/auth/refresh', {})
+    return response.data
+  }
+
+  async getCurrentUser(): Promise<UserProfile> {
+    const response = await api.get('/auth/me')
     return response.data
   }
 
@@ -76,6 +88,13 @@ class AuthAPI {
   async resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
     const response = await api.post('/auth/reset-password', {
       token,
+      new_password: newPassword
+    })
+    return response.data
+  }
+
+  async changePassword(newPassword: string): Promise<{ message: string }> {
+    const response = await api.post('/auth/change-password', {
       new_password: newPassword
     })
     return response.data

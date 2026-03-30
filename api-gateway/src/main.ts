@@ -6,6 +6,23 @@ import * as compression from 'compression';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 
+function parseCookies(cookieHeader?: string) {
+  if (!cookieHeader) {
+    return {};
+  }
+
+  return cookieHeader.split(';').reduce((cookies, pair) => {
+    const [rawName, ...rawValue] = pair.trim().split('=');
+
+    if (!rawName) {
+      return cookies;
+    }
+
+    cookies[rawName] = decodeURIComponent(rawValue.join('='));
+    return cookies;
+  }, {} as Record<string, string>);
+}
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
@@ -52,6 +69,11 @@ async function bootstrap() {
   app.enableCors({
     origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
     credentials: true,
+  });
+
+  app.use((req, _res, next) => {
+    req.cookies = parseCookies(req.headers.cookie);
+    next();
   });
 
   // Compression

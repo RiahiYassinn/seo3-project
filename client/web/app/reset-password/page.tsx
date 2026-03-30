@@ -1,14 +1,22 @@
 "use client";
-import { useState, FormEvent, Suspense } from "react";
+import { useState, FormEvent, Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { authAPI } from "@/lib/auth";
-import { BoxReveal, Input, Label, BottomGradient } from "@/components/ui/modern-animated-sign-in";
+import {
+  BoxReveal,
+  Input,
+  Label,
+  BottomGradient,
+} from "@/components/ui/modern-animated-sign-in";
 import { Eye, EyeOff } from "lucide-react";
+import { useAuthStore } from "@/lib/store";
 
 function ResetPasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get("token") ?? "";
+  const isFirstLogin = searchParams.get("first_login") === "1";
+  const { user, hasHydrated, updateUser, logout } = useAuthStore();
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -17,11 +25,21 @@ function ResetPasswordForm() {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    if (!hasHydrated) {
+      return;
+    }
+
+    if (isFirstLogin && !user) {
+      router.replace("/login");
+    }
+  }, [hasHydrated, isFirstLogin, router, user]);
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
 
-    if (!token) {
+    if (!token && !isFirstLogin) {
       setError("Invalid or missing reset token. Please request a new reset link.");
       return;
     }
@@ -36,17 +54,29 @@ function ResetPasswordForm() {
 
     setLoading(true);
     try {
-      await authAPI.resetPassword(token, password);
+      if (isFirstLogin) {
+        await authAPI.changePassword(password);
+        updateUser({ is_first_login: false });
+        await logout();
+      } else {
+        await authAPI.resetPassword(token, password);
+      }
+
       setSuccess(true);
       setTimeout(() => router.push("/login"), 3000);
     } catch (err: any) {
-      setError(err.response?.data?.message || "Failed to reset password. The link may have expired.");
+      setError(
+        err.response?.data?.message ||
+          (isFirstLogin
+            ? "Failed to update password."
+            : "Failed to reset password. The link may have expired."),
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  if (!token) {
+  if (!isFirstLogin && !token) {
     return (
       <div className="text-center space-y-4">
         <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-900/20 flex items-center justify-center mx-auto">
@@ -78,11 +108,13 @@ function ResetPasswordForm() {
         </div>
         <BoxReveal boxColor="hsl(var(--skeleton))" duration={0.3}>
           <h2 className="text-2xl font-bold text-neutral-800 dark:text-neutral-200">
-            Password reset!
+            {isFirstLogin ? "Password updated!" : "Password reset!"}
           </h2>
         </BoxReveal>
         <p className="text-muted-foreground text-sm">
-          Your password has been reset successfully. Redirecting to login…
+          {isFirstLogin
+            ? "Your password has been updated successfully. Redirecting to login..."
+            : "Your password has been reset successfully. Redirecting to login..."}
         </p>
         <button
           onClick={() => router.push("/login")}
@@ -98,12 +130,14 @@ function ResetPasswordForm() {
     <div className="flex flex-col gap-4">
       <BoxReveal boxColor="hsl(var(--skeleton))" duration={0.3}>
         <h2 className="font-bold text-3xl text-neutral-800 dark:text-neutral-200">
-          Reset password
+          {isFirstLogin ? "Set your password" : "Reset password"}
         </h2>
       </BoxReveal>
       <BoxReveal boxColor="hsl(var(--skeleton))" duration={0.3} className="pb-2">
         <p className="text-neutral-600 text-sm dark:text-neutral-300">
-          Enter your new password below.
+          {isFirstLogin
+            ? "This is your first sign-in. Please set a new password to continue."
+            : "Enter your new password below."}
         </p>
       </BoxReveal>
 
@@ -166,7 +200,14 @@ function ResetPasswordForm() {
             disabled={loading}
             className="bg-gradient-to-br relative group/btn from-zinc-200 dark:from-zinc-900 dark:to-zinc-900 to-zinc-200 block dark:bg-zinc-800 w-full text-black dark:text-white rounded-md h-10 font-medium shadow-[0px_1px_0px_0px_#ffffff40_inset,0px_-1px_0px_0px_#ffffff40_inset] dark:shadow-[0px_1px_0px_0px_var(--zinc-800)_inset,0px_-1px_0px_0px_var(--zinc-800)_inset] outline-hidden hover:cursor-pointer disabled:opacity-60"
           >
-            {loading ? "Resetting..." : "Reset password"} &rarr;
+            {loading
+              ? isFirstLogin
+                ? "Updating..."
+                : "Resetting..."
+              : isFirstLogin
+                ? "Update password"
+                : "Reset password"}{" "}
+            &rarr;
             <BottomGradient />
           </button>
         </BoxReveal>

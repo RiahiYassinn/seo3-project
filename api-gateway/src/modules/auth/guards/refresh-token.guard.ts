@@ -75,12 +75,12 @@ export class RefreshTokenGuard extends AuthGuard('jwt-refresh') {
     }
 
     // Check if user account is still active
-    if (!user.isActive) {
+    if (user.isActive === false) {
       throw new UnauthorizedException('User account is deactivated');
     }
 
     // Check if email is verified (if required)
-    if (!user.isEmailVerified) {
+    if (user.isEmailVerified === false) {
       throw new UnauthorizedException('Please verify your email first');
     }
 

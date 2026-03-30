@@ -201,11 +201,15 @@ export default function LoginPage() {
     try {
       const response = await authAPI.login(formData);
 
-      const { access_token, refresh_token, user } = response;
+      const { user } = response;
 
-      // Store tokens and user data
-      setAuth(user, access_token);
-      localStorage.setItem("refresh_token", refresh_token);
+      // Store user data; tokens are handled with HttpOnly cookies
+      setAuth(user);
+
+      if (user.is_first_login) {
+        router.push("/reset-password?first_login=1");
+        return;
+      }
 
       // Redirect to role-based dashboard
       router.push("/dashboard");

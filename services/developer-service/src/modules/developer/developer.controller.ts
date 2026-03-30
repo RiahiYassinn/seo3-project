@@ -259,29 +259,29 @@ export class DeveloperController {
     return { logged: true };
   }
 
-  @MessagePattern('create_google_user')
-  async handleCreateGoogleUser(
-    @Payload()
-    data: {
-      email: string;
-      first_name: string;
-      last_name: string;
-      google_id: string;
-      username: string;
-      is_email_verified?: boolean;
-    },
-  ) {
-    const dev = await this.developerService.createGoogleUser(data);
-    return this.developerService.toUserDto(dev);
-  }
+  // @MessagePattern('create_google_user')
+  // async handleCreateGoogleUser(
+  //   @Payload()
+  //   data: {
+  //     email: string;
+  //     first_name: string;
+  //     last_name: string;
+  //     google_id: string;
+  //     username: string;
+  //     is_email_verified?: boolean;
+  //   },
+  // ) {
+  //   const dev = await this.developerService.createGoogleUser(data);
+  //   return this.developerService.toUserDto(dev);
+  // }
 
-  @MessagePattern('link_google_account')
-  async handleLinkGoogleAccount(
-    @Payload() data: { userId: string; google_id: string },
-  ) {
-    await this.developerService.linkGoogleAccount(data.userId, data.google_id);
-    return { success: true };
-  }
+  // @MessagePattern('link_google_account')
+  // async handleLinkGoogleAccount(
+  //   @Payload() data: { userId: string; google_id: string },
+  // ) {
+  //   await this.developerService.linkGoogleAccount(data.userId, data.google_id);
+  //   return { success: true };
+  // }
 
   // ─── Admin message pattern handlers ────────────────────────────────────────
 

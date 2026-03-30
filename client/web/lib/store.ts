@@ -9,13 +9,14 @@ interface User {
   first_name: string
   last_name: string
   role: string
+  is_first_login?: boolean
 }
 
 interface AuthState {
   user: User | null
   hasHydrated: boolean
   setHasHydrated: (value: boolean) => void
-  setAuth: (user: User, token: string) => void
+  setAuth: (user: User) => void
   logout: (logoutAllDevices?: boolean) => Promise<void>
   updateUser: (userData: Partial<User>) => void
 }
@@ -26,38 +27,27 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       hasHydrated: false,
       setHasHydrated: (value) => set({ hasHydrated: value }),
-      setAuth: (user, token) => {
-        localStorage.setItem('access_token', token)
-        set({ user })
+      setAuth: (user) => {
+        set({ user, hasHydrated: true })
       },
       logout: async (logoutAllDevices = false) => {
         try {
-          const refreshToken = localStorage.getItem('refresh_token')
-          if (refreshToken) {
-            await authAPI.logout(refreshToken, logoutAllDevices)
-          }
+          await authAPI.logout(undefined, logoutAllDevices)
         } catch (error) {
           console.error('Logout error:', error)
         } finally {
-          localStorage.removeItem('access_token')
-          localStorage.removeItem('refresh_token')
           set({ user: null })
         }
       },
       updateUser: (userData) => {
         const currentUser = get().user
-        if (currentUser) {
-          set({ user: { ...currentUser, ...userData } })
-        }
+        set({ user: currentUser ? { ...currentUser, ...userData } : (userData as User) })
       },
     }),
     {
       name: 'auth-storage',
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({ user: state.user }),
-      onRehydrateStorage: () => (state) => {
-        state?.setHasHydrated(true)
-      },
     }
   )
 )

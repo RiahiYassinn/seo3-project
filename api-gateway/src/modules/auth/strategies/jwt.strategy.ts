@@ -6,6 +6,7 @@ import { ConfigService } from '@nestjs/config';
 import { Inject } from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
 import { firstValueFrom } from 'rxjs';
+import { Request } from 'express';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
@@ -14,7 +15,10 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     @Inject('DEVELOPER_SERVICE') private developerService: ClientProxy
   ) {
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        (request: Request) => request?.cookies?.access_token ?? null,
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
+      ]),
       ignoreExpiration: false,
       secretOrKey: configService.get('JWT_ACCESS_SECRET'),
     });
@@ -31,10 +35,10 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     }
 
     return {
-      id: payload.sub,
-      email: payload.email,
-      username: payload.username,
-      role: payload.role,
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      role: user.role,
     };
   }
 }

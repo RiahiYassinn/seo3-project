@@ -194,8 +194,7 @@ export const UsersManagementTable = () => {
     if (!validateAddForm()) return;
 
     try {
-      // Include role in the registration data
-      await api.post("/auth/register", {
+      await api.post("/admin/users", {
         first_name: addForm.first_name,
         last_name: addForm.last_name,
         email: addForm.email,

@@ -31,6 +31,7 @@ export class DeveloperService {
       last_name: dev.lastName,
       password_hash: dev.passwordHash,
       role: dev.role,
+      is_first_login: !dev.lastLoginAt,
       is_email_verified: dev.isEmailVerified,
       is_active: dev.isActive,
       last_login_at: dev.lastLoginAt,
@@ -39,7 +40,7 @@ export class DeveloperService {
       location: dev.location,
       website: dev.website,
       is_mentor: dev.isMentor,
-      google_id: dev.googleId,
+      // google_id: dev.googleId,
       created_at: dev.createdAt,
       updated_at: dev.updatedAt,
     };
@@ -106,37 +107,37 @@ export class DeveloperService {
     return this.developerRepository.save(developer);
   }
 
-  async createGoogleUser(data: {
-    email: string;
-    first_name: string;
-    last_name: string;
-    google_id: string;
-    username: string;
-    is_email_verified?: boolean;
-  }): Promise<Developer> {
-    // Ensure username is unique
-    let username = data.username;
-    const existing = await this.developerRepository.findOne({ where: { username } });
-    if (existing) {
-      username = `${username}_${Math.random().toString(36).slice(2, 6)}`;
-    }
-    const developer = this.developerRepository.create({
-      email: data.email,
-      firstName: data.first_name,
-      lastName: data.last_name,
-      googleId: data.google_id,
-      username,
-      passwordHash: '',
-      isEmailVerified: data.is_email_verified ?? true,
-      isActive: true,
-      role: 'developer',
-    });
-    return this.developerRepository.save(developer);
-  }
+  // async createGoogleUser(data: {
+  //   email: string;
+  //   first_name: string;
+  //   last_name: string;
+  //   google_id: string;
+  //   username: string;
+  //   is_email_verified?: boolean;
+  // }): Promise<Developer> {
+  //   // Ensure username is unique
+  //   let username = data.username;
+  //   const existing = await this.developerRepository.findOne({ where: { username } });
+  //   if (existing) {
+  //     username = `${username}_${Math.random().toString(36).slice(2, 6)}`;
+  //   }
+  //   const developer = this.developerRepository.create({
+  //     email: data.email,
+  //     firstName: data.first_name,
+  //     lastName: data.last_name,
+  //     googleId: data.google_id,
+  //     username,
+  //     passwordHash: '',
+  //     isEmailVerified: data.is_email_verified ?? true,
+  //     isActive: true,
+  //     role: 'developer',
+  //   });
+  //   return this.developerRepository.save(developer);
+  // }
 
-  async linkGoogleAccount(userId: string, googleId: string): Promise<void> {
-    await this.developerRepository.update(userId, { googleId });
-  }
+  // async linkGoogleAccount(userId: string, googleId: string): Promise<void> {
+  //   await this.developerRepository.update(userId, { googleId });
+  // }
 
   async create(createDto: Partial<Developer>): Promise<Developer> {
     const developer = this.developerRepository.create(createDto);

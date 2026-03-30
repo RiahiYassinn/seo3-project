@@ -149,6 +149,7 @@ export class AuthService {
 
   async login(user: any, metadata: any) {
     try {
+      const isFirstLogin = !!user.is_first_login;
       const payload = {
         sub: user.id,
         email: user.email,
@@ -194,7 +195,8 @@ export class AuthService {
           username: user.username,
           first_name: user.first_name,
           last_name: user.last_name,
-          role: user.role
+          role: user.role,
+          is_first_login: isFirstLogin,
         }
       };
     } catch (error) {
@@ -205,10 +207,12 @@ export class AuthService {
 
   async refreshTokens(user: any, metadata: any) {
     try {
+      const currentUser = await this.getCurrentUser(user.id);
+
       // Validate refresh token
       const storedToken = await firstValueFrom(
         this.developerService.send('find_refresh_token', {
-          userId: user.id,
+          userId: currentUser.id,
           tokenHash: hashToken(metadata.refreshToken)
         })
       );
@@ -219,10 +223,10 @@ export class AuthService {
 
       // Generate new tokens
       const payload = {
-        sub: user.id,
-        email: user.email,
-        username: user.username,
-        role: user.role
+        sub: currentUser.id,
+        email: currentUser.email,
+        username: currentUser.username,
+        role: currentUser.role
       };
 
       const [newAccessToken, newRefreshToken] = await Promise.all([
@@ -235,7 +239,7 @@ export class AuthService {
         this.developerService.send('rotate_refresh_token', {
           oldTokenId: storedToken.id,
           newTokenHash: hashToken(newRefreshToken),
-          userId: user.id,
+          userId: currentUser.id,
           deviceInfo: metadata.deviceInfo,
           ipAddress: metadata.ip
         })
@@ -245,10 +249,36 @@ export class AuthService {
         access_token: newAccessToken,
         refresh_token: newRefreshToken,
         token_type: 'Bearer',
-        expires_in: 900
+        expires_in: 900,
+        user: currentUser
       };
     } catch (error) {
       this.logger.error(`Token refresh failed: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async getCurrentUser(userId: string) {
+    try {
+      const user = await firstValueFrom(
+        this.developerService.send('find_user_by_id', { id: userId })
+      );
+
+      if (!user || !user.is_active) {
+        throw new UnauthorizedException('User not found or inactive');
+      }
+
+      return {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        role: user.role,
+        is_first_login: !!user.is_first_login,
+      };
+    } catch (error) {
+      this.logger.error(`Get current user failed: ${error.message}`);
       throw error;
     }
   }
@@ -405,6 +435,33 @@ export class AuthService {
       return { message: 'Password reset successful' };
     } catch (error) {
       this.logger.error(`Password reset failed: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async changePassword(userId: string, newPassword: string) {
+    try {
+      const hashedPassword = await bcrypt.hash(
+        newPassword,
+        parseInt(this.configService.get('BCRYPT_ROUNDS', '10'))
+      );
+
+      await firstValueFrom(
+        this.developerService.send('update_user_password', {
+          userId,
+          passwordHash: hashedPassword
+        })
+      );
+
+      await firstValueFrom(
+        this.developerService.send('revoke_all_user_tokens', {
+          userId
+        })
+      );
+
+      return { message: 'Password changed successfully' };
+    } catch (error) {
+      this.logger.error(`Change password failed: ${error.message}`);
       throw error;
     }
   }

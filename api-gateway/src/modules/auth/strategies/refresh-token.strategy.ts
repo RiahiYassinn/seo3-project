@@ -14,6 +14,9 @@ export class RefreshTokenStrategy extends PassportStrategy(Strategy, 'jwt-refres
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
         (request: Request) => {
+          if (request.cookies?.refresh_token) {
+            return request.cookies.refresh_token;
+          }
           // Extract from body first (as per your DTO)
           if (request.body && request.body.refresh_token) {
             return request.body.refresh_token;
@@ -35,6 +38,7 @@ export class RefreshTokenStrategy extends PassportStrategy(Strategy, 'jwt-refres
 
     // Get the refresh token from request
     const refreshToken = req.body?.refresh_token || 
+                        req.cookies?.refresh_token ||
                         req.headers.authorization?.replace('Bearer', '').trim();
 
     if (!refreshToken) {
