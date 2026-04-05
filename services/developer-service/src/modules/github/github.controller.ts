@@ -24,7 +24,7 @@ export class GithubController {
   }
 
   @MessagePattern('github_unlink_account')
-  unlinkGithub(@Payload() data: { userId: string }) {
+  async unlinkGithub(@Payload() data: { userId: string }) {
     return this.githubService.unlinkGithub(data.userId);
   }
 
@@ -34,6 +34,15 @@ export class GithubController {
     return repos.map(repo => RepositoryResponseDto.fromEntity(repo));
   }
 
+  @MessagePattern('github_get_repository')
+  async getRepository(@Payload() data: { userId: string; repositoryId: string }) {
+    const repository = await this.githubService.getRepository(
+      data.userId,
+      data.repositoryId,
+    );
+    return RepositoryResponseDto.fromEntity(repository);
+  }
+
   @MessagePattern('github_sync_repositories')
   async syncRepositories(@Payload() data: { userId: string }) {
     const repos = await this.githubService.syncRepositories(data.userId);
@@ -41,7 +50,7 @@ export class GithubController {
   }
 
   @MessagePattern('github_trigger_analysis')
-  triggerAnalysis(@Payload() data: { userId: string; repositoryId: string }) {
+  async triggerAnalysis(@Payload() data: { userId: string; repositoryId: string }) {
     return this.githubService.triggerAnalysis(data.userId, data.repositoryId);
   }
 }

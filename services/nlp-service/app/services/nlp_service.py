@@ -1,5 +1,5 @@
 import re
-from typing import List
+from typing import Dict, List
 from app.models.schemas import TechnologyDetection, SentimentAnalysis
 
 
@@ -144,3 +144,43 @@ class NLPService:
             categories.append('documentation')
         
         return categories if categories else ['other']
+
+    def detect_languages_from_files(self, files: List[str]) -> Dict[str, int]:
+        """Aggregate probable languages and technical areas from changed files."""
+        counters: Dict[str, int] = {}
+        extension_map = {
+            '.ts': 'typescript',
+            '.tsx': 'typescript',
+            '.js': 'javascript',
+            '.jsx': 'javascript',
+            '.py': 'python',
+            '.java': 'java',
+            '.go': 'go',
+            '.rs': 'rust',
+            '.sql': 'database',
+            '.md': 'documentation',
+            '.yml': 'devops',
+            '.yaml': 'devops',
+        }
+
+        for file_path in files:
+            normalized = file_path.lower()
+            if normalized.endswith('dockerfile'):
+                counters['docker'] = counters.get('docker', 0) + 1
+                continue
+
+            for extension, category in extension_map.items():
+                if normalized.endswith(extension):
+                    counters[category] = counters.get(category, 0) + 1
+                    break
+
+        return counters
+
+    def infer_skill_level(self, overall_score: float) -> str:
+        if overall_score >= 8.5:
+            return 'expert'
+        if overall_score >= 7.0:
+            return 'advanced'
+        if overall_score >= 5.5:
+            return 'intermediate'
+        return 'beginner'

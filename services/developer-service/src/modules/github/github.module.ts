@@ -6,6 +6,7 @@ import { GithubController } from './github.controller';
 import { GithubService } from './github.service';
 import { GithubIntegration } from './entities/github-integration.entity';
 import { Repository } from './entities/repository.entity';
+import { GithubAnalysisResultConsumer } from './github-analysis-result.consumer';
 
 @Module({
   imports: [
@@ -17,7 +18,7 @@ import { Repository } from './entities/repository.entity';
         options: {
           client: {
             clientId: 'developer-service',
-            brokers: [process.env.KAFKA_BROKER || 'localhost:9092'],
+            brokers: (process.env.KAFKA_BROKERS || 'localhost:29092').split(','),
           },
           producer: {
             allowAutoTopicCreation: true,
@@ -26,7 +27,7 @@ import { Repository } from './entities/repository.entity';
       },
     ]),
   ],
-  controllers: [GithubController],
+  controllers: [GithubController, GithubAnalysisResultConsumer],
   providers: [GithubService],
 })
 export class GithubModule {}

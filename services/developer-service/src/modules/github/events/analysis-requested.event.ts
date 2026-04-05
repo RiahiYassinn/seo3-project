@@ -8,5 +8,6 @@ export class AnalysisRequestedEvent {
     public readonly repoName: string,
     public readonly repoUrl: string,
     public readonly githubUsername: string,
+    public readonly githubToken: string,
   ) {}
 }

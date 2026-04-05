@@ -47,3 +47,77 @@ class CodeParseResponse(BaseModel):
     classes: List[str]
     complexity: int
     lines_of_code: int
+
+
+class RepositoryCommitFile(BaseModel):
+    filename: str
+    status: Optional[str] = None
+    additions: int = 0
+    deletions: int = 0
+    changes: int = 0
+    patch: Optional[str] = None
+
+
+class RepositoryCommit(BaseModel):
+    sha: str
+    message: str
+    committedAt: datetime
+    additions: int
+    deletions: int
+    changedFiles: int
+    filesChanged: List[str]
+    files: List[RepositoryCommitFile] = []
+
+
+class RepositoryStats(BaseModel):
+    contributorCount: int = 0
+    developerContributionCount: int = 0
+    developerContributionShare: Optional[float] = None
+    totalContributorCommits: int = 0
+    analyzedCommitCount: int = 0
+
+
+class RepositoryAnalysisRequest(BaseModel):
+    repositoryId: str
+    integrationId: str
+    developerId: str
+    repoName: str
+    repoUrl: str
+    githubUsername: str
+    analyzedAt: datetime
+    repositoryStats: RepositoryStats
+    commits: List[RepositoryCommit]
+
+
+class DetectedSkill(BaseModel):
+    skillName: str
+    category: str
+    proficiency: float
+    commitCount: int
+    confidence: float
+    statistics: Dict[str, Any] = {}
+
+
+class RepositoryAnalysisSummary(BaseModel):
+    overallScore: float
+    skillLevel: str
+    cleanCodeScore: float
+    goodPracticesScore: float
+    maintainabilityScore: float
+    collaborationScore: float
+    strengths: List[str]
+    improvements: List[str]
+    commitCount: int
+    filesTouched: int
+
+
+class RepositoryAnalysisResult(BaseModel):
+    repositoryId: str
+    integrationId: str
+    developerId: str
+    repoName: str
+    githubUsername: str
+    analyzedAt: datetime = Field(default_factory=datetime.utcnow)
+    summary: RepositoryAnalysisSummary
+    detectedSkills: List[DetectedSkill]
+    metadata: Dict[str, Any] = {}

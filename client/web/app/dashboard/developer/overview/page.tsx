@@ -132,7 +132,7 @@ export default function DeveloperOverviewPage() {
             </CardHeader>
             <CardContent className="flex items-center justify-between">
               <span className="text-3xl font-bold">{totalEndorsements}</span>
-              <Star className="w-8 h-8 text-secondary opacity-50" />
+              <Star className="w-8 h-8 text-secondary opacity-50" />{" "}
             </CardContent>
           </Card>
 
@@ -144,7 +144,7 @@ export default function DeveloperOverviewPage() {
             </CardHeader>
             <CardContent className="flex items-center justify-between">
               <span className="text-3xl font-bold">{expertSkills}</span>
-              <Zap className="w-8 h-8 text-accent opacity-50" />
+              <Zap className="w-8 h-8 text-accent opacity-50" />{" "}
             </CardContent>
           </Card>
 
@@ -263,20 +263,17 @@ export default function DeveloperOverviewPage() {
                   </p>
                 </div>
                 <div className="p-4 rounded-lg bg-secondary/5 border border-secondary/20">
-                  <p className="text-sm font-medium mb-1">
-                    Share Knowledge
-                  </p>
+                  {" "}
+                  <p className="text-sm font-medium mb-1">Share Knowledge</p>
                   <p className="text-xs text-muted-foreground">
                     Help teammates grow by mentoring on your expert areas.
                   </p>
                 </div>
                 <div className="p-4 rounded-lg bg-accent/5 border border-accent/20">
-                  <p className="text-sm font-medium mb-1">
-                    Connect GitHub
-                  </p>
+                  <p className="text-sm font-medium mb-1">Connect GitHub</p>
                   <p className="text-xs text-muted-foreground">
-                    Link your GitHub account to auto-detect skills from
-                    your projects.
+                    Link your GitHub account to auto-detect skills from your
+                    projects.
                   </p>
                 </div>
               </CardContent>

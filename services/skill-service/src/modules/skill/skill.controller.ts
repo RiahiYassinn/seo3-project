@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Body, Param } from '@nestjs/common';
-import { MessagePattern, Payload } from '@nestjs/microservices';
+import { EventPattern, MessagePattern, Payload } from '@nestjs/microservices';
 import { SkillService } from './skill.service';
 
 @Controller('skills')
@@ -30,5 +30,33 @@ export class SkillController {
   async handleSkillUpdated(@Payload() message: any) {
     // Process skill update event
     console.log('Skill updated:', message);
+  }
+
+  @EventPattern('analysis.completed')
+  async handleAnalysisCompleted(@Payload() payload: any) {
+    const message = this.unwrapPayload(payload);
+    if (!message?.developerId || !message?.repositoryId) {
+      return;
+    }
+
+    await this.skillService.ingestRepositoryAnalysis(message);
+  }
+
+  private unwrapPayload(payload: any) {
+    const rawValue = payload?.value ?? payload;
+
+    if (!rawValue) {
+      return null;
+    }
+
+    if (typeof rawValue === 'string') {
+      return JSON.parse(rawValue);
+    }
+
+    if (Buffer.isBuffer(rawValue)) {
+      return JSON.parse(rawValue.toString('utf8'));
+    }
+
+    return rawValue;
   }
 }

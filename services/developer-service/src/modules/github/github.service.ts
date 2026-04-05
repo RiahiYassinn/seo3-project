@@ -11,6 +11,7 @@ import * as crypto from 'crypto';
 
 import { GithubIntegration } from './entities/github-integration.entity';
 import { Repository } from './entities/repository.entity';
+import { AnalysisStatus } from './entities/repository.entity';
 import { LinkGithubDto } from './dto/link-github.dto';
 import { AnalysisRequestedEvent } from './events/analysis-requested.event';
 
@@ -111,7 +112,7 @@ export class GithubService {
     return this.integrationRepo.save(integration);
   }
 
-  async unlinkGithub(developerId: string): Promise<void> {
+  async unlinkGithub(developerId: string): Promise<{ success: true }> {
     const integration = await this.integrationRepo.findOne({
       where: { developerId },
     });
@@ -123,6 +124,7 @@ export class GithubService {
     }
     // Cascade delete removes all repositories too
     await this.integrationRepo.remove(integration);
+    return { success: true };
   }
 
   async syncRepositories(developerId: string): Promise<Repository[]> {
@@ -198,10 +200,38 @@ export class GithubService {
     });
   }
 
-  async triggerAnalysis(developerId: string, repositoryId: string): Promise<void> {
+  async getRepository(developerId: string, repositoryId: string): Promise<Repository> {
     const integration = await this.integrationRepo.findOne({
       where: { developerId },
     });
+    if (!integration) {
+      throw new RpcException({
+        statusCode: 404,
+        message: 'No GitHub integration found',
+      });
+    }
+
+    const repository = await this.repositoryRepo.findOne({
+      where: { id: repositoryId, integrationId: integration.id },
+    });
+    if (!repository) {
+      throw new RpcException({
+        statusCode: 404,
+        message: 'Repository not found',
+      });
+    }
+
+    return repository;
+  }
+
+  async triggerAnalysis(
+    developerId: string,
+    repositoryId: string,
+  ): Promise<{ success: true; status: 'pending'; repositoryId: string }> {
+    const integration = await this.integrationRepo.findOne({
+      where: { developerId },
+      select: ['id', 'developerId', 'githubUsername', 'githubTokenEncrypted', 'connectedAt'],
+    }) as GithubIntegration & { githubTokenEncrypted: string };
     if (!integration) {
       throw new RpcException({
         statusCode: 404,
@@ -221,6 +251,11 @@ export class GithubService {
 
     // Mark as pending immediately
     repo.analysisStatus = 'pending';
+    repo.analysisProgress = 5;
+    repo.analysisCurrentStage = 'Queued for analysis';
+    repo.analysisSummary = null;
+    repo.analysisDetectedSkills = null;
+    repo.analysisMetadata = null;
     await this.repositoryRepo.save(repo);
 
     // Emit Kafka event — Analysis Service will pick this up
@@ -231,11 +266,82 @@ export class GithubService {
       repo.repoName,
       repo.repoUrl,
       integration.githubUsername,
+      this.decrypt(integration.githubTokenEncrypted),
     );
 
     this.kafkaClient.emit(event.topic, {
       key: repositoryId,
       value: JSON.stringify(event),
     });
+
+    return {
+      success: true,
+      status: 'pending',
+      repositoryId,
+    };
+  }
+
+  async updateRepositoryAnalysisStatus(
+    repositoryId: string,
+    status: AnalysisStatus,
+  ): Promise<void> {
+    await this.updateRepositoryAnalysis(repositoryId, { status });
+  }
+
+  async updateRepositoryAnalysis(
+    repositoryId: string,
+    update: {
+      status?: AnalysisStatus;
+      progress?: number;
+      stage?: string | null;
+      summary?: Record<string, any> | null;
+      detectedSkills?: Record<string, any>[] | null;
+      metadata?: Record<string, any> | null;
+      failureReason?: string | null;
+    },
+  ): Promise<void> {
+    const repo = await this.repositoryRepo.findOne({
+      where: { id: repositoryId },
+    });
+    if (!repo) {
+      return;
+    }
+
+    if (update.status) {
+      repo.analysisStatus = update.status;
+      repo.isAnalyzed = update.status === 'completed';
+      if (update.status === 'completed') {
+        repo.lastAnalyzedAt = new Date();
+      }
+    }
+
+    if (typeof update.progress === 'number') {
+      repo.analysisProgress = update.progress;
+    }
+
+    if (typeof update.stage !== 'undefined') {
+      repo.analysisCurrentStage = update.stage;
+    }
+
+    if (typeof update.summary !== 'undefined') {
+      repo.analysisSummary = update.summary;
+    }
+
+    if (typeof update.detectedSkills !== 'undefined') {
+      repo.analysisDetectedSkills = update.detectedSkills;
+    }
+
+    if (typeof update.metadata !== 'undefined') {
+      repo.analysisMetadata = update.metadata;
+    }
+
+    if (update.failureReason) {
+      repo.analysisMetadata = {
+        ...(repo.analysisMetadata || {}),
+        failureReason: update.failureReason,
+      };
+    }
+
+    await this.repositoryRepo.save(repo);
   }
 }
