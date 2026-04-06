@@ -36,24 +36,23 @@ interface RepositoryDetail {
   analysis_progress: number;
   analysis_current_stage: string | null;
   analysis_summary: {
-    overallScore?: number;
-    skillLevel?: string;
-    cleanCodeScore?: number;
-    goodPracticesScore?: number;
-    maintainabilityScore?: number;
-    collaborationScore?: number;
+    weakness_scores?: Record<string, number>;
+    top_weaknesses?: Array<{
+      category: string;
+      score: number;
+      evidence: string[];
+      priority: string;
+    }>;
     strengths?: string[];
-    improvements?: string[];
-    commitCount?: number;
-    filesTouched?: number;
+    quality_score?: number;
+    skill_level?: string;
+    recommendations?: Array<{
+      weakness: string;
+      action: string;
+      learning_query: string;
+    }>;
   } | null;
-  analysis_detected_skills: Array<{
-    skillName: string;
-    category: string;
-    proficiency: number;
-    commitCount: number;
-    confidence: number;
-  }> | null;
+  analysis_detected_skills: Array<Record<string, any>> | null;
   analysis_metadata: Record<string, any> | null;
   last_analyzed_at: string | null;
   last_synced: string;
@@ -190,9 +189,9 @@ export default function RepositoryAnalysisPage() {
               <Badge variant="outline" className="capitalize">
                 {repository.analysis_status || "not analyzed"}
               </Badge>
-              {repository.analysis_summary?.skillLevel && (
+              {repository.analysis_summary?.skill_level && (
                 <Badge variant="secondary" className="capitalize">
-                  {repository.analysis_summary.skillLevel}
+                  {repository.analysis_summary.skill_level}
                 </Badge>
               )}
             </div>
@@ -301,34 +300,34 @@ export default function RepositoryAnalysisPage() {
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                       <div className="rounded-2xl border p-4">
                         <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                          Overall Score
+                          Quality Score
                         </p>
                         <p className="mt-2 text-3xl font-semibold">
-                          {repository.analysis_summary.overallScore ?? "--"}/10
+                          {repository.analysis_summary.quality_score ?? "--"}/10
                         </p>
                       </div>
                       <div className="rounded-2xl border p-4">
                         <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                          Clean Code
+                          Skill Level
                         </p>
-                        <p className="mt-2 text-3xl font-semibold">
-                          {repository.analysis_summary.cleanCodeScore ?? "--"}/10
-                        </p>
-                      </div>
-                      <div className="rounded-2xl border p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                          Good Practices
-                        </p>
-                        <p className="mt-2 text-3xl font-semibold">
-                          {repository.analysis_summary.goodPracticesScore ?? "--"}/10
+                        <p className="mt-2 text-3xl font-semibold capitalize">
+                          {repository.analysis_summary.skill_level ?? "--"}
                         </p>
                       </div>
                       <div className="rounded-2xl border p-4">
                         <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                          Maintainability
+                          Top Weaknesses
                         </p>
                         <p className="mt-2 text-3xl font-semibold">
-                          {repository.analysis_summary.maintainabilityScore ?? "--"}/10
+                          {repository.analysis_summary.top_weaknesses?.length ?? 0}
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border p-4">
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                          Recommendations
+                        </p>
+                        <p className="mt-2 text-3xl font-semibold">
+                          {repository.analysis_summary.recommendations?.length ?? 0}
                         </p>
                       </div>
                     </div>
@@ -356,21 +355,35 @@ export default function RepositoryAnalysisPage() {
                       </div>
 
                       <div className="rounded-2xl border bg-amber-500/5 p-5">
-                        <p className="mb-3 text-sm font-semibold">Improvement Areas</p>
+                        <p className="mb-3 text-sm font-semibold">Top Weaknesses</p>
                         <div className="space-y-2">
-                          {(repository.analysis_summary.improvements || []).length > 0 ? (
-                            repository.analysis_summary.improvements?.map((improvement) => (
+                          {(repository.analysis_summary.top_weaknesses || []).length > 0 ? (
+                            repository.analysis_summary.top_weaknesses?.map((weakness) => (
                               <div
-                                key={improvement}
-                                className="flex items-start gap-2 text-sm text-muted-foreground"
+                                key={`${weakness.category}-${weakness.priority}`}
+                                className="rounded-xl border border-amber-500/20 bg-background px-3 py-3"
                               >
-                                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                                <span>{improvement}</span>
+                                <div className="mb-2 flex items-center justify-between gap-3">
+                                  <span className="font-medium capitalize">
+                                    {weakness.category.replace(/_/g, " ")}
+                                  </span>
+                                  <Badge variant="outline" className="capitalize">
+                                    {weakness.priority}
+                                  </Badge>
+                                </div>
+                                <p className="text-sm text-muted-foreground">
+                                  Score: {weakness.score.toFixed(2)}
+                                </p>
+                                {weakness.evidence?.[0] && (
+                                  <p className="mt-2 text-sm text-muted-foreground">
+                                    {weakness.evidence[0]}
+                                  </p>
+                                )}
                               </div>
                             ))
                           ) : (
                             <p className="text-sm text-muted-foreground">
-                              Improvement suggestions will appear after analysis completes.
+                              Weakness hotspots will appear after analysis completes.
                             </p>
                           )}
                         </div>
@@ -388,41 +401,75 @@ export default function RepositoryAnalysisPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Detected Skills and Signals</CardTitle>
+                <CardTitle>Weakness Scores</CardTitle>
               </CardHeader>
               <CardContent>
-                {repository.analysis_detected_skills &&
-                repository.analysis_detected_skills.length > 0 ? (
+                {repository.analysis_summary?.weakness_scores &&
+                Object.keys(repository.analysis_summary.weakness_scores).length > 0 ? (
                   <div className="grid gap-3 md:grid-cols-2">
-                    {repository.analysis_detected_skills.map((skill) => (
+                    {Object.entries(repository.analysis_summary.weakness_scores).map(
+                      ([category, score]) => (
                       <div
-                        key={skill.skillName}
+                        key={category}
                         className="rounded-2xl border bg-background p-4"
                       >
                         <div className="mb-2 flex items-center justify-between gap-3">
                           <div>
                             <p className="font-semibold capitalize">
-                              {skill.skillName.replace(/_/g, " ")}
+                              {category.replace(/_/g, " ")}
                             </p>
                             <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                              {skill.category}
+                              weakness score
                             </p>
                           </div>
                           <Badge variant="outline">
-                            {skill.proficiency.toFixed(1)}/10
+                            {(score * 100).toFixed(0)}%
                           </Badge>
                         </div>
-                        <Progress value={skill.proficiency * 10} className="h-2" />
-                        <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-                          <span>{skill.commitCount} commit signals</span>
-                          <span>{Math.round(skill.confidence * 100)}% confidence</span>
-                        </div>
+                        <Progress value={score * 100} className="h-2" />
                       </div>
                     ))}
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    Skills will appear here when the NLP analysis result arrives.
+                    Weakness scores will appear here when the NLP analysis result arrives.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Recommendations</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {repository.analysis_summary?.recommendations &&
+                repository.analysis_summary.recommendations.length > 0 ? (
+                  <div className="space-y-3">
+                    {repository.analysis_summary.recommendations.map((recommendation) => (
+                      <div
+                        key={`${recommendation.weakness}-${recommendation.learning_query}`}
+                        className="rounded-2xl border p-4"
+                      >
+                        <div className="mb-2 flex items-center justify-between gap-3">
+                          <p className="font-semibold capitalize">
+                            {recommendation.weakness.replace(/_/g, " ")}
+                          </p>
+                          <Badge variant="secondary">Actionable</Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {recommendation.action}
+                        </p>
+                        <p className="mt-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                          Learning query
+                        </p>
+                        <p className="mt-1 text-sm">{recommendation.learning_query}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Recommendations will appear after analysis completes.
                   </p>
                 )}
               </CardContent>
@@ -486,7 +533,7 @@ export default function RepositoryAnalysisPage() {
                     Files Touched
                   </p>
                   <p className="mt-2 text-lg font-semibold">
-                    {repository.analysis_summary?.filesTouched ?? "--"}
+                    {(repository.analysis_metadata?.filesTouched as number | undefined) ?? "--"}
                   </p>
                 </div>
                 <div className="rounded-2xl border p-4">
@@ -494,7 +541,7 @@ export default function RepositoryAnalysisPage() {
                     Commit Count
                   </p>
                   <p className="mt-2 text-lg font-semibold">
-                    {repository.analysis_summary?.commitCount ?? "--"}
+                    {(repository.analysis_metadata?.analyzedCommitCount as number | undefined) ?? "--"}
                   </p>
                 </div>
                 {repository.analysis_metadata?.failureReason && (

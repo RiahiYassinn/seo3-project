@@ -1,123 +1,33 @@
+from typing import Any
+
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional
-from datetime import datetime
 
 
-class CommitAnalysisRequest(BaseModel):
-    commit_sha: str
-    message: str
-    author: str
-    repository: str
-    files_changed: List[str]
-    additions: int
-    deletions: int
+class AnalyzeCodeRequest(BaseModel):
+    files: dict[str, str]
+    diff: str
+    commit_message: str
+    developer_id: str
+    existing_profile: dict[str, Any] | None = None
 
 
-class TechnologyDetection(BaseModel):
-    name: str
-    confidence: float
+class Recommendation(BaseModel):
+    weakness: str
+    action: str
+    learning_query: str
+
+
+class TopWeakness(BaseModel):
     category: str
-
-
-class SentimentAnalysis(BaseModel):
     score: float
-    label: str  # positive, negative, neutral
+    evidence: list[str]
+    priority: str
 
 
-class CommitAnalysisResponse(BaseModel):
-    commit_sha: str
-    technologies: List[TechnologyDetection]
-    sentiment: SentimentAnalysis
-    complexity_score: float
-    key_phrases: List[str]
-    categories: List[str]
-    processed_at: datetime = Field(default_factory=datetime.utcnow)
-
-
-class CodeParseRequest(BaseModel):
-    code: str
-    language: str
-    file_path: Optional[str] = None
-
-
-class CodeParseResponse(BaseModel):
-    language: str
-    imports: List[str]
-    functions: List[str]
-    classes: List[str]
-    complexity: int
-    lines_of_code: int
-
-
-class RepositoryCommitFile(BaseModel):
-    filename: str
-    status: Optional[str] = None
-    additions: int = 0
-    deletions: int = 0
-    changes: int = 0
-    patch: Optional[str] = None
-
-
-class RepositoryCommit(BaseModel):
-    sha: str
-    message: str
-    committedAt: datetime
-    additions: int
-    deletions: int
-    changedFiles: int
-    filesChanged: List[str]
-    files: List[RepositoryCommitFile] = []
-
-
-class RepositoryStats(BaseModel):
-    contributorCount: int = 0
-    developerContributionCount: int = 0
-    developerContributionShare: Optional[float] = None
-    totalContributorCommits: int = 0
-    analyzedCommitCount: int = 0
-
-
-class RepositoryAnalysisRequest(BaseModel):
-    repositoryId: str
-    integrationId: str
-    developerId: str
-    repoName: str
-    repoUrl: str
-    githubUsername: str
-    analyzedAt: datetime
-    repositoryStats: RepositoryStats
-    commits: List[RepositoryCommit]
-
-
-class DetectedSkill(BaseModel):
-    skillName: str
-    category: str
-    proficiency: float
-    commitCount: int
-    confidence: float
-    statistics: Dict[str, Any] = {}
-
-
-class RepositoryAnalysisSummary(BaseModel):
-    overallScore: float
-    skillLevel: str
-    cleanCodeScore: float
-    goodPracticesScore: float
-    maintainabilityScore: float
-    collaborationScore: float
-    strengths: List[str]
-    improvements: List[str]
-    commitCount: int
-    filesTouched: int
-
-
-class RepositoryAnalysisResult(BaseModel):
-    repositoryId: str
-    integrationId: str
-    developerId: str
-    repoName: str
-    githubUsername: str
-    analyzedAt: datetime = Field(default_factory=datetime.utcnow)
-    summary: RepositoryAnalysisSummary
-    detectedSkills: List[DetectedSkill]
-    metadata: Dict[str, Any] = {}
+class WeaknessProfileResponse(BaseModel):
+    weakness_scores: dict[str, float] = Field(default_factory=dict)
+    top_weaknesses: list[TopWeakness] = Field(default_factory=list)
+    strengths: list[str] = Field(default_factory=list)
+    quality_score: float | None = None
+    skill_level: str = "unknown"
+    recommendations: list[Recommendation] = Field(default_factory=list)

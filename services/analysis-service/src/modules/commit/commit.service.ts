@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ClientKafka } from '@nestjs/microservices';
 import { Octokit } from '@octokit/rest';
+import { Buffer } from 'buffer';
 
 interface AnalysisRequestedEvent {
   repositoryId: string;
@@ -32,6 +33,21 @@ interface CommitPayload {
   files: CommitFilePayload[];
 }
 
+interface AnalysisJobPayload {
+  repositoryId: string;
+  integrationId: string;
+  developer_id: string;
+  repoName: string;
+  repoUrl: string;
+  githubUsername: string;
+  analyzedAt: string;
+  files: Record<string, string>;
+  diff: string;
+  commit_message: string;
+  existing_profile: Record<string, any> | null;
+  metadata: Record<string, any>;
+}
+
 @Injectable()
 export class CommitAnalysisService {
   private readonly logger = new Logger(CommitAnalysisService.name);
@@ -39,6 +55,16 @@ export class CommitAnalysisService {
     process.env.MAX_COMMITS_PER_ANALYSIS || '40',
     10,
   );
+  private readonly supportedCodeExtensions = new Set([
+    '.py',
+    '.ts',
+    '.tsx',
+    '.js',
+    '.jsx',
+    '.java',
+    '.go',
+    '.rs',
+  ]);
 
   constructor(
     @Inject('KAFKA_CLIENT')
@@ -112,16 +138,42 @@ export class CommitAnalysisService {
         totalContributions += contributor.contributions || 0;
       }
 
+      this.emitProgress(event, 58, 'Collecting source file snapshots');
+      const files = await this.collectFilesWithContent(
+        octokit,
+        repoCoordinates.owner,
+        repoCoordinates.repo,
+        detailedCommits,
+      );
+      const diff = this.buildCombinedDiff(detailedCommits);
+      const commitMessage = selectedCommits
+        .slice(0, 5)
+        .map((commit) => commit.commit.message.split('\n')[0]?.trim())
+        .filter(Boolean)
+        .join(' | ');
+
+      if (!diff.trim() || Object.keys(files).length === 0) {
+        this.emitFailure(
+          event,
+          'Could not assemble code diffs and source files for analysis',
+        );
+        return;
+      }
+
       this.emitProgress(event, 65, 'Sending repository snapshot to NLP');
-      const job = {
+      const job: AnalysisJobPayload = {
         repositoryId: event.repositoryId,
         integrationId: event.integrationId,
-        developerId: event.developerId,
+        developer_id: event.developerId,
         repoName: event.repoName,
         repoUrl: event.repoUrl,
         githubUsername: event.githubUsername,
         analyzedAt: new Date().toISOString(),
-        repositoryStats: {
+        files,
+        diff,
+        commit_message: commitMessage || `Repository analysis for ${event.repoName}`,
+        existing_profile: null,
+        metadata: {
           contributorCount: contributors.length,
           developerContributionCount:
             linkedContributor?.contributions || selectedCommits.length,
@@ -135,8 +187,9 @@ export class CommitAnalysisService {
               : null,
           totalContributorCommits: totalContributions,
           analyzedCommitCount: detailedCommits.length,
+          filesTouched: Object.keys(files).length,
+          sampledCommitShas: detailedCommits.map((commit) => commit.sha),
         },
-        commits: detailedCommits,
       };
 
       this.kafkaClient.emit('commit.analysis', {
@@ -192,5 +245,89 @@ export class CommitAnalysisService {
       owner,
       repo: repo?.replace(/\.git$/, ''),
     };
+  }
+
+  private async collectFilesWithContent(
+    octokit: Octokit,
+    owner: string,
+    repo: string,
+    commits: CommitPayload[],
+  ) {
+    const files = new Map<string, string>();
+
+    for (const commit of commits) {
+      for (const file of commit.files) {
+        if (
+          files.has(file.filename) ||
+          !this.shouldFetchFile(file.filename, file.status)
+        ) {
+          continue;
+        }
+
+        try {
+          const response = await octokit.repos.getContent({
+            owner,
+            repo,
+            path: file.filename,
+            ref: commit.sha,
+          });
+          const data = response.data;
+          if (Array.isArray(data) || !('content' in data) || !data.content) {
+            continue;
+          }
+
+          const encoding = data.encoding === 'base64' ? 'base64' : 'utf8';
+          const content = Buffer.from(data.content, encoding).toString('utf8');
+          if (content.trim()) {
+            files.set(file.filename, content);
+          }
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : 'Unknown file fetch error';
+          this.logger.warn(
+            `Skipping file ${file.filename} at ${commit.sha}: ${message}`,
+          );
+        }
+      }
+    }
+
+    return Object.fromEntries(files);
+  }
+
+  private shouldFetchFile(filename: string, status?: string) {
+    if (status === 'removed') {
+      return false;
+    }
+
+    const normalized = filename.toLowerCase();
+    for (const extension of this.supportedCodeExtensions) {
+      if (normalized.endsWith(extension)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private buildCombinedDiff(commits: CommitPayload[]) {
+    return commits
+      .map((commit) => {
+        const fileDiffs = commit.files
+          .filter((file) => file.patch)
+          .map(
+            (file) =>
+              `diff --git a/${file.filename} b/${file.filename}\n${file.patch}`,
+          )
+          .join('\n\n');
+
+        return [
+          `commit ${commit.sha}`,
+          `message: ${commit.message}`,
+          fileDiffs,
+        ]
+          .filter(Boolean)
+          .join('\n');
+      })
+      .join('\n\n');
   }
 }

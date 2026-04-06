@@ -9,25 +9,22 @@ interface AnalysisCompletedEvent {
   repoName: string;
   analyzedAt?: string;
   summary: {
-    overallScore: number;
-    skillLevel: string;
-    cleanCodeScore: number;
-    goodPracticesScore: number;
-    maintainabilityScore: number;
-    collaborationScore: number;
+    weakness_scores: Record<string, number>;
+    top_weaknesses: Array<{
+      category: string;
+      score: number;
+      evidence: string[];
+      priority: string;
+    }>;
     strengths: string[];
-    improvements: string[];
-    commitCount: number;
-    filesTouched: number;
+    quality_score: number | null;
+    skill_level: string;
+    recommendations: Array<{
+      weakness: string;
+      action: string;
+      learning_query: string;
+    }>;
   };
-  detectedSkills: Array<{
-    skillName: string;
-    category: string;
-    proficiency: number;
-    commitCount: number;
-    confidence: number;
-    statistics?: Record<string, any>;
-  }>;
   metadata?: Record<string, any>;
 }
 
@@ -56,41 +53,86 @@ export class SkillService {
 
   async ingestRepositoryAnalysis(event: AnalysisCompletedEvent) {
     const analyzedAt = event.analyzedAt ? new Date(event.analyzedAt) : new Date();
+    const topWeaknessMap = new Map(
+      (event.summary.top_weaknesses || []).map((weakness) => [
+        weakness.category,
+        weakness,
+      ]),
+    );
+    const recommendationMap = new Map(
+      (event.summary.recommendations || []).map((recommendation) => [
+        recommendation.weakness,
+        recommendation,
+      ]),
+    );
 
-    for (const skill of event.detectedSkills) {
+    for (const [category, weaknessScore] of Object.entries(
+      event.summary.weakness_scores || {},
+    )) {
       const existing = await this.developerSkillModel.findOne({
         developerId: event.developerId,
-        skillName: skill.skillName,
+        skillName: category,
       });
 
-      const nextCommitCount = (existing?.commitCount || 0) + skill.commitCount;
-      const currentWeightedScore =
-        (existing?.proficiency || 0) * (existing?.commitCount || 0);
-      const nextWeightedScore = currentWeightedScore + skill.proficiency * skill.commitCount;
+      const nextCommitCount = (existing?.commitCount || 0) + 1;
+      const currentProficiency = typeof existing?.proficiency === 'number'
+        ? existing.proficiency
+        : 0;
+      const currentWeightedScore = currentProficiency * (existing?.commitCount || 0);
+      const incomingProficiency = Number(((1 - weaknessScore) * 10).toFixed(2));
+      const nextWeightedScore = currentWeightedScore + incomingProficiency;
       const nextProficiency =
         nextCommitCount > 0
           ? Number((nextWeightedScore / nextCommitCount).toFixed(2))
-          : skill.proficiency;
+          : incomingProficiency;
+      const topWeakness = topWeaknessMap.get(category);
+      const recommendation = recommendationMap.get(category);
 
-      await this.updateDeveloperSkill(event.developerId, skill.skillName, {
+      await this.updateDeveloperSkill(event.developerId, category, {
         proficiency: nextProficiency,
         commitCount: nextCommitCount,
         lastUsed: analyzedAt,
         statistics: {
           ...(existing?.statistics || {}),
-          ...(skill.statistics || {}),
           repositoryId: event.repositoryId,
           repoName: event.repoName,
-          category: skill.category,
-          confidence: skill.confidence,
-          overallScore: event.summary.overallScore,
-          skillLevel: event.summary.skillLevel,
+          category,
+          weaknessScore,
+          qualityScore: event.summary.quality_score,
+          skillLevel: event.summary.skill_level,
           strengths: event.summary.strengths,
-          improvements: event.summary.improvements,
-          filesTouched: event.summary.filesTouched,
+          topWeakness: topWeakness || null,
+          recommendation: recommendation || null,
           ...(event.metadata || {}),
         },
       });
     }
+
+    const existingOverall = await this.developerSkillModel.findOne({
+      developerId: event.developerId,
+      skillName: 'overall_code_quality',
+    });
+    const overallCount = (existingOverall?.commitCount || 0) + 1;
+    const overallProficiency = Number((event.summary.quality_score || 0).toFixed(2));
+    const overallWeightedScore =
+      (existingOverall?.proficiency || 0) * (existingOverall?.commitCount || 0);
+
+    await this.updateDeveloperSkill(event.developerId, 'overall_code_quality', {
+      proficiency: Number(
+        ((overallWeightedScore + overallProficiency) / overallCount).toFixed(2),
+      ),
+      commitCount: overallCount,
+      lastUsed: analyzedAt,
+      statistics: {
+        ...(existingOverall?.statistics || {}),
+        repositoryId: event.repositoryId,
+        repoName: event.repoName,
+        skillLevel: event.summary.skill_level,
+        strengths: event.summary.strengths,
+        recommendations: event.summary.recommendations,
+        topWeaknesses: event.summary.top_weaknesses,
+        ...(event.metadata || {}),
+      },
+    });
   }
 }

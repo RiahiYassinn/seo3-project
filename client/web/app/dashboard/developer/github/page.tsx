@@ -54,24 +54,23 @@ interface Repository {
   analysis_progress: number;
   analysis_current_stage: string | null;
   analysis_summary: {
-    overallScore?: number;
-    skillLevel?: string;
-    cleanCodeScore?: number;
-    goodPracticesScore?: number;
-    maintainabilityScore?: number;
-    collaborationScore?: number;
+    weakness_scores?: Record<string, number>;
+    top_weaknesses?: Array<{
+      category: string;
+      score: number;
+      evidence: string[];
+      priority: string;
+    }>;
     strengths?: string[];
-    improvements?: string[];
-    commitCount?: number;
-    filesTouched?: number;
+    quality_score?: number;
+    skill_level?: string;
+    recommendations?: Array<{
+      weakness: string;
+      action: string;
+      learning_query: string;
+    }>;
   } | null;
-  analysis_detected_skills: Array<{
-    skillName: string;
-    category: string;
-    proficiency: number;
-    commitCount: number;
-    confidence: number;
-  }> | null;
+  analysis_detected_skills: Array<Record<string, any>> | null;
   analysis_metadata: Record<string, any> | null;
   last_analyzed_at: string | null;
   last_synced: string;
@@ -854,10 +853,10 @@ export default function GitHubPage() {
                                   <div className="mb-5 grid grid-cols-2 gap-3">
                                     <div className="rounded-xl border bg-green-500/5 p-3">
                                       <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                                        Overall Score
+                                        Quality Score
                                       </p>
                                       <p className="text-xl font-semibold">
-                                        {repo.analysis_summary.overallScore ??
+                                        {repo.analysis_summary.quality_score ??
                                           "--"}
                                         /10
                                       </p>
@@ -867,9 +866,28 @@ export default function GitHubPage() {
                                         Skill Level
                                       </p>
                                       <p className="text-xl font-semibold capitalize">
-                                        {repo.analysis_summary.skillLevel ??
+                                        {repo.analysis_summary.skill_level ??
                                           "--"}
                                       </p>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {repo.analysis_summary?.top_weaknesses?.[0] && (
+                                  <div className="mb-5 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3">
+                                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                                      Top Weakness
+                                    </p>
+                                    <div className="mt-1 flex items-center justify-between gap-3">
+                                      <p className="font-medium capitalize">
+                                        {repo.analysis_summary.top_weaknesses[0].category.replace(
+                                          /_/g,
+                                          " ",
+                                        )}
+                                      </p>
+                                      <Badge variant="outline" className="capitalize">
+                                        {repo.analysis_summary.top_weaknesses[0].priority}
+                                      </Badge>
                                     </div>
                                   </div>
                                 )}

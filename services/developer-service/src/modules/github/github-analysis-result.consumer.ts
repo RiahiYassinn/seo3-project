@@ -5,7 +5,6 @@ import { GithubService } from './github.service';
 interface AnalysisCompletionPayload {
   repositoryId: string;
   summary?: Record<string, any>;
-  detectedSkills?: Record<string, any>[];
   metadata?: Record<string, any>;
   progress?: number;
   stage?: string | null;
@@ -26,9 +25,9 @@ export class GithubAnalysisResultConsumer {
     await this.githubService.updateRepositoryAnalysis(message.repositoryId, {
       status: 'completed',
       progress: 100,
-      stage: 'Analysis completed',
+      stage: 'Weakness analysis completed',
       summary: message.summary || null,
-      detectedSkills: message.detectedSkills || null,
+      detectedSkills: null,
       metadata: message.metadata || null,
     });
   }
