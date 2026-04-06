@@ -70,6 +70,25 @@ interface UserStats {
   active_today: number;
 }
 
+const generateSecurePassword = () => {
+  const upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const lower = "abcdefghijklmnopqrstuvwxyz";
+  const digits = "0123456789";
+  const special = "@$!%*?&";
+  const all = upper + lower + digits + special;
+  const required = [
+    upper[Math.floor(Math.random() * upper.length)],
+    lower[Math.floor(Math.random() * lower.length)],
+    digits[Math.floor(Math.random() * digits.length)],
+    special[Math.floor(Math.random() * special.length)],
+  ];
+  const rest = Array.from(
+    { length: 8 },
+    () => all[Math.floor(Math.random() * all.length)],
+  );
+  return [...required, ...rest].sort(() => Math.random() - 0.5).join("");
+};
+
 export const UsersManagementTable = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [stats, setStats] = useState<UserStats>({
@@ -98,8 +117,7 @@ export const UsersManagementTable = () => {
     last_name: "",
     email: "",
     username: "",
-    password: "",
-    role: "developer", // Add role field with default value
+    role: "developer",
   });
   const [addFormErrors, setAddFormErrors] = useState<{
     first_name?: string;
@@ -171,17 +189,6 @@ export const UsersManagementTable = () => {
       errors.username = "Username must be at least 3 characters";
     }
 
-    if (!addForm.password) {
-      errors.password = "Password is required";
-    } else {
-      const passwordRegex =
-        /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
-      if (!passwordRegex.test(addForm.password)) {
-        errors.password =
-          "Password must be at least 8 characters and include uppercase, lowercase, number, and special character";
-      }
-    }
-
     if (!addForm.role) {
       errors.role = "Role is required";
     }
@@ -192,14 +199,14 @@ export const UsersManagementTable = () => {
 
   const handleAddUser = async () => {
     if (!validateAddForm()) return;
-
+    const generatedPassword = generateSecurePassword();
     try {
       await api.post("/admin/users", {
         first_name: addForm.first_name,
         last_name: addForm.last_name,
         email: addForm.email,
         username: addForm.username,
-        password: addForm.password,
+        password: generatedPassword,
         role: addForm.role,
       });
       setAddSuccessEmail(addForm.email);
@@ -681,11 +688,12 @@ export const UsersManagementTable = () => {
               <DialogHeader>
                 <DialogTitle>Check your email</DialogTitle>
                 <DialogDescription>
-                  Registration successful! A verification link has been sent to{" "}
+                  Account created! A verification link{" "}
+                  <strong>and their login credentials</strong> have been sent to{" "}
                   <span className="font-medium text-foreground">
                     {addSuccessEmail}
                   </span>
-                  . The user needs to verify their email before logging in.
+                  .
                 </DialogDescription>
               </DialogHeader>
               <p className="text-xs text-muted-foreground">
@@ -812,31 +820,6 @@ export const UsersManagementTable = () => {
                   {addFormErrors.role && (
                     <p className="text-xs text-red-500">{addFormErrors.role}</p>
                   )}
-                </div>
-
-                <div className="grid gap-2">
-                  <Label htmlFor="add-password">
-                    Password <span className="text-red-500">*</span>
-                  </Label>
-                  <Input
-                    id="add-password"
-                    type="password"
-                    placeholder="Create a password (min 8 chars, with uppercase, lowercase, number, special char)"
-                    value={addForm.password}
-                    onChange={(e) =>
-                      setAddForm({ ...addForm, password: e.target.value })
-                    }
-                    className={addFormErrors.password ? "border-red-500" : ""}
-                  />
-                  {addFormErrors.password && (
-                    <p className="text-xs text-red-500">
-                      {addFormErrors.password}
-                    </p>
-                  )}
-                  <p className="text-xs text-gray-500">
-                    Password must be at least 8 characters and include
-                    uppercase, lowercase, number, and special character.
-                  </p>
                 </div>
               </div>
               <DialogFooter>
