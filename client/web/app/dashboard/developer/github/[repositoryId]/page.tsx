@@ -141,7 +141,9 @@ export default function RepositoryAnalysisPage() {
         <div className="flex h-[calc(100vh-64px)] items-center justify-center">
           <div className="text-center">
             <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-primary" />
-            <p className="text-muted-foreground">Loading repository analysis...</p>
+            <p className="text-muted-foreground">
+              Loading repository analysis...
+            </p>
           </div>
         </div>
       </div>
@@ -153,7 +155,10 @@ export default function RepositoryAnalysisPage() {
       <div className="min-h-screen bg-background">
         <Navbar />
         <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
-          <Button variant="outline" onClick={() => router.push("/dashboard/developer/github")}>
+          <Button
+            variant="outline"
+            onClick={() => router.push("/dashboard/developer/github")}
+          >
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to GitHub
           </Button>
@@ -244,7 +249,8 @@ export default function RepositoryAnalysisPage() {
             <div>
               <p className="text-sm font-semibold">Analysis Progress</p>
               <p className="text-sm text-muted-foreground">
-                {repository.analysis_current_stage || "Waiting to start analysis"}
+                {repository.analysis_current_stage ||
+                  "Waiting to start analysis"}
               </p>
             </div>
             <div className="text-right">
@@ -262,7 +268,9 @@ export default function RepositoryAnalysisPage() {
               <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
                 Last Synced
               </p>
-              <p className="mt-2 font-medium">{formatDateTime(repository.last_synced)}</p>
+              <p className="mt-2 font-medium">
+                {formatDateTime(repository.last_synced)}
+              </p>
             </div>
             <div className="rounded-2xl border bg-muted/20 p-4">
               <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
@@ -277,10 +285,22 @@ export default function RepositoryAnalysisPage() {
                 Contribution Scope
               </p>
               <p className="mt-2 font-medium">
-                {(repository.analysis_metadata?.developerContributionCount as number | undefined) ??
-                  0}{" "}
+                {(repository.analysis_metadata?.commitsAnalyzed as
+                  | number
+                  | undefined) ?? 0}{" "}
                 commits analyzed
               </p>
+              {(repository.analysis_metadata?.developerCommitsFound as
+                | number
+                | undefined) !== undefined && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  from{" "}
+                  {(repository.analysis_metadata?.developerCommitsFound as
+                    | number
+                    | undefined) ?? 0}{" "}
+                  developer commits found
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -319,7 +339,8 @@ export default function RepositoryAnalysisPage() {
                           Top Weaknesses
                         </p>
                         <p className="mt-2 text-3xl font-semibold">
-                          {repository.analysis_summary.top_weaknesses?.length ?? 0}
+                          {repository.analysis_summary.top_weaknesses?.length ??
+                            0}
                         </p>
                       </div>
                       <div className="rounded-2xl border p-4">
@@ -327,7 +348,8 @@ export default function RepositoryAnalysisPage() {
                           Recommendations
                         </p>
                         <p className="mt-2 text-3xl font-semibold">
-                          {repository.analysis_summary.recommendations?.length ?? 0}
+                          {repository.analysis_summary.recommendations
+                            ?.length ?? 0}
                         </p>
                       </div>
                     </div>
@@ -336,16 +358,19 @@ export default function RepositoryAnalysisPage() {
                       <div className="rounded-2xl border bg-green-500/5 p-5">
                         <p className="mb-3 text-sm font-semibold">Strengths</p>
                         <div className="space-y-2">
-                          {(repository.analysis_summary.strengths || []).length > 0 ? (
-                            repository.analysis_summary.strengths?.map((strength) => (
-                              <div
-                                key={strength}
-                                className="flex items-start gap-2 text-sm text-muted-foreground"
-                              >
-                                <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />
-                                <span>{strength}</span>
-                              </div>
-                            ))
+                          {(repository.analysis_summary.strengths || [])
+                            .length > 0 ? (
+                            repository.analysis_summary.strengths?.map(
+                              (strength) => (
+                                <div
+                                  key={strength}
+                                  className="flex items-start gap-2 text-sm text-muted-foreground"
+                                >
+                                  <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />
+                                  <span>{strength}</span>
+                                </div>
+                              ),
+                            )
                           ) : (
                             <p className="text-sm text-muted-foreground">
                               Strengths will appear after analysis completes.
@@ -355,35 +380,44 @@ export default function RepositoryAnalysisPage() {
                       </div>
 
                       <div className="rounded-2xl border bg-amber-500/5 p-5">
-                        <p className="mb-3 text-sm font-semibold">Top Weaknesses</p>
+                        <p className="mb-3 text-sm font-semibold">
+                          Top Weaknesses
+                        </p>
                         <div className="space-y-2">
-                          {(repository.analysis_summary.top_weaknesses || []).length > 0 ? (
-                            repository.analysis_summary.top_weaknesses?.map((weakness) => (
-                              <div
-                                key={`${weakness.category}-${weakness.priority}`}
-                                className="rounded-xl border border-amber-500/20 bg-background px-3 py-3"
-                              >
-                                <div className="mb-2 flex items-center justify-between gap-3">
-                                  <span className="font-medium capitalize">
-                                    {weakness.category.replace(/_/g, " ")}
-                                  </span>
-                                  <Badge variant="outline" className="capitalize">
-                                    {weakness.priority}
-                                  </Badge>
-                                </div>
-                                <p className="text-sm text-muted-foreground">
-                                  Score: {weakness.score.toFixed(2)}
-                                </p>
-                                {weakness.evidence?.[0] && (
-                                  <p className="mt-2 text-sm text-muted-foreground">
-                                    {weakness.evidence[0]}
+                          {(repository.analysis_summary.top_weaknesses || [])
+                            .length > 0 ? (
+                            repository.analysis_summary.top_weaknesses?.map(
+                              (weakness) => (
+                                <div
+                                  key={`${weakness.category}-${weakness.priority}`}
+                                  className="rounded-xl border border-amber-500/20 bg-background px-3 py-3"
+                                >
+                                  <div className="mb-2 flex items-center justify-between gap-3">
+                                    <span className="font-medium capitalize">
+                                      {weakness.category.replace(/_/g, " ")}
+                                    </span>
+                                    <Badge
+                                      variant="outline"
+                                      className="capitalize"
+                                    >
+                                      {weakness.priority}
+                                    </Badge>
+                                  </div>
+                                  <p className="text-sm text-muted-foreground">
+                                    Score: {weakness.score.toFixed(2)}
                                   </p>
-                                )}
-                              </div>
-                            ))
+                                  {weakness.evidence?.[0] && (
+                                    <p className="mt-2 text-sm text-muted-foreground">
+                                      {weakness.evidence[0]}
+                                    </p>
+                                  )}
+                                </div>
+                              ),
+                            )
                           ) : (
                             <p className="text-sm text-muted-foreground">
-                              Weakness hotspots will appear after analysis completes.
+                              Weakness hotspots will appear after analysis
+                              completes.
                             </p>
                           )}
                         </div>
@@ -392,8 +426,8 @@ export default function RepositoryAnalysisPage() {
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    Analysis details will populate here as soon as this repository
-                    has completed processing.
+                    Analysis details will populate here as soon as this
+                    repository has completed processing.
                   </p>
                 )}
               </CardContent>
@@ -405,10 +439,12 @@ export default function RepositoryAnalysisPage() {
               </CardHeader>
               <CardContent>
                 {repository.analysis_summary?.weakness_scores &&
-                Object.keys(repository.analysis_summary.weakness_scores).length > 0 ? (
+                Object.keys(repository.analysis_summary.weakness_scores)
+                  .length > 0 ? (
                   <div className="grid gap-3 md:grid-cols-2">
-                    {Object.entries(repository.analysis_summary.weakness_scores).map(
-                      ([category, score]) => (
+                    {Object.entries(
+                      repository.analysis_summary.weakness_scores,
+                    ).map(([category, score]) => (
                       <div
                         key={category}
                         className="rounded-2xl border bg-background p-4"
@@ -432,7 +468,8 @@ export default function RepositoryAnalysisPage() {
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    Weakness scores will appear here when the NLP analysis result arrives.
+                    Weakness scores will appear here when the NLP analysis
+                    result arrives.
                   </p>
                 )}
               </CardContent>
@@ -446,26 +483,30 @@ export default function RepositoryAnalysisPage() {
                 {repository.analysis_summary?.recommendations &&
                 repository.analysis_summary.recommendations.length > 0 ? (
                   <div className="space-y-3">
-                    {repository.analysis_summary.recommendations.map((recommendation) => (
-                      <div
-                        key={`${recommendation.weakness}-${recommendation.learning_query}`}
-                        className="rounded-2xl border p-4"
-                      >
-                        <div className="mb-2 flex items-center justify-between gap-3">
-                          <p className="font-semibold capitalize">
-                            {recommendation.weakness.replace(/_/g, " ")}
+                    {repository.analysis_summary.recommendations.map(
+                      (recommendation) => (
+                        <div
+                          key={`${recommendation.weakness}-${recommendation.learning_query}`}
+                          className="rounded-2xl border p-4"
+                        >
+                          <div className="mb-2 flex items-center justify-between gap-3">
+                            <p className="font-semibold capitalize">
+                              {recommendation.weakness.replace(/_/g, " ")}
+                            </p>
+                            <Badge variant="secondary">Actionable</Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            {recommendation.action}
                           </p>
-                          <Badge variant="secondary">Actionable</Badge>
+                          <p className="mt-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                            Learning query
+                          </p>
+                          <p className="mt-1 text-sm">
+                            {recommendation.learning_query}
+                          </p>
                         </div>
-                        <p className="text-sm text-muted-foreground">
-                          {recommendation.action}
-                        </p>
-                        <p className="mt-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                          Learning query
-                        </p>
-                        <p className="mt-1 text-sm">{recommendation.learning_query}</p>
-                      </div>
-                    ))}
+                      ),
+                    )}
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">
@@ -521,11 +562,12 @@ export default function RepositoryAnalysisPage() {
               <CardContent className="space-y-3">
                 <div className="rounded-2xl border p-4">
                   <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                    Contributor Count
+                    Contributors
                   </p>
                   <p className="mt-2 text-lg font-semibold">
-                    {(repository.analysis_metadata?.contributorCount as number | undefined) ??
-                      "--"}
+                    {(repository.analysis_metadata?.contributorCount as
+                      | number
+                      | undefined) ?? "--"}
                   </p>
                 </div>
                 <div className="rounded-2xl border p-4">
@@ -533,17 +575,56 @@ export default function RepositoryAnalysisPage() {
                     Files Touched
                   </p>
                   <p className="mt-2 text-lg font-semibold">
-                    {(repository.analysis_metadata?.filesTouched as number | undefined) ?? "--"}
+                    {(repository.analysis_metadata?.filesTouched as
+                      | number
+                      | undefined) ?? "--"}
                   </p>
                 </div>
                 <div className="rounded-2xl border p-4">
                   <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                    Commit Count
+                    Commits Analyzed
                   </p>
                   <p className="mt-2 text-lg font-semibold">
-                    {(repository.analysis_metadata?.analyzedCommitCount as number | undefined) ?? "--"}
+                    {(repository.analysis_metadata?.analyzedCommitCount as
+                      | number
+                      | undefined) ?? "--"}
                   </p>
                 </div>
+                <div className="rounded-2xl border p-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                    Developer Commits Found
+                  </p>
+                  <p className="mt-2 text-lg font-semibold">
+                    {(repository.analysis_metadata?.developerCommitsFound as
+                      | number
+                      | undefined) ?? "--"}
+                  </p>
+                </div>
+                {repository.analysis_metadata?.commitLimitApplied && (
+                  <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
+                    <p className="text-xs uppercase tracking-[0.2em] text-amber-700">
+                      Sampling Notice
+                    </p>
+                    <p className="mt-2 text-sm text-amber-700">
+                      Analysis was capped at{" "}
+                      {String(
+                        repository.analysis_metadata?.maxCommitsPerAnalysis ??
+                          "--",
+                      )}{" "}
+                      commits for speed.
+                    </p>
+                  </div>
+                )}
+                {repository.analysis_metadata?.diffTruncated && (
+                  <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+                    <p className="text-xs uppercase tracking-[0.2em] text-primary">
+                      Diff Sampling
+                    </p>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      The combined diff was truncated to keep analysis responsive.
+                    </p>
+                  </div>
+                )}
                 {repository.analysis_metadata?.failureReason && (
                   <div className="rounded-2xl border border-destructive/40 bg-destructive/5 p-4">
                     <p className="text-xs uppercase tracking-[0.2em] text-destructive">

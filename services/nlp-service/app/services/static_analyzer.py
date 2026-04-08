@@ -303,12 +303,17 @@ class StaticAnalyzer:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout_bytes, stderr_bytes = await process.communicate()
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                process.communicate(),
+                timeout=30,
+            )
             return (
                 stdout_bytes.decode("utf-8", errors="replace"),
                 stderr_bytes.decode("utf-8", errors="replace"),
                 process.returncode,
             )
+        except asyncio.TimeoutError:
+            return "", f"Timed out while running {' '.join(cmd)}", 1
         except Exception as exc:
             return "", str(exc), 1
 
@@ -440,7 +445,7 @@ class StaticAnalyzer:
                             StaticIssue(
                                 file=file_path,
                                 line=min(import_lines),
-                                category="language_idioms",
+                                category="dependency_management",
                                 severity="medium",
                                 message="Import inside a function suggests dependency setup is leaking into runtime logic.",
                                 rule="heuristic-import-in-function",
@@ -470,6 +475,30 @@ class StaticAnalyzer:
                         severity="high",
                         message="Hardcoded database credentials detected in source code.",
                         rule="heuristic-hardcoded-credentials",
+                        tool="heuristic",
+                    )
+                )
+            if re.search(r"find_one\(\{.*password.*\}\)", content, re.DOTALL):
+                issues.append(
+                    StaticIssue(
+                        file=file_path,
+                        line=self._find_line(content, "password"),
+                        category="security",
+                        severity="high",
+                        message="Credentials appear to be queried or stored in plaintext.",
+                        rule="heuristic-plaintext-password",
+                        tool="heuristic",
+                    )
+                )
+            if re.search(r"except\s+Exception(?:\s+as\s+\w+)?\s*:", content):
+                issues.append(
+                    StaticIssue(
+                        file=file_path,
+                        line=self._find_line(content, "except Exception"),
+                        category="error_handling",
+                        severity="medium",
+                        message="Broad exception handling can hide the real failure mode unless narrowed carefully.",
+                        rule="heuristic-broad-except",
                         tool="heuristic",
                     )
                 )
@@ -514,6 +543,30 @@ class StaticAnalyzer:
                         severity="low",
                         message="Console logging in service code usually belongs behind structured logging.",
                         rule="heuristic-console",
+                        tool="heuristic",
+                    )
+                )
+            if "fetch(" in content and "response.ok" not in content:
+                issues.append(
+                    StaticIssue(
+                        file=file_path,
+                        line=self._find_line(content, "fetch("),
+                        category="error_handling",
+                        severity="medium",
+                        message="Network calls should verify response.ok before consuming the payload.",
+                        rule="heuristic-missing-response-check",
+                        tool="heuristic",
+                    )
+                )
+            if "http://" in content:
+                issues.append(
+                    StaticIssue(
+                        file=file_path,
+                        line=self._find_line(content, "http://"),
+                        category="security",
+                        severity="low",
+                        message="Plain HTTP endpoints can expose sensitive traffic or credentials.",
+                        rule="heuristic-insecure-http",
                         tool="heuristic",
                     )
                 )

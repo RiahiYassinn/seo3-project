@@ -2,6 +2,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from threading import Event, Thread
+from time import time
 
 from kafka import KafkaConsumer, KafkaProducer
 
@@ -26,16 +27,22 @@ logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("groq").setLevel(logging.WARNING)
+logging.getLogger("groq._base_client").setLevel(logging.WARNING)
+logging.getLogger("google").setLevel(logging.WARNING)
+logging.getLogger("google_genai").setLevel(logging.WARNING)
+logging.getLogger("kafka").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 if not load_dotenv:
     logger.info("python-dotenv unavailable; relying on os.environ only")
 
-os.environ.setdefault("ANTHROPIC_API_KEY", os.environ.get("ANTHROPIC_API_KEY", ""))
 analyzer = CodeAnalyzer()
 shutdown_event = Event()
 consumer_thread = None
 producer = None
+pending_snapshot_chunks: dict[str, dict] = {}
 
 
 def _serialize_message(payload: dict) -> bytes:
@@ -54,6 +61,13 @@ def emit_progress(
     if not producer:
         return
 
+    logger.info(
+        "analysis progress repo=%s developer=%s progress=%s stage=%s",
+        repository_id,
+        developer_id,
+        progress,
+        stage,
+    )
     producer.send(
         "analysis.progress",
         key=repository_id.encode("utf-8"),
@@ -70,29 +84,83 @@ def emit_progress(
 
 
 async def process_analysis_job(message: dict) -> None:
+    import asyncio
+
     repository_id = message["repositoryId"]
     integration_id = message.get("integrationId")
     developer_id = message["developer_id"]
+    current_progress = 68
+    current_stage = "Preparing analysis runtime"
+    logger.info(
+        "starting analysis repo=%s developer=%s files=%s diff_chars=%s",
+        repository_id,
+        developer_id,
+        len(message.get("files", {})),
+        len(message.get("diff", "")),
+    )
+    emit_progress(
+        repository_id,
+        developer_id,
+        integration_id,
+        current_progress,
+        current_stage,
+    )
+
+    async def progress_callback(progress: int, stage: str) -> None:
+        nonlocal current_progress, current_stage
+        if progress >= current_progress:
+            current_progress = progress
+            current_stage = stage
+            emit_progress(
+                repository_id,
+                developer_id,
+                integration_id,
+                progress,
+                stage,
+            )
 
     emit_progress(
         repository_id,
         developer_id,
         integration_id,
-        78,
+        70,
         "Running code weakness analysis",
     )
-    profile = await analyzer.analyze(
-        files_with_content=message.get("files", {}),
-        diff_content=message.get("diff", ""),
-        commit_message=message.get("commit_message", ""),
-        developer_id=developer_id,
-        existing_profile=message.get("existing_profile"),
-    )
+    heartbeat_running = True
+
+    async def heartbeat() -> None:
+        while heartbeat_running:
+            await asyncio.sleep(12)
+            emit_progress(
+                repository_id,
+                developer_id,
+                integration_id,
+                current_progress,
+                f"{current_stage} (still running)",
+            )
+
+    heartbeat_task = asyncio.create_task(heartbeat())
+    try:
+        profile = await analyzer.analyze(
+            files_with_content=message.get("files", {}),
+            diff_content=message.get("diff", ""),
+            commit_message=message.get("commit_message", ""),
+            developer_id=developer_id,
+            existing_profile=message.get("existing_profile"),
+            progress_callback=progress_callback,
+        )
+    finally:
+        heartbeat_running = False
+        heartbeat_task.cancel()
+        try:
+            await heartbeat_task
+        except asyncio.CancelledError:
+            pass
     emit_progress(
         repository_id,
         developer_id,
         integration_id,
-        92,
+        96,
         "Publishing analysis insights",
     )
 
@@ -101,6 +169,7 @@ async def process_analysis_job(message: dict) -> None:
         "filesAnalyzed": len(message.get("files", {})),
         "diffLength": len(message.get("diff", "")),
         "analysisSource": "nlp-service",
+        "analysisMetadata": profile.get("analysis_metadata", {}),
     }
 
     producer.send(
@@ -120,6 +189,72 @@ async def process_analysis_job(message: dict) -> None:
             }
         ),
     )
+    logger.info(
+        "completed analysis repo=%s developer=%s quality_score=%s",
+        repository_id,
+        developer_id,
+        profile.get("quality_score"),
+    )
+
+
+def _cleanup_stale_snapshots() -> None:
+    expiration_seconds = 1800
+    stale_repository_ids = [
+        repository_id
+        for repository_id, state in pending_snapshot_chunks.items()
+        if time() - state.get("updated_at", 0) > expiration_seconds
+    ]
+    for repository_id in stale_repository_ids:
+        pending_snapshot_chunks.pop(repository_id, None)
+        logger.warning("Discarded stale snapshot buffer for repo=%s", repository_id)
+
+
+def _reassemble_snapshot_chunk(message: dict) -> dict | None:
+    transport = message.get("transport")
+    if not transport:
+        return message
+
+    repository_id = message["repositoryId"]
+    state = pending_snapshot_chunks.setdefault(
+        repository_id,
+        {
+            "integration_id": message.get("integrationId"),
+            "developer_id": message.get("developerId"),
+            "chunk_count": int(transport.get("chunkCount", 1)),
+            "chunks": {},
+            "updated_at": time(),
+        },
+    )
+    state["updated_at"] = time()
+    state["chunk_count"] = max(state["chunk_count"], int(transport.get("chunkCount", 1)))
+    state["chunks"][int(transport["chunkIndex"])] = transport["payload"]
+
+    received_count = len(state["chunks"])
+    emit_progress(
+        repository_id,
+        state.get("developer_id"),
+        state.get("integration_id"),
+        66,
+        f"Receiving repository snapshot in NLP ({received_count}/{state['chunk_count']})",
+    )
+
+    if received_count < state["chunk_count"]:
+        return None
+
+    ordered_chunks = [
+        state["chunks"][index]
+        for index in range(1, state["chunk_count"] + 1)
+        if index in state["chunks"]
+    ]
+    if len(ordered_chunks) != state["chunk_count"]:
+        return None
+
+    import base64
+    import json
+
+    decoded = b"".join(base64.b64decode(chunk) for chunk in ordered_chunks)
+    pending_snapshot_chunks.pop(repository_id, None)
+    return json.loads(decoded.decode("utf-8"))
 
 
 def consume_kafka_jobs():
@@ -131,16 +266,26 @@ def consume_kafka_jobs():
         bootstrap_servers=settings.KAFKA_BROKERS.split(","),
         group_id=settings.KAFKA_CONSUMER_GROUP,
         value_deserializer=lambda value: json.loads(value.decode("utf-8")),
-        auto_offset_reset="earliest",
+        auto_offset_reset="latest",
         enable_auto_commit=True,
     )
 
     while not shutdown_event.is_set():
+        _cleanup_stale_snapshots()
         batches = consumer.poll(timeout_ms=1000)
         for _, messages in batches.items():
             for message in messages:
                 try:
-                    asyncio.run(process_analysis_job(message.value))
+                    reassembled_message = _reassemble_snapshot_chunk(message.value)
+                    if reassembled_message is None:
+                        continue
+                    logger.info(
+                        "received commit.analysis repo=%s partition=%s offset=%s",
+                        reassembled_message.get("repositoryId"),
+                        message.partition,
+                        message.offset,
+                    )
+                    asyncio.run(process_analysis_job(reassembled_message))
                 except Exception as exc:
                     raw_value = message.value or {}
                     repository_id = raw_value.get("repositoryId", "unknown")

@@ -1,19 +1,19 @@
-import { 
-  Injectable, 
-  ExecutionContext, 
+import {
+  Injectable,
+  ExecutionContext,
   UnauthorizedException,
-  Inject
+  Inject,
+  CanActivate,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
 import { ClientProxy } from '@nestjs/microservices';
 import { firstValueFrom } from 'rxjs';
+import { createHash } from 'crypto';
 
 @Injectable()
-export class RefreshTokenGuard extends AuthGuard('jwt-refresh') {
+export class RefreshTokenGuard implements CanActivate {
   constructor(
     @Inject('DEVELOPER_SERVICE') private developerService: ClientProxy
   ) {
-    super();
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -30,64 +30,55 @@ export class RefreshTokenGuard extends AuthGuard('jwt-refresh') {
     }
 
     try {
-      // Check if token is blacklisted/revoked before proceeding
-      const isRevoked = await this.checkIfTokenRevoked(refreshToken);
-      
-      if (isRevoked) {
+      const tokenRecord = await firstValueFrom(
+        this.developerService.send('find_refresh_token_by_hash', {
+          tokenHash: this.hashToken(refreshToken),
+        }),
+      );
+
+      if (!tokenRecord) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+
+      if (tokenRecord.is_revoked) {
         throw new UnauthorizedException('Refresh token has been revoked');
       }
 
-      // Store token in request for the strategy
+      if (new Date(tokenRecord.expires_at) < new Date()) {
+        throw new UnauthorizedException('Refresh token has expired');
+      }
+
+      const user = await firstValueFrom(
+        this.developerService.send('find_user_by_id', { id: tokenRecord.developer_id }),
+      );
+
+      if (!user || !user.is_active) {
+        throw new UnauthorizedException('User account is deactivated');
+      }
+
+      if (!user.is_email_verified) {
+        throw new UnauthorizedException('Please verify your email first');
+      }
+
       request.refreshToken = refreshToken;
+      request.user = {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        role: user.role,
+        refreshToken,
+      };
 
-      // Activate the passport strategy
-      const result = (await super.canActivate(context)) as boolean;
-
-      return result;
+      return true;
     } catch (error) {
+      this.logFailedRefreshAttempt(request, error instanceof Error ? error.message : 'Invalid refresh token');
+
       if (error instanceof UnauthorizedException) {
         throw error;
       }
+
       throw new UnauthorizedException('Invalid refresh token');
     }
-  }
-
-  handleRequest(err: any, user: any, info: any, context: ExecutionContext) {
-    const request = context.switchToHttp().getRequest();
-    
-    if (err || !user) {
-      // Log failed refresh attempt
-      this.logFailedRefreshAttempt(request, err?.message || info?.message);
-      
-      if (err) {
-        throw err;
-      }
-      
-      if (info?.message === 'No auth token') {
-        throw new UnauthorizedException('Refresh token is required');
-      }
-      
-      if (info?.message === 'jwt expired') {
-        throw new UnauthorizedException('Refresh token has expired');
-      }
-      
-      throw new UnauthorizedException(info?.message || 'Invalid refresh token');
-    }
-
-    // Check if user account is still active
-    if (user.isActive === false) {
-      throw new UnauthorizedException('User account is deactivated');
-    }
-
-    // Check if email is verified (if required)
-    if (user.isEmailVerified === false) {
-      throw new UnauthorizedException('Please verify your email first');
-    }
-
-    // Attach the refresh token to the user object for the service
-    user.refreshToken = request.refreshToken;
-    
-    return user;
   }
 
   private extractRefreshToken(request: any): string | null {
@@ -116,17 +107,8 @@ export class RefreshTokenGuard extends AuthGuard('jwt-refresh') {
     return uuidRegex.test(token);
   }
 
-  private async checkIfTokenRevoked(token: string): Promise<boolean> {
-    try {
-      // Call developer service to check if token is revoked
-      const result = await firstValueFrom(
-        this.developerService.send('check_refresh_token_revoked', { token })
-      );
-      return result.isRevoked;
-    } catch (error) {
-      console.error('Failed to check token revocation status:', error);
-      return false; // Assume not revoked if check fails
-    }
+  private hashToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
   }
 
   private logFailedRefreshAttempt(request: any, reason: string) {

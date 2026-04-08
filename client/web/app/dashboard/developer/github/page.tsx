@@ -76,6 +76,8 @@ interface Repository {
   last_synced: string;
 }
 
+type RepositoryFilter = "all" | "analyzed" | "queued";
+
 export default function GitHubPage() {
   const router = useRouter();
   const { user, hasHydrated } = useAuthStore();
@@ -93,6 +95,8 @@ export default function GitHubPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [repositoryFilter, setRepositoryFilter] =
+    useState<RepositoryFilter>("all");
 
   const loadRepositories = async () => {
     const { data: reposData } = await api.get<Repository[]>(
@@ -285,24 +289,38 @@ export default function GitHubPage() {
     }
   };
 
-  // Filter repositories based on search query
-  const filteredRepositories = repositories.filter((repo) =>
-    repo.repo_name.toLowerCase().includes(searchQuery.toLowerCase()),
-  );
-  const analyzedRepositories = repositories.filter(
+  const analyzedRepositoryList = repositories.filter(
     (repo) => repo.analysis_status === "completed" || repo.is_analyzed,
-  ).length;
-  const pendingRepositories = repositories.filter(
-    (repo) =>
-      repo.analysis_status === "pending" ||
-      repo.analysis_status === "in_progress",
-  ).length;
-  const totalStars = repositories.reduce((sum, repo) => sum + repo.stars, 0);
-  const activeAnalyses = repositories.filter(
+  );
+  const queuedRepositoryList = repositories.filter(
     (repo) =>
       repo.analysis_status === "pending" ||
       repo.analysis_status === "in_progress",
   );
+  const filteredRepositories = repositories.filter((repo) => {
+    const matchesSearch = repo.repo_name
+      .toLowerCase()
+      .includes(searchQuery.toLowerCase());
+
+    if (!matchesSearch) return false;
+
+    if (repositoryFilter === "analyzed") {
+      return repo.analysis_status === "completed" || repo.is_analyzed;
+    }
+
+    if (repositoryFilter === "queued") {
+      return (
+        repo.analysis_status === "pending" ||
+        repo.analysis_status === "in_progress"
+      );
+    }
+
+    return true;
+  });
+  const analyzedRepositories = analyzedRepositoryList.length;
+  const pendingRepositories = queuedRepositoryList.length;
+  const totalStars = repositories.reduce((sum, repo) => sum + repo.stars, 0);
+  const activeAnalyses = queuedRepositoryList;
 
   const formatDateTime = (value: string | null) => {
     if (!value) return "Not available";
@@ -328,6 +346,12 @@ export default function GitHubPage() {
     if (status === "pending") return "Pending";
     if (status === "in_progress") return "In Progress";
     return "Not analyzed";
+  };
+
+  const getRepositoryFilterLabel = (filter: RepositoryFilter) => {
+    if (filter === "analyzed") return "Analyzed";
+    if (filter === "queued") return "In Queue";
+    return "Repositories";
   };
 
   if (loading) {
@@ -588,7 +612,15 @@ export default function GitHubPage() {
                 ) : (
                   <>
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 mb-6">
-                      <div className="rounded-2xl border bg-background p-4">
+                      <button
+                        type="button"
+                        onClick={() => setRepositoryFilter("all")}
+                        className={`rounded-2xl border bg-background p-4 text-left transition hover:border-primary/40 ${
+                          repositoryFilter === "all"
+                            ? "border-primary shadow-sm"
+                            : ""
+                        }`}
+                      >
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
                             Repositories
@@ -601,8 +633,16 @@ export default function GitHubPage() {
                         <p className="text-sm text-muted-foreground mt-1">
                           Total synced from GitHub
                         </p>
-                      </div>
-                      <div className="rounded-2xl border bg-background p-4">
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRepositoryFilter("analyzed")}
+                        className={`rounded-2xl border bg-background p-4 text-left transition hover:border-primary/40 ${
+                          repositoryFilter === "analyzed"
+                            ? "border-primary shadow-sm"
+                            : ""
+                        }`}
+                      >
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
                             Analyzed
@@ -615,8 +655,16 @@ export default function GitHubPage() {
                         <p className="text-sm text-muted-foreground mt-1">
                           Repositories with completed analysis
                         </p>
-                      </div>
-                      <div className="rounded-2xl border bg-background p-4">
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRepositoryFilter("queued")}
+                        className={`rounded-2xl border bg-background p-4 text-left transition hover:border-primary/40 ${
+                          repositoryFilter === "queued"
+                            ? "border-primary shadow-sm"
+                            : ""
+                        }`}
+                      >
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
                             In Queue
@@ -629,7 +677,7 @@ export default function GitHubPage() {
                         <p className="text-sm text-muted-foreground mt-1">
                           Pending or running analyses
                         </p>
-                      </div>
+                      </button>
                       <div className="rounded-2xl border bg-background p-4">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
@@ -648,15 +696,28 @@ export default function GitHubPage() {
                       <div className="text-center py-12">
                         <Code className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
                         <p className="text-muted-foreground mb-4">
-                          No repositories match your search
+                          No repositories match your current filters
                         </p>
-                        <Button
-                          onClick={() => setSearchQuery("")}
-                          variant="outline"
-                          size="sm"
-                        >
-                          Clear Search
-                        </Button>
+                        <div className="flex justify-center gap-3">
+                          {searchQuery && (
+                            <Button
+                              onClick={() => setSearchQuery("")}
+                              variant="outline"
+                              size="sm"
+                            >
+                              Clear Search
+                            </Button>
+                          )}
+                          {repositoryFilter !== "all" && (
+                            <Button
+                              onClick={() => setRepositoryFilter("all")}
+                              variant="outline"
+                              size="sm"
+                            >
+                              Show All Repositories
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     ) : (
                       <>
@@ -716,11 +777,19 @@ export default function GitHubPage() {
                               health at a glance
                             </p>
                           </div>
-                          {searchQuery && (
-                            <Badge variant="outline">
-                              Filter: {searchQuery}
-                            </Badge>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {repositoryFilter !== "all" && (
+                              <Badge variant="outline">
+                                Status:{" "}
+                                {getRepositoryFilterLabel(repositoryFilter)}
+                              </Badge>
+                            )}
+                            {searchQuery && (
+                              <Badge variant="outline">
+                                Search: {searchQuery}
+                              </Badge>
+                            )}
+                          </div>
                         </div>
                         <div className="grid gap-5 md:grid-cols-2">
                           {filteredRepositories.map((repo) => (

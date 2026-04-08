@@ -48,11 +48,36 @@ interface AnalysisJobPayload {
   metadata: Record<string, any>;
 }
 
+interface ChunkEnvelopePayload {
+  repositoryId: string;
+  integrationId: string;
+  developerId: string;
+  transport: {
+    encoding: 'base64';
+    chunkIndex: number;
+    chunkCount: number;
+    payload: string;
+    totalBytes: number;
+  };
+}
+
 @Injectable()
 export class CommitAnalysisService {
   private readonly logger = new Logger(CommitAnalysisService.name);
   private readonly maxCommitsPerAnalysis = parseInt(
-    process.env.MAX_COMMITS_PER_ANALYSIS || '40',
+    process.env.MAX_COMMITS_PER_ANALYSIS || '0',
+    10,
+  );
+  private readonly maxFilesPerAnalysis = parseInt(
+    process.env.MAX_FILES_PER_ANALYSIS || '0',
+    10,
+  );
+  private readonly maxDiffChars = parseInt(
+    process.env.MAX_DIFF_CHARS_PER_ANALYSIS || '0',
+    10,
+  );
+  private readonly maxSnapshotChunkBytes = parseInt(
+    process.env.ANALYSIS_SNAPSHOT_CHUNK_BYTES || '240000',
     10,
   );
   private readonly supportedCodeExtensions = new Set([
@@ -85,7 +110,11 @@ export class CommitAnalysisService {
         per_page: 100,
       });
 
-      const selectedCommits = commits.slice(0, this.maxCommitsPerAnalysis);
+      const selectedCommits =
+        this.maxCommitsPerAnalysis > 0
+          ? commits.slice(0, this.maxCommitsPerAnalysis)
+          : commits;
+      const totalDeveloperCommitsFound = commits.length;
       if (selectedCommits.length === 0) {
         this.emitFailure(event, 'No commits found for the linked GitHub account');
         return;
@@ -139,7 +168,8 @@ export class CommitAnalysisService {
       }
 
       this.emitProgress(event, 58, 'Collecting source file snapshots');
-      const files = await this.collectFilesWithContent(
+      const { files, fileLimitApplied } = await this.collectFilesWithContent(
+        event,
         octokit,
         repoCoordinates.owner,
         repoCoordinates.repo,
@@ -160,7 +190,6 @@ export class CommitAnalysisService {
         return;
       }
 
-      this.emitProgress(event, 65, 'Sending repository snapshot to NLP');
       const job: AnalysisJobPayload = {
         repositoryId: event.repositoryId,
         integrationId: event.integrationId,
@@ -176,7 +205,14 @@ export class CommitAnalysisService {
         metadata: {
           contributorCount: contributors.length,
           developerContributionCount:
-            linkedContributor?.contributions || selectedCommits.length,
+            linkedContributor?.contributions || totalDeveloperCommitsFound,
+          developerCommitsFound: totalDeveloperCommitsFound,
+          commitsAnalyzed: detailedCommits.length,
+          commitLimitApplied:
+            this.maxCommitsPerAnalysis > 0 &&
+            totalDeveloperCommitsFound > this.maxCommitsPerAnalysis,
+          maxCommitsPerAnalysis:
+            this.maxCommitsPerAnalysis > 0 ? this.maxCommitsPerAnalysis : null,
           developerContributionShare:
             totalContributions > 0 && linkedContributor
               ? Number(
@@ -188,14 +224,16 @@ export class CommitAnalysisService {
           totalContributorCommits: totalContributions,
           analyzedCommitCount: detailedCommits.length,
           filesTouched: Object.keys(files).length,
+          fileLimitApplied,
+          maxFilesPerAnalysis:
+            this.maxFilesPerAnalysis > 0 ? this.maxFilesPerAnalysis : null,
+          diffTruncated: diff.includes('[truncated for analysis size]'),
+          maxDiffCharsPerAnalysis:
+            this.maxDiffChars > 0 ? this.maxDiffChars : null,
           sampledCommitShas: detailedCommits.map((commit) => commit.sha),
         },
       };
-
-      this.kafkaClient.emit('commit.analysis', {
-        key: event.repositoryId,
-        value: JSON.stringify(job),
-      });
+      this.emitSnapshotToNlp(event, job);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Repository analysis failed';
@@ -248,50 +286,78 @@ export class CommitAnalysisService {
   }
 
   private async collectFilesWithContent(
+    event: AnalysisRequestedEvent,
     octokit: Octokit,
     owner: string,
     repo: string,
     commits: CommitPayload[],
   ) {
     const files = new Map<string, string>();
+    const seenFilenames = new Set<string>();
+    const candidates = commits.flatMap((commit) =>
+      commit.files.map((file) => ({ commitSha: commit.sha, file })),
+    );
+    const eligibleFiles = candidates.filter(
+      ({ file }) => {
+        if (!this.shouldFetchFile(file.filename, file.status)) {
+          return false;
+        }
+        if (seenFilenames.has(file.filename)) {
+          return false;
+        }
+        seenFilenames.add(file.filename);
+        return true;
+      },
+    );
+    const limitedFiles =
+      this.maxFilesPerAnalysis > 0
+        ? eligibleFiles.slice(0, this.maxFilesPerAnalysis)
+        : eligibleFiles;
+    const totalFiles = limitedFiles.length;
 
-    for (const commit of commits) {
-      for (const file of commit.files) {
-        if (
-          files.has(file.filename) ||
-          !this.shouldFetchFile(file.filename, file.status)
-        ) {
+    for (const [index, entry] of limitedFiles.entries()) {
+      const { file, commitSha } = entry;
+      try {
+        const response = await octokit.repos.getContent({
+          owner,
+          repo,
+          path: file.filename,
+          ref: commitSha,
+        });
+        const data = response.data;
+        if (Array.isArray(data) || !('content' in data) || !data.content) {
           continue;
         }
 
-        try {
-          const response = await octokit.repos.getContent({
-            owner,
-            repo,
-            path: file.filename,
-            ref: commit.sha,
-          });
-          const data = response.data;
-          if (Array.isArray(data) || !('content' in data) || !data.content) {
-            continue;
-          }
-
-          const encoding = data.encoding === 'base64' ? 'base64' : 'utf8';
-          const content = Buffer.from(data.content, encoding).toString('utf8');
-          if (content.trim()) {
-            files.set(file.filename, content);
-          }
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : 'Unknown file fetch error';
-          this.logger.warn(
-            `Skipping file ${file.filename} at ${commit.sha}: ${message}`,
-          );
+        const encoding = data.encoding === 'base64' ? 'base64' : 'utf8';
+        const content = Buffer.from(data.content, encoding).toString('utf8');
+        if (content.trim()) {
+          files.set(file.filename, content);
         }
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unknown file fetch error';
+        this.logger.warn(
+          `Skipping file ${file.filename} at ${commitSha}: ${message}`,
+        );
+      }
+
+      if (totalFiles > 0) {
+        const progress = 58 + Math.min(5, Math.floor(((index + 1) / totalFiles) * 5));
+        this.emitProgress(
+          event,
+          progress,
+          `Collecting source file snapshots (${index + 1}/${totalFiles})`,
+        );
       }
     }
 
-    return Object.fromEntries(files);
+    return {
+      files: Object.fromEntries(files),
+      fileLimitApplied:
+        this.maxFilesPerAnalysis > 0 &&
+        eligibleFiles.length > this.maxFilesPerAnalysis,
+    };
   }
 
   private shouldFetchFile(filename: string, status?: string) {
@@ -310,7 +376,7 @@ export class CommitAnalysisService {
   }
 
   private buildCombinedDiff(commits: CommitPayload[]) {
-    return commits
+    const combinedDiff = commits
       .map((commit) => {
         const fileDiffs = commit.files
           .filter((file) => file.patch)
@@ -329,5 +395,51 @@ export class CommitAnalysisService {
           .join('\n');
       })
       .join('\n\n');
+
+    if (this.maxDiffChars <= 0 || combinedDiff.length <= this.maxDiffChars) {
+      return combinedDiff;
+    }
+
+    return `${combinedDiff.slice(0, this.maxDiffChars)}\n\n[truncated for analysis size]`;
+  }
+
+  private emitSnapshotToNlp(
+    event: AnalysisRequestedEvent,
+    job: AnalysisJobPayload,
+  ) {
+    const serializedJob = Buffer.from(JSON.stringify(job), 'utf8');
+    const chunkSize = Math.max(32768, this.maxSnapshotChunkBytes);
+    const chunkCount = Math.max(1, Math.ceil(serializedJob.length / chunkSize));
+
+    for (let offset = 0; offset < serializedJob.length; offset += chunkSize) {
+      const chunkIndex = Math.floor(offset / chunkSize) + 1;
+      const chunkPayload = serializedJob
+        .subarray(offset, offset + chunkSize)
+        .toString('base64');
+
+      this.emitProgress(
+        event,
+        65,
+        `Sending repository snapshot to NLP (${chunkIndex}/${chunkCount})`,
+      );
+
+      const envelope: ChunkEnvelopePayload = {
+        repositoryId: event.repositoryId,
+        integrationId: event.integrationId,
+        developerId: event.developerId,
+        transport: {
+          encoding: 'base64',
+          chunkIndex,
+          chunkCount,
+          payload: chunkPayload,
+          totalBytes: serializedJob.length,
+        },
+      };
+
+      this.kafkaClient.emit('commit.analysis', {
+        key: event.repositoryId,
+        value: JSON.stringify(envelope),
+      });
+    }
   }
 }

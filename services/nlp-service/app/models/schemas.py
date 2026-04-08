@@ -31,3 +31,4 @@ class WeaknessProfileResponse(BaseModel):
     quality_score: float | None = None
     skill_level: str = "unknown"
     recommendations: list[Recommendation] = Field(default_factory=list)
+    analysis_metadata: dict[str, Any] = Field(default_factory=dict)

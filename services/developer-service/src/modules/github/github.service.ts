@@ -142,11 +142,13 @@ export class GithubService {
 
     const octokit = this.getOctokit(integration);
 
-    // Fetch all repos (handles pagination automatically)
+    // Fetch repos the user owns plus repos from organizations they belong to.
+    // Private org repos still depend on the linked token having the right scopes
+    // (typically `repo` and, where required, `read:org`).
     const ghRepos = await octokit.paginate(octokit.repos.listForAuthenticatedUser, {
       per_page: 100,
       sort: 'updated',
-      type: 'owner', // Only repos the user owns (not forks unless needed)
+      affiliation: 'owner,organization_member',
     });
 
     const now = new Date();
@@ -307,20 +309,42 @@ export class GithubService {
       return;
     }
 
+    const currentProgress = repo.analysisProgress || 0;
+    const incomingProgress =
+      typeof update.progress === 'number' ? Math.max(0, update.progress) : null;
+    const isRegression =
+      incomingProgress !== null &&
+      incomingProgress < currentProgress &&
+      update.status !== 'failed';
+    const isTerminalRegression =
+      repo.analysisStatus === 'completed' &&
+      (update.status === 'pending' || update.status === 'in_progress');
+
+    if (isTerminalRegression) {
+      return;
+    }
+
     if (update.status) {
       repo.analysisStatus = update.status;
       repo.isAnalyzed = update.status === 'completed';
       if (update.status === 'completed') {
         repo.lastAnalyzedAt = new Date();
+        repo.analysisProgress = 100;
       }
     }
 
-    if (typeof update.progress === 'number') {
-      repo.analysisProgress = update.progress;
+    if (incomingProgress !== null) {
+      if (update.status === 'failed') {
+        repo.analysisProgress = Math.max(currentProgress, incomingProgress);
+      } else if (!isRegression) {
+        repo.analysisProgress = incomingProgress;
+      }
     }
 
     if (typeof update.stage !== 'undefined') {
-      repo.analysisCurrentStage = update.stage;
+      if (!isRegression || !repo.analysisCurrentStage) {
+        repo.analysisCurrentStage = update.stage;
+      }
     }
 
     if (typeof update.summary !== 'undefined') {

@@ -25,8 +25,7 @@ export function Navbar() {
     const savedTheme = localStorage.getItem("theme");
     return (
       savedTheme === "dark" ||
-      (!savedTheme &&
-        window.matchMedia("(prefers-color-scheme: dark)").matches)
+      (!savedTheme && window.matchMedia("(prefers-color-scheme: dark)").matches)
     );
   });
 
@@ -71,7 +70,7 @@ export function Navbar() {
         <div className="flex justify-between h-16 items-center">
           <Link href="/" className="flex items-center gap-3">
             <Image
-              src="/wevioo.png"
+              src="/logo.png"
               alt="Wevioo Logo"
               width={400}
               height={150}
