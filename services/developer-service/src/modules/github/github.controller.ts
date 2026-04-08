@@ -2,7 +2,6 @@ import { Controller } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
 import { GithubService } from './github.service';
 import { LinkGithubDto } from './dto/link-github.dto';
-import { AnalyzeRepoDto } from './dto/analyze-repo.dto';
 import { GithubIntegrationResponseDto } from './dto/github-integration-response.dto';
 import { RepositoryResponseDto } from './dto/repository-response.dto';
 

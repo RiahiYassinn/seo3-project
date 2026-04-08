@@ -234,7 +234,6 @@ export const UsersManagementTable = () => {
       last_name: "",
       email: "",
       username: "",
-      password: "",
       role: "developer",
     });
     setAddFormErrors({});

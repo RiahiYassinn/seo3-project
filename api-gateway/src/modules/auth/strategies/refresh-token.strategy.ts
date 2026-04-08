@@ -8,8 +8,8 @@ import { AuthService } from '../auth.service';
 @Injectable()
 export class RefreshTokenStrategy extends PassportStrategy(Strategy, 'jwt-refresh') {
   constructor(
-    private configService: ConfigService,
-    private authService: AuthService
+    configService: ConfigService,
+    _authService: AuthService
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([

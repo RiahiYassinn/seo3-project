@@ -6,7 +6,6 @@ import {
   Delete,
   Body,
   Param,
-  NotFoundException,
 } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
 import { createHash } from 'crypto';

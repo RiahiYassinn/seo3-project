@@ -39,16 +39,6 @@ export function Navbar() {
     }
   }, [isDark]);
 
-  useEffect(() => {
-    if (isDark) {
-      document.documentElement.classList.add("dark");
-      localStorage.setItem("theme", "dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-      localStorage.setItem("theme", "light");
-    }
-  }, [isDark]);
-
   const handleLogout = async () => {
     await logout();
     router.push("/");

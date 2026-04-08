@@ -15,7 +15,7 @@ export class NotificationController {
 
   @Post('send')
   @ApiOperation({ summary: 'Send notification' })
-  sendNotification(@Body() notificationDto: any) {
+  sendNotification(@Body() _notificationDto: any) {
     return { message: 'Send notification - proxied to Notification Service' };
   }
 

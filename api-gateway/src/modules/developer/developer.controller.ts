@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Put, Delete, Body, Param, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 
@@ -21,7 +21,7 @@ export class DeveloperController {
 
   @Put(':id')
   @ApiOperation({ summary: 'Update developer' })
-  update(@Param('id') id: string, @Body() updateDto: any) {
+  update(@Param('id') id: string, @Body() _updateDto: any) {
     return { message: `Update developer ${id} - proxied to Developer Service` };
   }
 

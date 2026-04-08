@@ -258,7 +258,7 @@ export default function GitHubPage() {
     setSuccess("");
 
     try {
-      const { data } = await api.post("/github/analyze", {
+      await api.post("/github/analyze", {
         repository_id: repositoryId,
       });
 

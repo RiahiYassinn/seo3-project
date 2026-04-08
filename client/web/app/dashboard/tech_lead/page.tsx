@@ -29,7 +29,6 @@ import {
   Activity,
   UserCircle,
   LayoutDashboard,
-  GitBranch,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
 
