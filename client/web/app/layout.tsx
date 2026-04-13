@@ -19,8 +19,23 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const themeScript = `
+    (function() {
+      try {
+        var savedTheme = localStorage.getItem("theme");
+        var theme = savedTheme === "dark" || savedTheme === "light"
+          ? savedTheme
+          : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        document.documentElement.classList.toggle("dark", theme === "dark");
+      } catch (error) {}
+    })();
+  `;
+
   return (
     <html lang="en">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body className={inter.className}>
         <AuthBootstrap />
         {children}

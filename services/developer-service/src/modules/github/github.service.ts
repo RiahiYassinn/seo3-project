@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  Inject,
-} from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { RpcException } from '@nestjs/microservices';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository as TypeOrmRepository } from 'typeorm';
@@ -15,11 +12,49 @@ import { AnalysisStatus } from './entities/repository.entity';
 import { LinkGithubDto } from './dto/link-github.dto';
 import { AnalysisRequestedEvent } from './events/analysis-requested.event';
 
+interface GithubContributor {
+  login: string;
+  contributions?: number;
+  avatar_url?: string;
+  html_url?: string;
+  type?: string;
+}
+
+export interface ContributorProfileSummary {
+  profileId: string;
+  contributorLogin: string;
+  contributorName: string;
+  avatarUrl: string | null;
+  profileUrl: string | null;
+  repositoryId: string;
+  repositoryName: string;
+  status: AnalysisStatus;
+  analyzedAt: string | null;
+  qualityScore: number | null;
+  skillLevel: string | null;
+  strengths: string[];
+  weaknessScores: Record<string, number>;
+  topWeaknesses: Array<Record<string, any>>;
+  recommendations: Array<Record<string, any>>;
+  findingsSummary: Record<string, any> | null;
+  skills: Array<Record<string, any>>;
+  metadata: Record<string, any>;
+}
+
+interface ContributorAnalysisQueueState {
+  total: number;
+  queue: string[];
+  activeContributor: string | null;
+  processed: string[];
+  failed: string[];
+  requestedAt: string;
+  requestedBy: string;
+}
+
 @Injectable()
 export class GithubService {
-  // Use a real secrets manager (AWS KMS, Vault) in production
   private readonly encryptionKey = Buffer.from(
-    process.env.TOKEN_ENCRYPTION_KEY!, // 32-byte hex key
+    process.env.TOKEN_ENCRYPTION_KEY!,
     'hex',
   );
 
@@ -33,8 +68,6 @@ export class GithubService {
     @Inject('KAFKA_CLIENT')
     private readonly kafkaClient: ClientKafka,
   ) {}
-
-  // ─── Token encryption helpers ───────────────────────────────────────────────
 
   private encrypt(plaintext: string): string {
     const iv = crypto.randomBytes(16);
@@ -51,16 +84,102 @@ export class GithubService {
     return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
   }
 
-  // ─── Octokit factory ────────────────────────────────────────────────────────
-
-  private getOctokit(integration: GithubIntegration & { githubTokenEncrypted: string }) {
+  private getOctokit(
+    integration: GithubIntegration & { githubTokenEncrypted: string },
+  ) {
     const token = this.decrypt(integration.githubTokenEncrypted);
-    return new Octokit({ auth: token });  
+    return new Octokit({ auth: token });
   }
 
-  // ─── Public API ─────────────────────────────────────────────────────────────
+  private normalizeContributorLogin(login: string) {
+    return String(login || '').trim().toLowerCase();
+  }
 
-  async getIntegration(developerId: string): Promise<GithubIntegration> {
+  private buildContributorProfileId(repositoryId: string, contributorLogin: string) {
+    return `repo:${repositoryId}:contributor:${this.normalizeContributorLogin(contributorLogin)}`;
+  }
+
+  private parseRepositoryUrl(repoUrl: string) {
+    const url = new URL(repoUrl);
+    const [owner, repo] = url.pathname.replace(/^\/+/, '').split('/');
+
+    return {
+      owner,
+      repo: repo?.replace(/\.git$/, ''),
+    };
+  }
+
+  private getContributorProfiles(
+    metadata: Record<string, any> | null | undefined,
+  ): Record<string, ContributorProfileSummary> {
+    if (!metadata?.contributorProfiles || typeof metadata.contributorProfiles !== 'object') {
+      return {};
+    }
+
+    return metadata.contributorProfiles as Record<string, ContributorProfileSummary>;
+  }
+
+  private getContributorAnalysisState(
+    metadata: Record<string, any> | null | undefined,
+  ): ContributorAnalysisQueueState | null {
+    if (!metadata?.contributorAnalysis || typeof metadata.contributorAnalysis !== 'object') {
+      return null;
+    }
+
+    return metadata.contributorAnalysis as ContributorAnalysisQueueState;
+  }
+
+  private setRepositoryMetadata(
+    repo: Repository,
+    nextValues: Partial<Record<string, any>>,
+  ) {
+    repo.analysisMetadata = {
+      ...(repo.analysisMetadata || {}),
+      ...nextValues,
+    };
+  }
+
+  private computeBatchProgress(
+    state: ContributorAnalysisQueueState | null,
+    activeProgress = 0,
+  ) {
+    if (!state || state.total <= 0) {
+      return Math.max(0, Math.min(100, activeProgress));
+    }
+
+    const completedCount = state.processed.length + state.failed.length;
+    const activeFraction = state.activeContributor
+      ? Math.max(0, Math.min(100, activeProgress)) / 100
+      : 0;
+
+    return Math.round(((completedCount + activeFraction) / state.total) * 100);
+  }
+
+  private async getIntegrationForDeveloper(
+    developerId: string,
+    includeToken = false,
+  ) {
+    const integration = await this.integrationRepo.findOne({
+      where: { developerId },
+      select: includeToken
+        ? ['id', 'developerId', 'githubUsername', 'githubTokenEncrypted', 'connectedAt']
+        : ['id', 'developerId', 'githubUsername', 'connectedAt'],
+    });
+
+    if (!integration) {
+      throw new RpcException({
+        statusCode: 404,
+        message: 'No GitHub integration found',
+      });
+    }
+
+    return integration as GithubIntegration & { githubTokenEncrypted: string };
+  }
+
+  private async getRepositoryForDeveloper(
+    developerId: string,
+    repositoryId: string,
+  ) {
     const integration = await this.integrationRepo.findOne({
       where: { developerId },
     });
@@ -70,11 +189,125 @@ export class GithubService {
         message: 'No GitHub integration found',
       });
     }
-    return integration;
+
+    const repository = await this.repositoryRepo.findOne({
+      where: { id: repositoryId, integrationId: integration.id },
+    });
+    if (!repository) {
+      throw new RpcException({
+        statusCode: 404,
+        message: 'Repository not found',
+      });
+    }
+
+    return { integration, repository };
+  }
+
+  private async fetchRepositoryContributors(
+    integration: GithubIntegration & { githubTokenEncrypted: string },
+    repository: Repository,
+  ): Promise<GithubContributor[]> {
+    const octokit = this.getOctokit(integration);
+    const coordinates = this.parseRepositoryUrl(repository.repoUrl);
+
+    return octokit.paginate(octokit.repos.listContributors, {
+      owner: coordinates.owner,
+      repo: coordinates.repo,
+      per_page: 100,
+    }) as Promise<GithubContributor[]>;
+  }
+
+  private async emitContributorAnalysisRequest(
+    repo: Repository,
+    integration: GithubIntegration & { githubTokenEncrypted: string },
+    contributorLogin: string,
+    requestedByUserId: string,
+  ) {
+    const event = new AnalysisRequestedEvent(
+      repo.id,
+      integration.id,
+      this.buildContributorProfileId(repo.id, contributorLogin),
+      repo.repoName,
+      repo.repoUrl,
+      contributorLogin,
+      this.decrypt(integration.githubTokenEncrypted),
+      requestedByUserId,
+    );
+
+    this.kafkaClient.emit(event.topic, {
+      key: repo.id,
+      value: JSON.stringify(event),
+    });
+  }
+
+  private async startNextContributorAnalysis(
+    repositoryId: string,
+  ): Promise<void> {
+    const repo = await this.repositoryRepo.findOne({
+      where: { id: repositoryId },
+    });
+    if (!repo) {
+      return;
+    }
+
+    const state = this.getContributorAnalysisState(repo.analysisMetadata);
+    if (!state) {
+      return;
+    }
+
+    if (state.activeContributor) {
+      return;
+    }
+
+    const nextContributor = state.queue.shift() || null;
+    if (!nextContributor) {
+      const hasFailures = state.failed.length > 0 && state.processed.length === 0;
+      repo.analysisStatus = hasFailures ? 'failed' : 'completed';
+      repo.analysisProgress = 100;
+      repo.analysisCurrentStage = hasFailures
+        ? 'Contributor analysis finished with failures'
+        : 'Contributor analysis completed';
+      this.setRepositoryMetadata(repo, {
+        contributorAnalysis: state,
+      });
+      await this.repositoryRepo.save(repo);
+      return;
+    }
+
+    const integration = await this.integrationRepo.findOne({
+      where: { id: repo.integrationId },
+      select: ['id', 'developerId', 'githubUsername', 'githubTokenEncrypted', 'connectedAt'],
+    }) as GithubIntegration & { githubTokenEncrypted: string };
+
+    if (!integration) {
+      throw new RpcException({
+        statusCode: 404,
+        message: 'GitHub integration not found for repository',
+      });
+    }
+
+    state.activeContributor = nextContributor;
+    repo.analysisStatus = 'pending';
+    repo.analysisProgress = this.computeBatchProgress(state, 5);
+    repo.analysisCurrentStage = `Queued analysis for @${nextContributor}`;
+    this.setRepositoryMetadata(repo, {
+      contributorAnalysis: state,
+    });
+    await this.repositoryRepo.save(repo);
+
+    await this.emitContributorAnalysisRequest(
+      repo,
+      integration,
+      nextContributor,
+      state.requestedBy,
+    );
+  }
+
+  async getIntegration(developerId: string): Promise<GithubIntegration> {
+    return this.getIntegrationForDeveloper(developerId);
   }
 
   async linkGithub(developerId: string, dto: LinkGithubDto): Promise<GithubIntegration> {
-    // Prevent duplicate integrations
     const existing = await this.integrationRepo.findOne({ where: { developerId } });
     if (existing) {
       throw new RpcException({
@@ -83,11 +316,9 @@ export class GithubService {
       });
     }
 
-    // Validate token against GitHub API before storing
     const octokit = new Octokit({ auth: dto.github_token });
     try {
       const { data: ghUser } = await octokit.users.getAuthenticated();
-      // Ensure the username matches the authenticated GitHub user
       if (ghUser.login.toLowerCase() !== dto.github_username.toLowerCase()) {
         throw new RpcException({
           statusCode: 400,
@@ -122,29 +353,15 @@ export class GithubService {
         message: 'No GitHub integration found',
       });
     }
-    // Cascade delete removes all repositories too
+
     await this.integrationRepo.remove(integration);
     return { success: true };
   }
 
   async syncRepositories(developerId: string): Promise<Repository[]> {
-    const integration = await this.integrationRepo.findOne({
-      where: { developerId },
-      select: ['id', 'developerId', 'githubUsername', 'githubTokenEncrypted', 'connectedAt'],
-    }) as GithubIntegration & { githubTokenEncrypted: string };
-
-    if (!integration) {
-      throw new RpcException({
-        statusCode: 404,
-        message: 'No GitHub integration found',
-      });
-    }
-
+    const integration = await this.getIntegrationForDeveloper(developerId, true);
     const octokit = this.getOctokit(integration);
 
-    // Fetch repos the user owns plus repos from organizations they belong to.
-    // Private org repos still depend on the linked token having the right scopes
-    // (typically `repo` and, where required, `read:org`).
     const ghRepos = await octokit.paginate(octokit.repos.listForAuthenticatedUser, {
       per_page: 100,
       sort: 'updated',
@@ -152,15 +369,12 @@ export class GithubService {
     });
 
     const now = new Date();
-
-    // Upsert each repo — preserve existing analysis status
     const upsertPromises = ghRepos.map(async (ghRepo) => {
       const existing = await this.repositoryRepo.findOne({
         where: { integrationId: integration.id, githubRepoId: ghRepo.id },
       });
 
       if (existing) {
-        // Update metadata but keep analysis state
         existing.repoName = ghRepo.name;
         existing.repoUrl = ghRepo.html_url;
         existing.repoDescription = ghRepo.description ?? null;
@@ -203,84 +417,328 @@ export class GithubService {
   }
 
   async getRepository(developerId: string, repositoryId: string): Promise<Repository> {
-    const integration = await this.integrationRepo.findOne({
-      where: { developerId },
-    });
-    if (!integration) {
-      throw new RpcException({
-        statusCode: 404,
-        message: 'No GitHub integration found',
-      });
-    }
-
-    const repository = await this.repositoryRepo.findOne({
-      where: { id: repositoryId, integrationId: integration.id },
-    });
-    if (!repository) {
-      throw new RpcException({
-        statusCode: 404,
-        message: 'Repository not found',
-      });
-    }
-
+    const { repository } = await this.getRepositoryForDeveloper(developerId, repositoryId);
     return repository;
+  }
+
+  async getRepositoryContributors(developerId: string, repositoryId: string) {
+    const { repository } = await this.getRepositoryForDeveloper(developerId, repositoryId);
+    const integration = await this.getIntegrationForDeveloper(developerId, true);
+    const contributors = await this.fetchRepositoryContributors(integration, repository);
+    const profileMap = this.getContributorProfiles(repository.analysisMetadata);
+    const queueState = this.getContributorAnalysisState(repository.analysisMetadata);
+
+    return contributors
+      .map((contributor) => {
+        const key = this.normalizeContributorLogin(contributor.login);
+        const profile = profileMap[key] || null;
+        const status =
+          queueState?.activeContributor === key
+            ? 'in_progress'
+            : queueState?.queue.includes(key)
+              ? 'pending'
+              : profile?.status || null;
+
+        return {
+          login: key,
+          display_name: contributor.login,
+          contributions: contributor.contributions || 0,
+          avatar_url: contributor.avatar_url || null,
+          profile_url: contributor.html_url || null,
+          type: contributor.type || 'User',
+          analysis_status: status,
+          profile_id: profile?.profileId || this.buildContributorProfileId(repository.id, key),
+          last_analyzed_at: profile?.analyzedAt || null,
+          quality_score: profile?.qualityScore ?? null,
+          skill_level: profile?.skillLevel ?? null,
+          top_weaknesses: profile?.topWeaknesses || [],
+          recommendations: profile?.recommendations || [],
+        };
+      })
+      .sort((left, right) => right.contributions - left.contributions);
+  }
+
+  async getRepositoryContributorProfiles(developerId: string, repositoryId: string) {
+    const { repository } = await this.getRepositoryForDeveloper(developerId, repositoryId);
+    const profiles = Object.values(this.getContributorProfiles(repository.analysisMetadata));
+
+    return profiles.sort((left, right) => {
+      const leftTime = left.analyzedAt ? new Date(left.analyzedAt).getTime() : 0;
+      const rightTime = right.analyzedAt ? new Date(right.analyzedAt).getTime() : 0;
+      return rightTime - leftTime;
+    });
   }
 
   async triggerAnalysis(
     developerId: string,
     repositoryId: string,
-  ): Promise<{ success: true; status: 'pending'; repositoryId: string }> {
-    const integration = await this.integrationRepo.findOne({
-      where: { developerId },
-      select: ['id', 'developerId', 'githubUsername', 'githubTokenEncrypted', 'connectedAt'],
-    }) as GithubIntegration & { githubTokenEncrypted: string };
-    if (!integration) {
-      throw new RpcException({
-        statusCode: 404,
-        message: 'No GitHub integration found',
-      });
-    }
-
-    const repo = await this.repositoryRepo.findOne({
-      where: { id: repositoryId, integrationId: integration.id },
-    });
-    if (!repo) {
-      throw new RpcException({
-        statusCode: 404,
-        message: 'Repository not found',
-      });
-    }
-
-    // Mark as pending immediately
-    repo.analysisStatus = 'pending';
-    repo.analysisProgress = 5;
-    repo.analysisCurrentStage = 'Queued for analysis';
-    repo.analysisSummary = null;
-    repo.analysisDetectedSkills = null;
-    repo.analysisMetadata = null;
-    await this.repositoryRepo.save(repo);
-
-    // Emit Kafka event — Analysis Service will pick this up
-    const event = new AnalysisRequestedEvent(
-      repo.id,
-      integration.id,
-      developerId,
-      repo.repoName,
-      repo.repoUrl,
+  ): Promise<{ success: true; status: 'pending'; repositoryId: string; queuedContributors: string[] }> {
+    const integration = await this.getIntegrationForDeveloper(developerId);
+    return this.triggerContributorAnalysis(developerId, repositoryId, [
       integration.githubUsername,
-      this.decrypt(integration.githubTokenEncrypted),
-    );
+    ]);
+  }
 
-    this.kafkaClient.emit(event.topic, {
-      key: repositoryId,
-      value: JSON.stringify(event),
+  async triggerContributorAnalysis(
+    developerId: string,
+    repositoryId: string,
+    contributorLogins: string[],
+  ): Promise<{ success: true; status: 'pending'; repositoryId: string; queuedContributors: string[] }> {
+    const integration = await this.getIntegrationForDeveloper(developerId, true);
+    const { repository } = await this.getRepositoryForDeveloper(developerId, repositoryId);
+
+    const queueState = this.getContributorAnalysisState(repository.analysisMetadata);
+    if (queueState?.activeContributor || queueState?.queue?.length) {
+      throw new RpcException({
+        statusCode: 409,
+        message: 'A contributor analysis batch is already running for this repository',
+      });
+    }
+
+    const requested = Array.from(
+      new Set(contributorLogins.map((login) => this.normalizeContributorLogin(login)).filter(Boolean)),
+    );
+    if (requested.length === 0) {
+      throw new RpcException({
+        statusCode: 400,
+        message: 'Select at least one contributor to analyze',
+      });
+    }
+
+    const githubContributors = await this.fetchRepositoryContributors(integration, repository);
+    const availableLogins = new Set(
+      githubContributors.map((contributor) => this.normalizeContributorLogin(contributor.login)),
+    );
+    const validContributors = requested.filter((login) => availableLogins.has(login));
+
+    if (validContributors.length === 0) {
+      throw new RpcException({
+        statusCode: 400,
+        message: 'None of the selected contributors belong to this repository',
+      });
+    }
+
+    const nextState: ContributorAnalysisQueueState = {
+      total: validContributors.length,
+      queue: [...validContributors],
+      activeContributor: null,
+      processed: [],
+      failed: [],
+      requestedAt: new Date().toISOString(),
+      requestedBy: developerId,
+    };
+
+    repository.analysisStatus = 'pending';
+    repository.analysisProgress = 0;
+    repository.analysisCurrentStage =
+      validContributors.length === 1
+        ? `Queued analysis for @${validContributors[0]}`
+        : `Queued analysis for ${validContributors.length} contributors`;
+    this.setRepositoryMetadata(repository, {
+      contributorAnalysis: nextState,
+      lastBatchRequestedAt: nextState.requestedAt,
     });
+    await this.repositoryRepo.save(repository);
+
+    await this.startNextContributorAnalysis(repository.id);
 
     return {
       success: true,
       status: 'pending',
       repositoryId,
+      queuedContributors: validContributors,
     };
+  }
+
+  async handleContributorProgress(message: {
+    repositoryId: string;
+    githubUsername?: string;
+    progress?: number;
+    stage?: string | null;
+  }) {
+    const repo = await this.repositoryRepo.findOne({
+      where: { id: message.repositoryId },
+    });
+    if (!repo) {
+      return;
+    }
+
+    const state = this.getContributorAnalysisState(repo.analysisMetadata);
+    if (!state) {
+      await this.updateRepositoryAnalysis(message.repositoryId, {
+        status: 'in_progress',
+        progress: message.progress ?? 0,
+        stage: message.stage || 'Analysis in progress',
+      });
+      return;
+    }
+
+    const contributorLogin = this.normalizeContributorLogin(message.githubUsername || state.activeContributor || '');
+    if (!state.activeContributor && contributorLogin) {
+      state.activeContributor = contributorLogin;
+    }
+
+    repo.analysisStatus = 'in_progress';
+    repo.analysisProgress = this.computeBatchProgress(state, message.progress ?? 0);
+    repo.analysisCurrentStage = contributorLogin
+      ? `@${contributorLogin}: ${message.stage || 'Analysis in progress'}`
+      : message.stage || 'Analysis in progress';
+    this.setRepositoryMetadata(repo, {
+      contributorAnalysis: state,
+    });
+    await this.repositoryRepo.save(repo);
+  }
+
+  async handleContributorCompleted(message: {
+    repositoryId: string;
+    developerId: string;
+    repoName?: string;
+    githubUsername?: string;
+    summary?: Record<string, any>;
+    metadata?: Record<string, any>;
+    analyzedAt?: string;
+  }) {
+    const repo = await this.repositoryRepo.findOne({
+      where: { id: message.repositoryId },
+    });
+    if (!repo) {
+      return;
+    }
+
+    const contributorLogin = this.normalizeContributorLogin(message.githubUsername || '');
+    const profiles = this.getContributorProfiles(repo.analysisMetadata);
+    const state = this.getContributorAnalysisState(repo.analysisMetadata);
+    const summary = (message.summary || null) as Record<string, any> | null;
+    const metadata = (message.metadata || {}) as Record<string, any>;
+
+    if (contributorLogin) {
+      profiles[contributorLogin] = {
+        profileId: message.developerId,
+        contributorLogin,
+        contributorName: contributorLogin,
+        avatarUrl: (profiles[contributorLogin]?.avatarUrl as string | null) || null,
+        profileUrl: (profiles[contributorLogin]?.profileUrl as string | null) || null,
+        repositoryId: repo.id,
+        repositoryName: repo.repoName,
+        status: 'completed',
+        analyzedAt: message.analyzedAt || new Date().toISOString(),
+        qualityScore:
+          typeof summary?.quality_score === 'number' ? summary.quality_score : null,
+        skillLevel:
+          typeof summary?.skill_level === 'string' ? summary.skill_level : null,
+        strengths: Array.isArray(summary?.strengths) ? summary.strengths : [],
+        weaknessScores:
+          summary?.weakness_scores && typeof summary.weakness_scores === 'object'
+            ? summary.weakness_scores
+            : {},
+        topWeaknesses: Array.isArray(summary?.top_weaknesses)
+          ? summary.top_weaknesses
+          : [],
+        recommendations: Array.isArray(summary?.recommendations)
+          ? summary.recommendations
+          : [],
+        findingsSummary:
+          summary?.summary && typeof summary.summary === 'object'
+            ? summary.summary
+            : null,
+        skills: Array.isArray(summary?.skills) ? summary.skills : [],
+        metadata,
+      };
+    }
+
+    if (state) {
+      if (contributorLogin && !state.processed.includes(contributorLogin)) {
+        state.processed.push(contributorLogin);
+      }
+      state.activeContributor = null;
+    }
+
+    repo.analysisStatus = state?.queue.length ? 'in_progress' : 'completed';
+    repo.isAnalyzed = true;
+    repo.analysisProgress = this.computeBatchProgress(state, 100);
+    repo.analysisCurrentStage = contributorLogin
+      ? `Completed analysis for @${contributorLogin}`
+      : 'Weakness analysis completed';
+    repo.analysisSummary = summary;
+    repo.analysisDetectedSkills = Array.isArray(summary?.skills)
+      ? (summary.skills as Record<string, any>[])
+      : null;
+    repo.lastAnalyzedAt = new Date(message.analyzedAt || new Date().toISOString());
+    this.setRepositoryMetadata(repo, {
+      ...metadata,
+      contributorProfiles: profiles,
+      contributorAnalysis: state,
+    });
+    await this.repositoryRepo.save(repo);
+
+    await this.startNextContributorAnalysis(repo.id);
+  }
+
+  async handleContributorFailed(message: {
+    repositoryId: string;
+    githubUsername?: string;
+    reason?: string;
+    progress?: number;
+    stage?: string | null;
+  }) {
+    const repo = await this.repositoryRepo.findOne({
+      where: { id: message.repositoryId },
+    });
+    if (!repo) {
+      return;
+    }
+
+    const contributorLogin = this.normalizeContributorLogin(message.githubUsername || '');
+    const profiles = this.getContributorProfiles(repo.analysisMetadata);
+    const state = this.getContributorAnalysisState(repo.analysisMetadata);
+
+    if (contributorLogin) {
+      const existing = profiles[contributorLogin];
+      profiles[contributorLogin] = {
+        profileId: existing?.profileId || this.buildContributorProfileId(repo.id, contributorLogin),
+        contributorLogin,
+        contributorName: contributorLogin,
+        avatarUrl: existing?.avatarUrl || null,
+        profileUrl: existing?.profileUrl || null,
+        repositoryId: repo.id,
+        repositoryName: repo.repoName,
+        status: 'failed',
+        analyzedAt: existing?.analyzedAt || null,
+        qualityScore: existing?.qualityScore ?? null,
+        skillLevel: existing?.skillLevel ?? null,
+        strengths: existing?.strengths || [],
+        weaknessScores: existing?.weaknessScores || {},
+        topWeaknesses: existing?.topWeaknesses || [],
+        recommendations: existing?.recommendations || [],
+        findingsSummary: existing?.findingsSummary || null,
+        skills: existing?.skills || [],
+        metadata: {
+          ...(existing?.metadata || {}),
+          failureReason: message.reason || 'Unknown analysis failure',
+        },
+      };
+    }
+
+    if (state) {
+      if (contributorLogin && !state.failed.includes(contributorLogin)) {
+        state.failed.push(contributorLogin);
+      }
+      state.activeContributor = null;
+    }
+
+    repo.analysisStatus = state?.queue.length ? 'in_progress' : 'failed';
+    repo.analysisProgress = this.computeBatchProgress(state, message.progress ?? 100);
+    repo.analysisCurrentStage = contributorLogin
+      ? `Failed analysis for @${contributorLogin}`
+      : message.stage || 'Analysis failed';
+    this.setRepositoryMetadata(repo, {
+      contributorProfiles: profiles,
+      contributorAnalysis: state,
+      failureReason: message.reason || 'Unknown analysis failure',
+    });
+    await this.repositoryRepo.save(repo);
+
+    await this.startNextContributorAnalysis(repo.id);
   }
 
   async updateRepositoryAnalysisStatus(
@@ -312,17 +770,6 @@ export class GithubService {
     const currentProgress = repo.analysisProgress || 0;
     const incomingProgress =
       typeof update.progress === 'number' ? Math.max(0, update.progress) : null;
-    const isRegression =
-      incomingProgress !== null &&
-      incomingProgress < currentProgress &&
-      update.status !== 'failed';
-    const isTerminalRegression =
-      repo.analysisStatus === 'completed' &&
-      (update.status === 'pending' || update.status === 'in_progress');
-
-    if (isTerminalRegression) {
-      return;
-    }
 
     if (update.status) {
       repo.analysisStatus = update.status;
@@ -333,18 +780,12 @@ export class GithubService {
       }
     }
 
-    if (incomingProgress !== null) {
-      if (update.status === 'failed') {
-        repo.analysisProgress = Math.max(currentProgress, incomingProgress);
-      } else if (!isRegression) {
-        repo.analysisProgress = incomingProgress;
-      }
+    if (incomingProgress !== null && incomingProgress >= currentProgress) {
+      repo.analysisProgress = incomingProgress;
     }
 
     if (typeof update.stage !== 'undefined') {
-      if (!isRegression || !repo.analysisCurrentStage) {
-        repo.analysisCurrentStage = update.stage;
-      }
+      repo.analysisCurrentStage = update.stage;
     }
 
     if (typeof update.summary !== 'undefined') {
@@ -356,14 +797,13 @@ export class GithubService {
     }
 
     if (typeof update.metadata !== 'undefined') {
-      repo.analysisMetadata = update.metadata;
+      this.setRepositoryMetadata(repo, update.metadata || {});
     }
 
     if (update.failureReason) {
-      repo.analysisMetadata = {
-        ...(repo.analysisMetadata || {}),
+      this.setRepositoryMetadata(repo, {
         failureReason: update.failureReason,
-      };
+      });
     }
 
     await this.repositoryRepo.save(repo);

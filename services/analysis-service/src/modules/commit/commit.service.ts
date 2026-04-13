@@ -11,6 +11,7 @@ interface AnalysisRequestedEvent {
   repoUrl: string;
   githubUsername: string;
   githubToken: string;
+  requestedByUserId?: string;
 }
 
 interface CommitFilePayload {
@@ -41,6 +42,7 @@ interface AnalysisJobPayload {
   repoName: string;
   repoUrl: string;
   githubUsername: string;
+  requestedByUserId?: string;
   analyzedAt: string;
   files: Record<string, string>;
   diff: string;
@@ -53,6 +55,7 @@ interface ChunkEnvelopePayload {
   repositoryId: string;
   integrationId: string;
   developerId: string;
+  githubUsername: string;
   transport: {
     encoding: 'base64';
     chunkIndex: number;
@@ -196,6 +199,7 @@ export class CommitAnalysisService {
         repoName: event.repoName,
         repoUrl: event.repoUrl,
         githubUsername: event.githubUsername,
+        requestedByUserId: event.requestedByUserId,
         analyzedAt: new Date().toISOString(),
         files,
         diff,
@@ -248,6 +252,7 @@ export class CommitAnalysisService {
         repositoryId: event.repositoryId,
         developerId: event.developerId,
         integrationId: event.integrationId,
+        githubUsername: event.githubUsername,
         reason,
         progress: 100,
         stage: 'Analysis failed',
@@ -267,6 +272,7 @@ export class CommitAnalysisService {
         repositoryId: event.repositoryId,
         developerId: event.developerId,
         integrationId: event.integrationId,
+        githubUsername: event.githubUsername,
         progress,
         stage,
         updatedAt: new Date().toISOString(),
@@ -685,6 +691,7 @@ export class CommitAnalysisService {
         repositoryId: event.repositoryId,
         integrationId: event.integrationId,
         developerId: event.developerId,
+        githubUsername: event.githubUsername,
         transport: {
           encoding: 'base64',
           chunkIndex,

@@ -2,7 +2,6 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { useState, useEffect } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,30 +13,14 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { LogOut, User, Code as Code2, Shield, Moon, Sun } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
+import { useTheme } from "@/hooks/use-theme";
 
 export function Navbar() {
   const { user, logout } = useAuthStore();
   const router = useRouter();
   const pathname = usePathname();
   const isLanding = pathname === "/";
-  const [isDark, setIsDark] = useState(() => {
-    if (typeof window === "undefined") return false;
-    const savedTheme = localStorage.getItem("theme");
-    return (
-      savedTheme === "dark" ||
-      (!savedTheme && window.matchMedia("(prefers-color-scheme: dark)").matches)
-    );
-  });
-
-  useEffect(() => {
-    if (isDark) {
-      document.documentElement.classList.add("dark");
-      localStorage.setItem("theme", "dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-      localStorage.setItem("theme", "light");
-    }
-  }, [isDark]);
+  const { isDark, toggleTheme } = useTheme();
 
   const handleLogout = async () => {
     await logout();
@@ -50,7 +33,6 @@ export function Navbar() {
       user.email?.charAt(0).toUpperCase()
     : "";
 
-  const isDeveloperPage = pathname.startsWith("/dashboard/developer");
   const isAdminPage = pathname.startsWith("/dashboard/admin");
   const isActive = (href: string) => pathname === href;
 
@@ -86,13 +68,13 @@ export function Navbar() {
               </>
             )}
 
-            {/* Developer Dashboard Navigation */}
-            {user?.role === "developer" && isDeveloperPage && (
+            {/* Admin Dashboard Navigation */}
+            {user?.role === "admin" && isAdminPage && (
               <div className="flex items-center gap-1">
                 <Link
-                  href="/dashboard/developer/overview"
+                  href="/dashboard/admin/overview"
                   className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
-                    isActive("/dashboard/developer/overview")
+                    isActive("/dashboard/admin/overview")
                       ? "bg-primary/10 text-primary"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
@@ -100,41 +82,15 @@ export function Navbar() {
                   Overview
                 </Link>
                 <Link
-                  href="/dashboard/developer/github"
+                  href="/dashboard/admin/github"
                   className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
-                    isActive("/dashboard/developer/github")
+                    isActive("/dashboard/admin/github")
                       ? "bg-primary/10 text-primary"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   GitHub
                 </Link>
-                <Link
-                  href="/dashboard/developer/team"
-                  className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
-                    isActive("/dashboard/developer/team")
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  Team
-                </Link>
-                <Link
-                  href="/dashboard/developer/profile"
-                  className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
-                    isActive("/dashboard/developer/profile")
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  Profile
-                </Link>
-              </div>
-            )}
-
-            {/* Admin Dashboard Navigation */}
-            {user?.role === "admin" && isAdminPage && (
-              <div className="flex items-center gap-1">
                 <Link
                   href="/dashboard/admin/users"
                   className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
@@ -145,33 +101,13 @@ export function Navbar() {
                 >
                   Users
                 </Link>
-                <Link
-                  href="/dashboard/admin/roles"
-                  className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
-                    isActive("/dashboard/admin/roles")
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  Roles
-                </Link>
-                <Link
-                  href="/dashboard/admin/analytics"
-                  className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
-                    isActive("/dashboard/admin/analytics")
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  Analytics
-                </Link>
               </div>
             )}
 
             {user ? (
               <>
                 <button
-                  onClick={() => setIsDark(!isDark)}
+                  onClick={toggleTheme}
                   className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-background hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                 >
                   {isDark ? (
@@ -202,33 +138,28 @@ export function Navbar() {
                     <DropdownMenuSeparator />
                     <DropdownMenuItem asChild>
                       <Link
-                        href="/dashboard/developer/profile"
+                        href={user.role === "admin" ? "/dashboard/admin/overview" : "/dashboard"}
                         className="cursor-pointer"
                       >
                         <User className="mr-2 h-4 w-4" />
-                        <span>Profile</span>
+                        <span>{user.role === "admin" ? "Workspace" : "Profile"}</span>
                       </Link>
                     </DropdownMenuItem>
                     {user.role === "admin" && (
                       <DropdownMenuItem asChild>
                         <Link
-                          href="/dashboard/admin/users"
+                          href="/dashboard/admin/github"
                           className="cursor-pointer"
                         >
                           <Shield className="mr-2 h-4 w-4" />
-                          <span>Admin Panel</span>
+                          <span>GitHub Analysis</span>
                         </Link>
                       </DropdownMenuItem>
                     )}
                     {user.role === "developer" && (
-                      <DropdownMenuItem asChild>
-                        <Link
-                          href="/dashboard/developer/overview"
-                          className="cursor-pointer"
-                        >
-                          <Code2 className="mr-2 h-4 w-4" />
-                          <span>My Skills</span>
-                        </Link>
+                      <DropdownMenuItem disabled>
+                        <Code2 className="mr-2 h-4 w-4" />
+                        <span>Admin-managed access</span>
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuSeparator />

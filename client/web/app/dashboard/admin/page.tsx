@@ -17,8 +17,7 @@ export default function AdminDashboardRedirect() {
       router.replace("/dashboard");
       return;
     }
-    // Redirect to users management page
-    router.replace("/dashboard/admin/users");
+    router.replace("/dashboard/admin/overview");
   }, [user, hasHydrated, router]);
 
   return (

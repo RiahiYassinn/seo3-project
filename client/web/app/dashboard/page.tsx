@@ -14,11 +14,9 @@ export default function DashboardPage() {
       return;
     }
     if (user.role === "admin") {
-      router.replace("/dashboard/admin");
-    } else if (user.role === "tech_lead") {
-      router.replace("/dashboard/tech_lead");
+      router.replace("/dashboard/admin/overview");
     } else {
-      router.replace("/dashboard/developer");
+      router.replace("/login");
     }
   }, [user, hasHydrated, router]);
 
