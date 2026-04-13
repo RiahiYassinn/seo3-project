@@ -54,21 +54,41 @@ interface Repository {
   analysis_progress: number;
   analysis_current_stage: string | null;
   analysis_summary: {
+    version?: string;
+    dominant_language?: string;
+    commit_topics?: string[];
+    summary?: {
+      finding_count: number;
+      critical_count: number;
+      high_count: number;
+      medium_count: number;
+      low_count: number;
+    };
     weakness_scores?: Record<string, number>;
-    top_weaknesses?: Array<{
-      category: string;
-      score: number;
-      evidence: string[];
-      priority: string;
-    }>;
-    strengths?: string[];
     quality_score?: number;
-    skill_level?: string;
-    recommendations?: Array<{
-      weakness: string;
-      action: string;
-      learning_query: string;
+    skills?: Array<{
+      skill: string;
+      issue_count: number;
+      highest_severity: "low" | "medium" | "high" | "critical";
+      average_confidence: number;
+      example_titles: string[];
     }>;
+    findings?: Array<{
+      file_path: string;
+      line: number | null;
+      category: string;
+      skill: string;
+      title: string;
+      message: string;
+      severity: "low" | "medium" | "high" | "critical";
+      confidence: number;
+      rule_id: string;
+      source: string;
+      evidence: string[];
+      related_symbols: string[];
+      tags: string[];
+    }>;
+    learning_resources?: Array<Record<string, any>>;
   } | null;
   analysis_detected_skills: Array<Record<string, any>> | null;
   analysis_metadata: Record<string, any> | null;
@@ -76,7 +96,61 @@ interface Repository {
   last_synced: string;
 }
 
-type RepositoryFilter = "all" | "analyzed" | "queued";
+type RepositoryFilter =
+  | "all"
+  | "analyzed"
+  | "queued"
+  | "failed"
+  | "not_analyzed";
+
+const toNumber = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const parseAnalysisSummary = (rawSummary: unknown) => {
+  if (!rawSummary) return null;
+  if (typeof rawSummary === "string") {
+    try {
+      return JSON.parse(rawSummary);
+    } catch {
+      return null;
+    }
+  }
+  return typeof rawSummary === "object" ? rawSummary : null;
+};
+
+const getSummaryQualityScore = (rawSummary: unknown): number | null => {
+  const summary = parseAnalysisSummary(rawSummary) as Record<
+    string,
+    any
+  > | null;
+  if (!summary) return null;
+  return (
+    toNumber(summary.quality_score) ??
+    toNumber(summary.qualityScore) ??
+    toNumber(summary.score)
+  );
+};
+
+const getSummaryFindingCount = (rawSummary: unknown): number => {
+  const summary = parseAnalysisSummary(rawSummary) as Record<
+    string,
+    any
+  > | null;
+  if (!summary) return 0;
+
+  const fromSummary =
+    toNumber(summary.summary?.finding_count) ??
+    toNumber(summary.summary?.findingCount);
+  if (fromSummary !== null) return fromSummary;
+
+  return Array.isArray(summary.findings) ? summary.findings.length : 0;
+};
 
 export default function GitHubPage() {
   const router = useRouter();
@@ -297,6 +371,12 @@ export default function GitHubPage() {
       repo.analysis_status === "pending" ||
       repo.analysis_status === "in_progress",
   );
+  const failedRepositoryList = repositories.filter(
+    (repo) => repo.analysis_status === "failed",
+  );
+  const notAnalyzedRepositoryList = repositories.filter(
+    (repo) => !repo.is_analyzed && !repo.analysis_status,
+  );
   const filteredRepositories = repositories.filter((repo) => {
     const matchesSearch = repo.repo_name
       .toLowerCase()
@@ -315,11 +395,20 @@ export default function GitHubPage() {
       );
     }
 
+    if (repositoryFilter === "failed") {
+      return repo.analysis_status === "failed";
+    }
+
+    if (repositoryFilter === "not_analyzed") {
+      return !repo.is_analyzed && !repo.analysis_status;
+    }
+
     return true;
   });
   const analyzedRepositories = analyzedRepositoryList.length;
   const pendingRepositories = queuedRepositoryList.length;
-  const totalStars = repositories.reduce((sum, repo) => sum + repo.stars, 0);
+  const failedRepositories = failedRepositoryList.length;
+  const notAnalyzedRepositories = notAnalyzedRepositoryList.length;
   const activeAnalyses = queuedRepositoryList;
 
   const formatDateTime = (value: string | null) => {
@@ -351,6 +440,8 @@ export default function GitHubPage() {
   const getRepositoryFilterLabel = (filter: RepositoryFilter) => {
     if (filter === "analyzed") return "Analyzed";
     if (filter === "queued") return "In Queue";
+    if (filter === "failed") return "Failed";
+    if (filter === "not_analyzed") return "Not Analyzed";
     return "Repositories";
   };
 
@@ -495,8 +586,8 @@ export default function GitHubPage() {
                     1. Go to GitHub Settings → Developer settings → Personal
                     access tokens
                   </li>
-                  <li>2. Click "Generate new token (classic)"</li>
-                  <li>3. Add a note like "SEO3 Integration"</li>
+                  <li>2. Click &quot;Generate new token (classic)&quot;</li>
+                  <li>3. Add a note like &quot;SEO3 Integration&quot;</li>
                   <li>
                     4. Select scopes: <strong>repo</strong> and{" "}
                     <strong>read:user</strong>
@@ -611,7 +702,7 @@ export default function GitHubPage() {
                   </div>
                 ) : (
                   <>
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 mb-6">
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5 mb-6">
                       <button
                         type="button"
                         onClick={() => setRepositoryFilter("all")}
@@ -678,18 +769,50 @@ export default function GitHubPage() {
                           Pending or running analyses
                         </p>
                       </button>
-                      <div className="rounded-2xl border bg-background p-4">
+                      <button
+                        type="button"
+                        onClick={() => setRepositoryFilter("failed")}
+                        className={`rounded-2xl border bg-background p-4 text-left transition hover:border-primary/40 ${
+                          repositoryFilter === "failed"
+                            ? "border-primary shadow-sm"
+                            : ""
+                        }`}
+                      >
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                            Total Stars
+                            Failed
                           </span>
-                          <Star className="h-4 w-4 text-yellow-500" />
+                          <AlertCircle className="h-4 w-4 text-red-600" />
                         </div>
-                        <p className="text-3xl font-semibold">{totalStars}</p>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          Combined public traction across repos
+                        <p className="text-3xl font-semibold">
+                          {failedRepositories}
                         </p>
-                      </div>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Repositories with failed analysis
+                        </p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRepositoryFilter("not_analyzed")}
+                        className={`rounded-2xl border bg-background p-4 text-left transition hover:border-primary/40 ${
+                          repositoryFilter === "not_analyzed"
+                            ? "border-primary shadow-sm"
+                            : ""
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                            Not Analyzed
+                          </span>
+                          <Code className="h-4 w-4 text-slate-600" />
+                        </div>
+                        <p className="text-3xl font-semibold">
+                          {notAnalyzedRepositories}
+                        </p>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Repositories ready for first analysis
+                        </p>
+                      </button>
                     </div>
 
                     {filteredRepositories.length === 0 ? (
@@ -792,222 +915,248 @@ export default function GitHubPage() {
                           </div>
                         </div>
                         <div className="grid gap-5 md:grid-cols-2">
-                          {filteredRepositories.map((repo) => (
-                            <Card
-                              key={repo.id}
-                              onClick={() =>
-                                router.push(
-                                  `/dashboard/developer/github/${repo.id}`,
-                                )
-                              }
-                              className="h-full cursor-pointer border-border/60 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:border-primary/30 hover:shadow-lg"
-                            >
-                              <CardContent className="p-5">
-                                <div className="flex items-start justify-between gap-4 mb-4">
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex flex-wrap items-center gap-2 mb-2">
-                                      <Badge
-                                        variant="outline"
-                                        className={getAnalysisTone(
-                                          repo.analysis_status,
-                                          repo.is_analyzed,
-                                        )}
-                                      >
-                                        {getAnalysisLabel(
-                                          repo.analysis_status,
-                                          repo.is_analyzed,
-                                        )}
-                                      </Badge>
-                                      {repo.language && (
-                                        <Badge variant="secondary">
-                                          {repo.language}
-                                        </Badge>
-                                      )}
-                                    </div>
-                                    <a
-                                      href={repo.repo_url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      onClick={(event) =>
-                                        event.stopPropagation()
-                                      }
-                                      className="inline-flex items-center gap-2 text-lg font-semibold text-primary hover:underline"
-                                    >
-                                      {repo.repo_name}
-                                      <ExternalLink className="h-4 w-4 opacity-70" />
-                                    </a>
-                                    <p className="mt-2 min-h-[3rem] text-sm leading-6 text-muted-foreground">
-                                      {repo.repo_description ||
-                                        "No description provided for this repository yet."}
-                                    </p>
-                                  </div>
-                                </div>
+                          {filteredRepositories.map((repo) =>
+                            (() => {
+                              const parsedSummary = parseAnalysisSummary(
+                                repo.analysis_summary,
+                              ) as Record<string, any> | null;
+                              const qualityScore = getSummaryQualityScore(
+                                repo.analysis_summary,
+                              );
+                              const findingCount = getSummaryFindingCount(
+                                repo.analysis_summary,
+                              );
+                              const topFinding = Array.isArray(
+                                parsedSummary?.findings,
+                              )
+                                ? parsedSummary?.findings?.[0]
+                                : null;
 
-                                <div className="grid grid-cols-2 gap-3 mb-4">
-                                  <div className="rounded-xl border bg-muted/20 p-3">
-                                    <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground mb-1">
-                                      <Star className="w-3 h-3" />
-                                      Stars
+                              return (
+                                <Card
+                                  key={repo.id}
+                                  onClick={() =>
+                                    router.push(
+                                      `/dashboard/developer/github/${repo.id}`,
+                                    )
+                                  }
+                                  className="h-full cursor-pointer border-border/60 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:border-primary/30 hover:shadow-lg"
+                                >
+                                  <CardContent className="p-5">
+                                    <div className="flex items-start justify-between gap-4 mb-4">
+                                      <div className="min-w-0 flex-1">
+                                        <div className="flex flex-wrap items-center gap-2 mb-2">
+                                          <Badge
+                                            variant="outline"
+                                            className={getAnalysisTone(
+                                              repo.analysis_status,
+                                              repo.is_analyzed,
+                                            )}
+                                          >
+                                            {getAnalysisLabel(
+                                              repo.analysis_status,
+                                              repo.is_analyzed,
+                                            )}
+                                          </Badge>
+                                          {repo.language && (
+                                            <Badge variant="secondary">
+                                              {repo.language}
+                                            </Badge>
+                                          )}
+                                        </div>
+                                        <a
+                                          href={repo.repo_url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          onClick={(event) =>
+                                            event.stopPropagation()
+                                          }
+                                          className="inline-flex items-center gap-2 text-lg font-semibold text-primary hover:underline"
+                                        >
+                                          {repo.repo_name}
+                                          <ExternalLink className="h-4 w-4 opacity-70" />
+                                        </a>
+                                        <p className="mt-2 min-h-[3rem] text-sm leading-6 text-muted-foreground">
+                                          {repo.repo_description ||
+                                            "No description provided for this repository yet."}
+                                        </p>
+                                      </div>
                                     </div>
-                                    <p className="text-lg font-semibold">
-                                      {repo.stars}
-                                    </p>
-                                  </div>
-                                  <div className="rounded-xl border bg-muted/20 p-3">
-                                    <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground mb-1">
-                                      <GitFork className="w-3 h-3" />
-                                      Forks
-                                    </div>
-                                    <p className="text-lg font-semibold">
-                                      {repo.forks}
-                                    </p>
-                                  </div>
-                                </div>
 
-                                <div className="grid gap-3 text-sm mb-5">
-                                  <div className="rounded-xl border border-border/70 px-3 py-3">
-                                    <div className="mb-2 flex items-center justify-between gap-3">
-                                      <span className="text-muted-foreground">
-                                        Analysis progress
-                                      </span>
-                                      <span className="text-right font-medium">
-                                        {repo.analysis_progress ?? 0}%
-                                      </span>
+                                    <div className="grid grid-cols-2 gap-3 mb-4">
+                                      <div className="rounded-xl border bg-muted/20 p-3">
+                                        <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground mb-1">
+                                          <Star className="w-3 h-3" />
+                                          Stars
+                                        </div>
+                                        <p className="text-lg font-semibold">
+                                          {repo.stars}
+                                        </p>
+                                      </div>
+                                      <div className="rounded-xl border bg-muted/20 p-3">
+                                        <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground mb-1">
+                                          <GitFork className="w-3 h-3" />
+                                          Forks
+                                        </div>
+                                        <p className="text-lg font-semibold">
+                                          {repo.forks}
+                                        </p>
+                                      </div>
                                     </div>
-                                    <Progress
-                                      value={repo.analysis_progress ?? 0}
-                                      className="h-2"
-                                    />
-                                    <p className="mt-2 text-xs text-muted-foreground">
-                                      {repo.analysis_current_stage ||
-                                        (repo.analysis_status === "completed"
-                                          ? "Analysis completed"
-                                          : "Waiting to be analyzed")}
-                                    </p>
-                                  </div>
-                                  <div className="flex items-start justify-between gap-3 rounded-xl border border-border/70 px-3 py-2">
-                                    <span className="text-muted-foreground">
-                                      Last synced
-                                    </span>
-                                    <span className="text-right font-medium">
-                                      {formatDateTime(repo.last_synced)}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-start justify-between gap-3 rounded-xl border border-border/70 px-3 py-2">
-                                    <span className="text-muted-foreground">
-                                      Last analyzed
-                                    </span>
-                                    <span className="text-right font-medium">
-                                      {repo.last_analyzed_at
-                                        ? formatDateTime(repo.last_analyzed_at)
-                                        : "Not analyzed yet"}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-start justify-between gap-3 rounded-xl border border-border/70 px-3 py-2">
-                                    <span className="text-muted-foreground">
-                                      Analysis readiness
-                                    </span>
-                                    <span className="text-right font-medium">
-                                      {repo.analysis_status === "pending" ||
-                                      repo.analysis_status === "in_progress"
-                                        ? "Currently processing"
-                                        : repo.is_analyzed
-                                          ? "Ready for re-analysis"
-                                          : "Ready to analyze"}
-                                    </span>
-                                  </div>
-                                </div>
 
-                                {repo.analysis_summary && (
-                                  <div className="mb-5 grid grid-cols-2 gap-3">
-                                    <div className="rounded-xl border bg-green-500/5 p-3">
-                                      <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                                        Quality Score
-                                      </p>
-                                      <p className="text-xl font-semibold">
-                                        {repo.analysis_summary.quality_score ??
-                                          "--"}
-                                        /10
-                                      </p>
+                                    <div className="grid gap-3 text-sm mb-5">
+                                      <div className="rounded-xl border border-border/70 px-3 py-3">
+                                        <div className="mb-2 flex items-center justify-between gap-3">
+                                          <span className="text-muted-foreground">
+                                            Analysis progress
+                                          </span>
+                                          <span className="text-right font-medium">
+                                            {repo.analysis_progress ?? 0}%
+                                          </span>
+                                        </div>
+                                        <Progress
+                                          value={repo.analysis_progress ?? 0}
+                                          className="h-2"
+                                        />
+                                        <p className="mt-2 text-xs text-muted-foreground">
+                                          {repo.analysis_current_stage ||
+                                            (repo.analysis_status ===
+                                            "completed"
+                                              ? "Analysis completed"
+                                              : "Waiting to be analyzed")}
+                                        </p>
+                                      </div>
+                                      <div className="flex items-start justify-between gap-3 rounded-xl border border-border/70 px-3 py-2">
+                                        <span className="text-muted-foreground">
+                                          Last synced
+                                        </span>
+                                        <span className="text-right font-medium">
+                                          {formatDateTime(repo.last_synced)}
+                                        </span>
+                                      </div>
+                                      <div className="flex items-start justify-between gap-3 rounded-xl border border-border/70 px-3 py-2">
+                                        <span className="text-muted-foreground">
+                                          Last analyzed
+                                        </span>
+                                        <span className="text-right font-medium">
+                                          {repo.last_analyzed_at
+                                            ? formatDateTime(
+                                                repo.last_analyzed_at,
+                                              )
+                                            : "Not analyzed yet"}
+                                        </span>
+                                      </div>
+                                      <div className="flex items-start justify-between gap-3 rounded-xl border border-border/70 px-3 py-2">
+                                        <span className="text-muted-foreground">
+                                          Analysis readiness
+                                        </span>
+                                        <span className="text-right font-medium">
+                                          {repo.analysis_status === "pending" ||
+                                          repo.analysis_status === "in_progress"
+                                            ? "Currently processing"
+                                            : repo.is_analyzed
+                                              ? "Ready for re-analysis"
+                                              : "Ready to analyze"}
+                                        </span>
+                                      </div>
                                     </div>
-                                    <div className="rounded-xl border bg-primary/5 p-3">
-                                      <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                                        Skill Level
-                                      </p>
-                                      <p className="text-xl font-semibold capitalize">
-                                        {repo.analysis_summary.skill_level ??
-                                          "--"}
-                                      </p>
-                                    </div>
-                                  </div>
-                                )}
 
-                                {repo.analysis_summary?.top_weaknesses?.[0] && (
-                                  <div className="mb-5 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3">
-                                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                                      Top Weakness
-                                    </p>
-                                    <div className="mt-1 flex items-center justify-between gap-3">
-                                      <p className="font-medium capitalize">
-                                        {repo.analysis_summary.top_weaknesses[0].category.replace(
-                                          /_/g,
-                                          " ",
-                                        )}
-                                      </p>
-                                      <Badge variant="outline" className="capitalize">
-                                        {repo.analysis_summary.top_weaknesses[0].priority}
-                                      </Badge>
-                                    </div>
-                                  </div>
-                                )}
-
-                                <div className="flex items-center justify-between gap-3">
-                                  <div className="text-xs text-muted-foreground">
-                                    Repo ID:{" "}
-                                    <span className="font-mono">
-                                      {repo.id.slice(0, 8)}
-                                    </span>
-                                  </div>
-                                  <Button
-                                    size="sm"
-                                    variant={
-                                      repo.is_analyzed ? "outline" : "default"
-                                    }
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      handleAnalyzeRepository(
-                                        repo.id,
-                                        repo.repo_name,
-                                      );
-                                    }}
-                                    disabled={
-                                      analyzing === repo.id ||
-                                      repo.analysis_status === "pending" ||
-                                      repo.analysis_status === "in_progress"
-                                    }
-                                    className="gap-2"
-                                  >
-                                    {analyzing === repo.id ? (
-                                      <>
-                                        <Loader className="w-3 h-3 animate-spin" />
-                                        Starting...
-                                      </>
-                                    ) : repo.is_analyzed ? (
-                                      <>
-                                        <CheckCircle className="w-3 h-3" />
-                                        Re-analyze
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Code className="w-3 h-3" />
-                                        Analyze
-                                      </>
+                                    {repo.analysis_summary && (
+                                      <div className="mb-5 grid grid-cols-2 gap-3">
+                                        <div className="rounded-xl border bg-green-500/5 p-3">
+                                          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                                            Quality Score
+                                          </p>
+                                          <p className="text-xl font-semibold">
+                                            {qualityScore ?? "--"}
+                                            /10
+                                          </p>
+                                        </div>
+                                        <div className="rounded-xl border bg-primary/5 p-3">
+                                          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                                            Findings
+                                          </p>
+                                          <p className="text-xl font-semibold">
+                                            {findingCount}
+                                          </p>
+                                        </div>
+                                      </div>
                                     )}
-                                  </Button>
-                                </div>
-                              </CardContent>
-                            </Card>
-                          ))}
+
+                                    {topFinding && (
+                                      <div className="mb-5 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3">
+                                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                                          Top Finding
+                                        </p>
+                                        <div className="mt-1 flex items-center justify-between gap-3">
+                                          <p className="font-medium capitalize">
+                                            {String(
+                                              topFinding.category ?? "unknown",
+                                            ).replace(/_/g, " ")}
+                                          </p>
+                                          <Badge
+                                            variant="outline"
+                                            className="capitalize"
+                                          >
+                                            {String(
+                                              topFinding.severity ?? "unknown",
+                                            )}
+                                          </Badge>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    <div className="flex items-center justify-between gap-3">
+                                      <div className="text-xs text-muted-foreground">
+                                        Repo ID:{" "}
+                                        <span className="font-mono">
+                                          {repo.id.slice(0, 8)}
+                                        </span>
+                                      </div>
+                                      <Button
+                                        size="sm"
+                                        variant={
+                                          repo.is_analyzed
+                                            ? "outline"
+                                            : "default"
+                                        }
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          handleAnalyzeRepository(
+                                            repo.id,
+                                            repo.repo_name,
+                                          );
+                                        }}
+                                        disabled={
+                                          analyzing === repo.id ||
+                                          repo.analysis_status === "pending" ||
+                                          repo.analysis_status === "in_progress"
+                                        }
+                                        className="gap-2"
+                                      >
+                                        {analyzing === repo.id ? (
+                                          <>
+                                            <Loader className="w-3 h-3 animate-spin" />
+                                            Starting...
+                                          </>
+                                        ) : repo.is_analyzed ? (
+                                          <>
+                                            <CheckCircle className="w-3 h-3" />
+                                            Re-analyze
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Code className="w-3 h-3" />
+                                            Analyze
+                                          </>
+                                        )}
+                                      </Button>
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                              );
+                            })(),
+                          )}
                         </div>
                       </>
                     )}

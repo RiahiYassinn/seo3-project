@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Navbar } from "@/components/navbar";
 import api from "@/lib/api";
@@ -13,7 +13,6 @@ import { Progress } from "@/components/ui/progress";
 import {
   ArrowLeft,
   CircleAlert as AlertCircle,
-  CircleCheck as CheckCircle,
   ExternalLink,
   FolderGit2,
   GitFork,
@@ -22,6 +21,58 @@ import {
   Star,
   TrendingUp,
 } from "lucide-react";
+
+type Severity = "low" | "medium" | "high" | "critical";
+
+interface SkillSummary {
+  skill: string;
+  issue_count: number;
+  highest_severity: Severity;
+  average_confidence: number;
+  example_titles: string[];
+}
+
+interface Finding {
+  file_path: string;
+  line: number | null;
+  category: string;
+  skill: string;
+  title: string;
+  message: string;
+  severity: Severity;
+  confidence: number;
+  rule_id: string;
+  source: string;
+  evidence: string[];
+  related_symbols: string[];
+  tags: string[];
+}
+
+interface LearningResource {
+  skill: string;
+  title: string;
+  type: string;
+  url: string;
+}
+
+interface RepositorySummary {
+  version?: string;
+  dominant_language?: string;
+  commit_topics?: string[];
+  quality_score?: number;
+  summary?: {
+    finding_count: number;
+    critical_count: number;
+    high_count: number;
+    medium_count: number;
+    low_count: number;
+  };
+  weakness_scores?: Record<string, number>;
+  skills?: SkillSummary[];
+  findings?: Finding[];
+  learning_resources?: LearningResource[];
+  analysis_metadata?: Record<string, any>;
+}
 
 interface RepositoryDetail {
   id: string;
@@ -35,28 +86,111 @@ interface RepositoryDetail {
   analysis_status: string | null;
   analysis_progress: number;
   analysis_current_stage: string | null;
-  analysis_summary: {
-    weakness_scores?: Record<string, number>;
-    top_weaknesses?: Array<{
-      category: string;
-      score: number;
-      evidence: string[];
-      priority: string;
-    }>;
-    strengths?: string[];
-    quality_score?: number;
-    skill_level?: string;
-    recommendations?: Array<{
-      weakness: string;
-      action: string;
-      learning_query: string;
-    }>;
-  } | null;
-  analysis_detected_skills: Array<Record<string, any>> | null;
+  analysis_summary: RepositorySummary | null;
+  analysis_detected_skills: SkillSummary[] | null;
   analysis_metadata: Record<string, any> | null;
   last_analyzed_at: string | null;
   last_synced: string;
 }
+
+const severityTone: Record<Severity, string> = {
+  critical: "bg-red-500/15 text-red-700 border-red-500/30",
+  high: "bg-orange-500/15 text-orange-700 border-orange-500/30",
+  medium: "bg-amber-500/15 text-amber-700 border-amber-500/30",
+  low: "bg-blue-500/15 text-blue-700 border-blue-500/30",
+};
+
+const formatLabel = (value: string) => value.replace(/_/g, " ");
+const confidencePercent = (value: number) =>
+  `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
+const scorePercent = (value: number) =>
+  Math.max(0, Math.min(100, (value / 10) * 100));
+const FINDINGS_PAGE_SIZE = 12;
+
+const toNumber = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const normalizeSummary = (rawSummary: unknown): RepositorySummary | null => {
+  if (!rawSummary) return null;
+
+  let parsed: any = rawSummary;
+  if (typeof rawSummary === "string") {
+    try {
+      parsed = JSON.parse(rawSummary);
+    } catch {
+      return null;
+    }
+  }
+
+  if (!parsed || typeof parsed !== "object") {
+    return null;
+  }
+
+  const findings = Array.isArray(parsed.findings) ? parsed.findings : [];
+  const qualityScore =
+    toNumber(parsed.quality_score) ??
+    toNumber(parsed.qualityScore) ??
+    toNumber(parsed.score);
+
+  const summaryCounts =
+    parsed.summary && typeof parsed.summary === "object" ? parsed.summary : {};
+
+  return {
+    version: parsed.version,
+    dominant_language: parsed.dominant_language ?? parsed.dominantLanguage,
+    commit_topics: Array.isArray(parsed.commit_topics)
+      ? parsed.commit_topics
+      : Array.isArray(parsed.commitTopics)
+        ? parsed.commitTopics
+        : [],
+    quality_score: qualityScore ?? undefined,
+    summary: {
+      finding_count:
+        toNumber(summaryCounts.finding_count) ??
+        toNumber(summaryCounts.findingCount) ??
+        findings.length,
+      critical_count:
+        toNumber(summaryCounts.critical_count) ??
+        toNumber(summaryCounts.criticalCount) ??
+        findings.filter((item: any) => item?.severity === "critical").length,
+      high_count:
+        toNumber(summaryCounts.high_count) ??
+        toNumber(summaryCounts.highCount) ??
+        findings.filter((item: any) => item?.severity === "high").length,
+      medium_count:
+        toNumber(summaryCounts.medium_count) ??
+        toNumber(summaryCounts.mediumCount) ??
+        findings.filter((item: any) => item?.severity === "medium").length,
+      low_count:
+        toNumber(summaryCounts.low_count) ??
+        toNumber(summaryCounts.lowCount) ??
+        findings.filter((item: any) => item?.severity === "low").length,
+    },
+    weakness_scores:
+      parsed.weakness_scores && typeof parsed.weakness_scores === "object"
+        ? parsed.weakness_scores
+        : parsed.weaknessScores && typeof parsed.weaknessScores === "object"
+          ? parsed.weaknessScores
+          : undefined,
+    skills: Array.isArray(parsed.skills) ? parsed.skills : [],
+    findings,
+    learning_resources: Array.isArray(parsed.learning_resources)
+      ? parsed.learning_resources
+      : Array.isArray(parsed.learningResources)
+        ? parsed.learningResources
+        : [],
+    analysis_metadata:
+      parsed.analysis_metadata && typeof parsed.analysis_metadata === "object"
+        ? parsed.analysis_metadata
+        : undefined,
+  };
+};
 
 export default function RepositoryAnalysisPage() {
   const params = useParams<{ repositoryId: string }>();
@@ -66,36 +200,40 @@ export default function RepositoryAnalysisPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [severityFilter, setSeverityFilter] = useState<"all" | Severity>("all");
+  const [visibleFindings, setVisibleFindings] = useState(FINDINGS_PAGE_SIZE);
 
   const repositoryId =
     typeof params?.repositoryId === "string" ? params.repositoryId : "";
 
-  const loadRepository = async (isRefresh = false) => {
-    if (!repositoryId) return;
-
-    if (isRefresh) {
-      setRefreshing(true);
-    }
-
-    try {
-      const { data } = await api.get<RepositoryDetail>(
-        `/github/repositories/${repositoryId}`,
-      );
-      setRepository(data);
-      setError("");
-    } catch (err: any) {
-      setError(
-        err?.response?.data?.message ??
-          err.message ??
-          "Failed to load repository analysis",
-      );
-    } finally {
-      setLoading(false);
+  const loadRepository = useCallback(
+    async (isRefresh = false) => {
+      if (!repositoryId) return;
       if (isRefresh) {
-        setRefreshing(false);
+        setRefreshing(true);
       }
-    }
-  };
+
+      try {
+        const { data } = await api.get<RepositoryDetail>(
+          `/github/repositories/${repositoryId}`,
+        );
+        setRepository(data);
+        setError("");
+      } catch (err: any) {
+        setError(
+          err?.response?.data?.message ??
+            err.message ??
+            "Failed to load repository analysis",
+        );
+      } finally {
+        setLoading(false);
+        if (isRefresh) {
+          setRefreshing(false);
+        }
+      }
+    },
+    [repositoryId],
+  );
 
   useEffect(() => {
     if (!hasHydrated) return;
@@ -109,7 +247,7 @@ export default function RepositoryAnalysisPage() {
     }
 
     loadRepository();
-  }, [hasHydrated, repositoryId, router, user]);
+  }, [hasHydrated, loadRepository, router, user]);
 
   useEffect(() => {
     if (!repository) return;
@@ -122,17 +260,43 @@ export default function RepositoryAnalysisPage() {
 
     const interval = window.setInterval(() => {
       loadRepository(true).catch(() => {
-        // Preserve the current screen state on temporary polling failures.
+        // Keep current UI state during temporary polling errors.
       });
     }, 4000);
 
     return () => window.clearInterval(interval);
-  }, [repository]);
+  }, [loadRepository, repository]);
 
   const formatDateTime = (value: string | null) => {
     if (!value) return "Not available";
     return new Date(value).toLocaleString();
   };
+
+  const summary = useMemo(
+    () => normalizeSummary(repository?.analysis_summary ?? null),
+    [repository?.analysis_summary],
+  );
+  const findings = useMemo(() => summary?.findings || [], [summary]);
+  const skills = useMemo(
+    () => summary?.skills || repository?.analysis_detected_skills || [],
+    [repository?.analysis_detected_skills, summary],
+  );
+  const resources = useMemo(() => summary?.learning_resources || [], [summary]);
+  const filteredFindings = useMemo(
+    () =>
+      severityFilter === "all"
+        ? findings
+        : findings.filter((finding) => finding.severity === severityFilter),
+    [findings, severityFilter],
+  );
+  const visibleFilteredFindings = useMemo(
+    () => filteredFindings.slice(0, visibleFindings),
+    [filteredFindings, visibleFindings],
+  );
+  const hiddenFindingsCount = Math.max(
+    0,
+    filteredFindings.length - visibleFilteredFindings.length,
+  );
 
   if (loading) {
     return (
@@ -194,9 +358,9 @@ export default function RepositoryAnalysisPage() {
               <Badge variant="outline" className="capitalize">
                 {repository.analysis_status || "not analyzed"}
               </Badge>
-              {repository.analysis_summary?.skill_level && (
+              {summary?.dominant_language && (
                 <Badge variant="secondary" className="capitalize">
-                  {repository.analysis_summary.skill_level}
+                  {summary.dominant_language}
                 </Badge>
               )}
             </div>
@@ -282,25 +446,13 @@ export default function RepositoryAnalysisPage() {
             </div>
             <div className="rounded-2xl border bg-muted/20 p-4">
               <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                Contribution Scope
+                Commits Analyzed
               </p>
               <p className="mt-2 font-medium">
                 {(repository.analysis_metadata?.commitsAnalyzed as
                   | number
-                  | undefined) ?? 0}{" "}
-                commits analyzed
+                  | undefined) ?? "--"}
               </p>
-              {(repository.analysis_metadata?.developerCommitsFound as
-                | number
-                | undefined) !== undefined && (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  from{" "}
-                  {(repository.analysis_metadata?.developerCommitsFound as
-                    | number
-                    | undefined) ?? 0}{" "}
-                  developer commits found
-                </p>
-              )}
             </div>
           </div>
         </div>
@@ -315,113 +467,44 @@ export default function RepositoryAnalysisPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {repository.analysis_summary ? (
-                  <div className="space-y-6">
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                      <div className="rounded-2xl border p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                          Quality Score
-                        </p>
-                        <p className="mt-2 text-3xl font-semibold">
-                          {repository.analysis_summary.quality_score ?? "--"}/10
-                        </p>
-                      </div>
-                      <div className="rounded-2xl border p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                          Skill Level
-                        </p>
-                        <p className="mt-2 text-3xl font-semibold capitalize">
-                          {repository.analysis_summary.skill_level ?? "--"}
-                        </p>
-                      </div>
-                      <div className="rounded-2xl border p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                          Top Weaknesses
-                        </p>
-                        <p className="mt-2 text-3xl font-semibold">
-                          {repository.analysis_summary.top_weaknesses?.length ??
-                            0}
-                        </p>
-                      </div>
-                      <div className="rounded-2xl border p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                          Recommendations
-                        </p>
-                        <p className="mt-2 text-3xl font-semibold">
-                          {repository.analysis_summary.recommendations
-                            ?.length ?? 0}
-                        </p>
-                      </div>
+                {summary ? (
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-2xl border p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                        Quality Score
+                      </p>
+                      <p className="mt-2 text-3xl font-semibold">
+                        {summary.quality_score ?? "--"}/10
+                      </p>
+                      <Progress
+                        value={scorePercent(summary.quality_score ?? 0)}
+                        className="mt-2 h-2"
+                      />
                     </div>
-
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="rounded-2xl border bg-green-500/5 p-5">
-                        <p className="mb-3 text-sm font-semibold">Strengths</p>
-                        <div className="space-y-2">
-                          {(repository.analysis_summary.strengths || [])
-                            .length > 0 ? (
-                            repository.analysis_summary.strengths?.map(
-                              (strength) => (
-                                <div
-                                  key={strength}
-                                  className="flex items-start gap-2 text-sm text-muted-foreground"
-                                >
-                                  <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />
-                                  <span>{strength}</span>
-                                </div>
-                              ),
-                            )
-                          ) : (
-                            <p className="text-sm text-muted-foreground">
-                              Strengths will appear after analysis completes.
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="rounded-2xl border bg-amber-500/5 p-5">
-                        <p className="mb-3 text-sm font-semibold">
-                          Top Weaknesses
-                        </p>
-                        <div className="space-y-2">
-                          {(repository.analysis_summary.top_weaknesses || [])
-                            .length > 0 ? (
-                            repository.analysis_summary.top_weaknesses?.map(
-                              (weakness) => (
-                                <div
-                                  key={`${weakness.category}-${weakness.priority}`}
-                                  className="rounded-xl border border-amber-500/20 bg-background px-3 py-3"
-                                >
-                                  <div className="mb-2 flex items-center justify-between gap-3">
-                                    <span className="font-medium capitalize">
-                                      {weakness.category.replace(/_/g, " ")}
-                                    </span>
-                                    <Badge
-                                      variant="outline"
-                                      className="capitalize"
-                                    >
-                                      {weakness.priority}
-                                    </Badge>
-                                  </div>
-                                  <p className="text-sm text-muted-foreground">
-                                    Score: {weakness.score.toFixed(2)}
-                                  </p>
-                                  {weakness.evidence?.[0] && (
-                                    <p className="mt-2 text-sm text-muted-foreground">
-                                      {weakness.evidence[0]}
-                                    </p>
-                                  )}
-                                </div>
-                              ),
-                            )
-                          ) : (
-                            <p className="text-sm text-muted-foreground">
-                              Weakness hotspots will appear after analysis
-                              completes.
-                            </p>
-                          )}
-                        </div>
-                      </div>
+                    <div className="rounded-2xl border p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                        Findings
+                      </p>
+                      <p className="mt-2 text-3xl font-semibold">
+                        {summary.summary?.finding_count ?? findings.length}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                        Critical + High
+                      </p>
+                      <p className="mt-2 text-3xl font-semibold">
+                        {(summary.summary?.critical_count ?? 0) +
+                          (summary.summary?.high_count ?? 0)}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                        Skills Impacted
+                      </p>
+                      <p className="mt-2 text-3xl font-semibold">
+                        {skills.length}
+                      </p>
                     </div>
                   </div>
                 ) : (
@@ -435,41 +518,125 @@ export default function RepositoryAnalysisPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Weakness Scores</CardTitle>
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <CardTitle>All Findings</CardTitle>
+                  <div className="flex flex-wrap gap-2">
+                    {(
+                      ["all", "critical", "high", "medium", "low"] as const
+                    ).map((level) => {
+                      const count =
+                        level === "all"
+                          ? findings.length
+                          : findings.filter(
+                              (finding) => finding.severity === level,
+                            ).length;
+
+                      return (
+                        <Button
+                          key={level}
+                          type="button"
+                          size="sm"
+                          variant={
+                            severityFilter === level ? "default" : "outline"
+                          }
+                          className="capitalize"
+                          onClick={() => {
+                            setSeverityFilter(level);
+                            setVisibleFindings(FINDINGS_PAGE_SIZE);
+                          }}
+                        >
+                          {level} ({count})
+                        </Button>
+                      );
+                    })}
+                  </div>
+                </div>
               </CardHeader>
               <CardContent>
-                {repository.analysis_summary?.weakness_scores &&
-                Object.keys(repository.analysis_summary.weakness_scores)
-                  .length > 0 ? (
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {Object.entries(
-                      repository.analysis_summary.weakness_scores,
-                    ).map(([category, score]) => (
-                      <div
-                        key={category}
-                        className="rounded-2xl border bg-background p-4"
-                      >
-                        <div className="mb-2 flex items-center justify-between gap-3">
-                          <div>
-                            <p className="font-semibold capitalize">
-                              {category.replace(/_/g, " ")}
+                {filteredFindings.length > 0 ? (
+                  <>
+                    <div className="mb-3 text-xs text-muted-foreground">
+                      Showing {visibleFilteredFindings.length} of{" "}
+                      {filteredFindings.length} findings
+                    </div>
+                    <div className="max-h-[34rem] space-y-3 overflow-y-auto pr-2">
+                      {visibleFilteredFindings.map((finding) => (
+                        <div
+                          key={`${finding.rule_id}-${finding.file_path}-${finding.line ?? 0}`}
+                          className="rounded-2xl border p-4"
+                        >
+                          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                            <p className="font-semibold">{finding.title}</p>
+                            <Badge
+                              variant="outline"
+                              className={severityTone[finding.severity]}
+                            >
+                              {finding.severity}
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            {finding.message}
+                          </p>
+                          <div className="mt-3 grid gap-2 text-xs text-muted-foreground md:grid-cols-2">
+                            <p>
+                              <span className="font-medium text-foreground">
+                                Skill:
+                              </span>{" "}
+                              {formatLabel(finding.skill)}
                             </p>
-                            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                              weakness score
+                            <p>
+                              <span className="font-medium text-foreground">
+                                Confidence:
+                              </span>{" "}
+                              {confidencePercent(finding.confidence)}
+                            </p>
+                            <p>
+                              <span className="font-medium text-foreground">
+                                File:
+                              </span>{" "}
+                              {finding.file_path}
+                              {typeof finding.line === "number"
+                                ? `:${finding.line}`
+                                : ""}
+                            </p>
+                            <p>
+                              <span className="font-medium text-foreground">
+                                Rule:
+                              </span>{" "}
+                              {finding.rule_id}
                             </p>
                           </div>
-                          <Badge variant="outline">
-                            {(score * 100).toFixed(0)}%
-                          </Badge>
+                          {finding.evidence?.[0] && (
+                            <p className="mt-2 rounded-xl bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                              {finding.evidence[0]}
+                            </p>
+                          )}
                         </div>
-                        <Progress value={score * 100} className="h-2" />
+                      ))}
+                    </div>
+                    {hiddenFindingsCount > 0 && (
+                      <div className="mt-4 flex justify-center">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() =>
+                            setVisibleFindings(
+                              (current) => current + FINDINGS_PAGE_SIZE,
+                            )
+                          }
+                        >
+                          Load{" "}
+                          {Math.min(FINDINGS_PAGE_SIZE, hiddenFindingsCount)}{" "}
+                          More
+                        </Button>
                       </div>
-                    ))}
-                  </div>
+                    )}
+                  </>
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    Weakness scores will appear here when the NLP analysis
-                    result arrives.
+                    {findings.length > 0
+                      ? "No findings match the selected severity filter."
+                      : "Findings will appear here when analysis completes."}
                   </p>
                 )}
               </CardContent>
@@ -477,40 +644,34 @@ export default function RepositoryAnalysisPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Recommendations</CardTitle>
+                <CardTitle>Learning Resources</CardTitle>
               </CardHeader>
               <CardContent>
-                {repository.analysis_summary?.recommendations &&
-                repository.analysis_summary.recommendations.length > 0 ? (
+                {resources.length > 0 ? (
                   <div className="space-y-3">
-                    {repository.analysis_summary.recommendations.map(
-                      (recommendation) => (
-                        <div
-                          key={`${recommendation.weakness}-${recommendation.learning_query}`}
-                          className="rounded-2xl border p-4"
-                        >
-                          <div className="mb-2 flex items-center justify-between gap-3">
-                            <p className="font-semibold capitalize">
-                              {recommendation.weakness.replace(/_/g, " ")}
-                            </p>
-                            <Badge variant="secondary">Actionable</Badge>
-                          </div>
-                          <p className="text-sm text-muted-foreground">
-                            {recommendation.action}
-                          </p>
-                          <p className="mt-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                            Learning query
-                          </p>
-                          <p className="mt-1 text-sm">
-                            {recommendation.learning_query}
-                          </p>
+                    {resources.map((resource) => (
+                      <a
+                        key={`${resource.skill}-${resource.url}`}
+                        href={resource.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block rounded-2xl border p-4 transition hover:border-primary/40"
+                      >
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <p className="font-semibold">{resource.title}</p>
+                          <Badge variant="secondary" className="capitalize">
+                            {resource.type}
+                          </Badge>
                         </div>
-                      ),
-                    )}
+                        <p className="text-sm text-muted-foreground capitalize">
+                          Skill: {formatLabel(resource.skill)}
+                        </p>
+                      </a>
+                    ))}
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    Recommendations will appear after analysis completes.
+                    Learning resources will appear after analysis completes.
                   </p>
                 )}
               </CardContent>
@@ -557,6 +718,42 @@ export default function RepositoryAnalysisPage() {
 
             <Card>
               <CardHeader>
+                <CardTitle>Skill Summary</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {skills.length > 0 ? (
+                  skills.map((skill) => (
+                    <div key={skill.skill} className="rounded-2xl border p-4">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <p className="font-semibold capitalize">
+                          {formatLabel(skill.skill)}
+                        </p>
+                        <Badge
+                          variant="outline"
+                          className={severityTone[skill.highest_severity]}
+                        >
+                          {skill.highest_severity}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {skill.issue_count} issues
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Avg confidence:{" "}
+                        {confidencePercent(skill.average_confidence)}
+                      </p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Skill summaries will appear after analysis completes.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
                 <CardTitle>Analysis Metadata</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -582,49 +779,13 @@ export default function RepositoryAnalysisPage() {
                 </div>
                 <div className="rounded-2xl border p-4">
                   <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                    Commits Analyzed
+                    Semantic Facts
                   </p>
                   <p className="mt-2 text-lg font-semibold">
-                    {(repository.analysis_metadata?.analyzedCommitCount as
-                      | number
-                      | undefined) ?? "--"}
+                    {(repository.analysis_metadata?.nlpAnalysisMetadata
+                      ?.semantic_fact_count as number | undefined) ?? "--"}
                   </p>
                 </div>
-                <div className="rounded-2xl border p-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                    Developer Commits Found
-                  </p>
-                  <p className="mt-2 text-lg font-semibold">
-                    {(repository.analysis_metadata?.developerCommitsFound as
-                      | number
-                      | undefined) ?? "--"}
-                  </p>
-                </div>
-                {repository.analysis_metadata?.commitLimitApplied && (
-                  <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
-                    <p className="text-xs uppercase tracking-[0.2em] text-amber-700">
-                      Sampling Notice
-                    </p>
-                    <p className="mt-2 text-sm text-amber-700">
-                      Analysis was capped at{" "}
-                      {String(
-                        repository.analysis_metadata?.maxCommitsPerAnalysis ??
-                          "--",
-                      )}{" "}
-                      commits for speed.
-                    </p>
-                  </div>
-                )}
-                {repository.analysis_metadata?.diffTruncated && (
-                  <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
-                    <p className="text-xs uppercase tracking-[0.2em] text-primary">
-                      Diff Sampling
-                    </p>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      The combined diff was truncated to keep analysis responsive.
-                    </p>
-                  </div>
-                )}
                 {repository.analysis_metadata?.failureReason && (
                   <div className="rounded-2xl border border-destructive/40 bg-destructive/5 p-4">
                     <p className="text-xs uppercase tracking-[0.2em] text-destructive">

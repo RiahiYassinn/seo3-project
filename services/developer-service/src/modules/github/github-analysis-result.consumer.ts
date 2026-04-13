@@ -22,13 +22,25 @@ export class GithubAnalysisResultConsumer {
       return;
     }
 
+    const summary = (message.summary || null) as Record<string, any> | null;
+    const metadata = (message.metadata || null) as Record<string, any> | null;
+    const detectedSkills = Array.isArray(summary?.skills)
+      ? (summary?.skills as Record<string, any>[])
+      : null;
+    const mergedMetadata = {
+      ...(metadata || {}),
+      ...(summary?.analysis_metadata
+        ? { nlpAnalysisMetadata: summary.analysis_metadata }
+        : {}),
+    };
+
     await this.githubService.updateRepositoryAnalysis(message.repositoryId, {
       status: 'completed',
       progress: 100,
       stage: 'Weakness analysis completed',
-      summary: message.summary || null,
-      detectedSkills: null,
-      metadata: message.metadata || null,
+      summary,
+      detectedSkills,
+      metadata: mergedMetadata,
     });
   }
 

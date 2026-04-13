@@ -20,6 +20,7 @@ interface CommitFilePayload {
   deletions: number;
   changes: number;
   patch?: string;
+  blobSha?: string;
 }
 
 interface CommitPayload {
@@ -61,6 +62,11 @@ interface ChunkEnvelopePayload {
   };
 }
 
+interface CacheEntry<T> {
+  value: T;
+  expiresAt: number;
+}
+
 @Injectable()
 export class CommitAnalysisService {
   private readonly logger = new Logger(CommitAnalysisService.name);
@@ -80,6 +86,14 @@ export class CommitAnalysisService {
     process.env.ANALYSIS_SNAPSHOT_CHUNK_BYTES || '240000',
     10,
   );
+  private readonly githubApiConcurrency = Math.max(
+    1,
+    parseInt(process.env.GITHUB_API_CONCURRENCY || '4', 10),
+  );
+  private readonly githubCacheTtlMs = Math.max(
+    30000,
+    parseInt(process.env.GITHUB_API_CACHE_TTL_MS || '600000', 10),
+  );
   private readonly supportedCodeExtensions = new Set([
     '.py',
     '.ts',
@@ -90,6 +104,10 @@ export class CommitAnalysisService {
     '.go',
     '.rs',
   ]);
+  private readonly authorCommitCache = new Map< string, CacheEntry<any[]> >();
+  private readonly commitCache = new Map<string, CacheEntry<CommitPayload>>();
+  private readonly blobCache = new Map<string, CacheEntry<string>>();
+  private readonly contributorCache = new Map<string, CacheEntry<any[]>>();
 
   constructor(
     @Inject('KAFKA_CLIENT')
@@ -103,12 +121,12 @@ export class CommitAnalysisService {
       const octokit = new Octokit({ auth: event.githubToken });
 
       this.emitProgress(event, 35, 'Fetching linked developer commits');
-      const commits = await octokit.paginate(octokit.repos.listCommits, {
-        owner: repoCoordinates.owner,
-        repo: repoCoordinates.repo,
-        author: event.githubUsername,
-        per_page: 100,
-      });
+      const commits = await this.fetchAuthorCommits(
+        octokit,
+        repoCoordinates.owner,
+        repoCoordinates.repo,
+        event.githubUsername,
+      );
 
       const selectedCommits =
         this.maxCommitsPerAnalysis > 0
@@ -121,42 +139,23 @@ export class CommitAnalysisService {
       }
 
       this.emitProgress(event, 50, 'Collecting commit diff metadata');
-      const detailedCommits = await Promise.all(
-        selectedCommits.map(async (commit) => {
-          const { data } = await octokit.repos.getCommit({
-            owner: repoCoordinates.owner,
-            repo: repoCoordinates.repo,
-            ref: commit.sha,
-          });
-
-          return {
-            sha: data.sha,
-            message: data.commit.message,
-            committedAt: data.commit.author?.date || new Date().toISOString(),
-            additions: data.stats?.additions || 0,
-            deletions: data.stats?.deletions || 0,
-            changedFiles: data.files?.length || 0,
-            filesChanged: (data.files || []).map((file) => file.filename),
-            files: (data.files || []).map((file) => ({
-              filename: file.filename,
-              status: file.status,
-              additions: file.additions || 0,
-              deletions: file.deletions || 0,
-              changes: file.changes || 0,
-              patch: file.patch,
-            })),
-          } satisfies CommitPayload;
-        }),
+      const detailedCommits = await this.mapWithConcurrency(
+        selectedCommits,
+        this.githubApiConcurrency,
+        (commit) =>
+          this.fetchCommitDetails(
+            octokit,
+            repoCoordinates.owner,
+            repoCoordinates.repo,
+            commit.sha,
+          ),
       );
 
-      const contributors = await octokit.repos
-        .listContributors({
-          owner: repoCoordinates.owner,
-          repo: repoCoordinates.repo,
-          per_page: 100,
-        })
-        .then((response) => response.data)
-        .catch(() => []);
+      const contributors = await this.fetchContributors(
+        octokit,
+        repoCoordinates.owner,
+        repoCoordinates.repo,
+      );
 
       const linkedContributor = contributors.find(
         (contributor) =>
@@ -314,42 +313,38 @@ export class CommitAnalysisService {
         ? eligibleFiles.slice(0, this.maxFilesPerAnalysis)
         : eligibleFiles;
     const totalFiles = limitedFiles.length;
-
-    for (const [index, entry] of limitedFiles.entries()) {
-      const { file, commitSha } = entry;
-      try {
-        const response = await octokit.repos.getContent({
+    let completedFiles = 0;
+    const fetchedFiles = await this.mapWithConcurrency(
+      limitedFiles,
+      this.githubApiConcurrency,
+      async (entry) => {
+        const content = await this.fetchFileContent(
+          octokit,
           owner,
           repo,
-          path: file.filename,
-          ref: commitSha,
-        });
-        const data = response.data;
-        if (Array.isArray(data) || !('content' in data) || !data.content) {
-          continue;
+          entry.file,
+          entry.commitSha,
+        );
+
+        completedFiles += 1;
+        if (totalFiles > 0) {
+          const progress = 58 + Math.min(5, Math.floor((completedFiles / totalFiles) * 5));
+          this.emitProgress(
+            event,
+            progress,
+            `Collecting source file snapshots (${completedFiles}/${totalFiles})`,
+          );
         }
 
-        const encoding = data.encoding === 'base64' ? 'base64' : 'utf8';
-        const content = Buffer.from(data.content, encoding).toString('utf8');
-        if (content.trim()) {
-          files.set(file.filename, content);
-        }
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : 'Unknown file fetch error';
-        this.logger.warn(
-          `Skipping file ${file.filename} at ${commitSha}: ${message}`,
-        );
-      }
+        return content ? [entry.file.filename, content] : null;
+      },
+    );
 
-      if (totalFiles > 0) {
-        const progress = 58 + Math.min(5, Math.floor(((index + 1) / totalFiles) * 5));
-        this.emitProgress(
-          event,
-          progress,
-          `Collecting source file snapshots (${index + 1}/${totalFiles})`,
-        );
+    for (const entry of fetchedFiles) {
+      if (!entry) {
+        continue;
       }
+      files.set(entry[0], entry[1]);
     }
 
     return {
@@ -401,6 +396,269 @@ export class CommitAnalysisService {
     }
 
     return `${combinedDiff.slice(0, this.maxDiffChars)}\n\n[truncated for analysis size]`;
+  }
+
+  private async fetchAuthorCommits(
+    octokit: Octokit,
+    owner: string,
+    repo: string,
+    githubUsername: string,
+  ) {
+    const cacheKey = `${owner}/${repo}:author:${githubUsername.toLowerCase()}`;
+    const cached = this.getCacheValue(this.authorCommitCache, cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const commits = await this.withGitHubRetry(
+      `listCommits:${cacheKey}`,
+      () =>
+        octokit.paginate(octokit.repos.listCommits, {
+          owner,
+          repo,
+          author: githubUsername,
+          per_page: 100,
+        }),
+    );
+    this.setCacheValue(this.authorCommitCache, cacheKey, commits);
+    return commits;
+  }
+
+  private async fetchCommitDetails(
+    octokit: Octokit,
+    owner: string,
+    repo: string,
+    commitSha: string,
+  ): Promise<CommitPayload> {
+    const cacheKey = `${owner}/${repo}:commit:${commitSha}`;
+    const cached = this.getCacheValue(this.commitCache, cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const { data } = await this.withGitHubRetry(
+      `getCommit:${cacheKey}`,
+      () =>
+        octokit.repos.getCommit({
+          owner,
+          repo,
+          ref: commitSha,
+        }),
+    );
+
+    const payload = {
+      sha: data.sha,
+      message: data.commit.message,
+      committedAt: data.commit.author?.date || new Date().toISOString(),
+      additions: data.stats?.additions || 0,
+      deletions: data.stats?.deletions || 0,
+      changedFiles: data.files?.length || 0,
+      filesChanged: (data.files || []).map((file) => file.filename),
+      files: (data.files || []).map((file) => ({
+        filename: file.filename,
+        status: file.status,
+        additions: file.additions || 0,
+        deletions: file.deletions || 0,
+        changes: file.changes || 0,
+        patch: file.patch,
+        blobSha: file.sha || undefined,
+      })),
+    } satisfies CommitPayload;
+
+    this.setCacheValue(this.commitCache, cacheKey, payload);
+    return payload;
+  }
+
+  private async fetchContributors(
+    octokit: Octokit,
+    owner: string,
+    repo: string,
+  ) {
+    const cacheKey = `${owner}/${repo}:contributors`;
+    const cached = this.getCacheValue(this.contributorCache, cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const contributors = await this.withGitHubRetry(
+      `listContributors:${cacheKey}`,
+      () =>
+        octokit.repos
+          .listContributors({
+            owner,
+            repo,
+            per_page: 100,
+          })
+          .then((response) => response.data),
+    ).catch(() => []);
+
+    this.setCacheValue(this.contributorCache, cacheKey, contributors);
+    return contributors;
+  }
+
+  private async fetchFileContent(
+    octokit: Octokit,
+    owner: string,
+    repo: string,
+    file: CommitFilePayload,
+    commitSha: string,
+  ): Promise<string | null> {
+    try {
+      if (file.blobSha) {
+        const blobCacheKey = `${owner}/${repo}:blob:${file.blobSha}`;
+        const cachedBlob = this.getCacheValue(this.blobCache, blobCacheKey);
+        if (cachedBlob) {
+          return cachedBlob;
+        }
+
+        const { data } = await this.withGitHubRetry(
+          `getBlob:${blobCacheKey}`,
+          () =>
+            octokit.git.getBlob({
+              owner,
+              repo,
+              file_sha: file.blobSha!,
+            }),
+        );
+        const blobContent = Buffer.from(
+          data.content,
+          data.encoding === 'base64' ? 'base64' : 'utf8',
+        ).toString('utf8');
+        if (blobContent.trim()) {
+          this.setCacheValue(this.blobCache, blobCacheKey, blobContent);
+          return blobContent;
+        }
+        return null;
+      }
+
+      const response = await this.withGitHubRetry(
+        `getContent:${owner}/${repo}:${file.filename}@${commitSha}`,
+        () =>
+          octokit.repos.getContent({
+            owner,
+            repo,
+            path: file.filename,
+            ref: commitSha,
+          }),
+      );
+      const data = response.data;
+      if (Array.isArray(data) || !('content' in data) || !data.content) {
+        return null;
+      }
+
+      const encoding = data.encoding === 'base64' ? 'base64' : 'utf8';
+      const content = Buffer.from(data.content, encoding).toString('utf8');
+      return content.trim() ? content : null;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unknown file fetch error';
+      this.logger.warn(`Skipping file ${file.filename} at ${commitSha}: ${message}`);
+      return null;
+    }
+  }
+
+  private getCacheValue<T>(
+    cache: Map<string, CacheEntry<T>>,
+    key: string,
+  ): T | null {
+    const cached = cache.get(key);
+    if (!cached) {
+      return null;
+    }
+    if (cached.expiresAt <= Date.now()) {
+      cache.delete(key);
+      return null;
+    }
+    return cached.value;
+  }
+
+  private setCacheValue<T>(
+    cache: Map<string, CacheEntry<T>>,
+    key: string,
+    value: T,
+  ): void {
+    cache.set(key, {
+      value,
+      expiresAt: Date.now() + this.githubCacheTtlMs,
+    });
+  }
+
+  private async withGitHubRetry<T>(
+    label: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const maxAttempts = 3;
+    let attempt = 0;
+
+    while (attempt < maxAttempts) {
+      try {
+        return await operation();
+      } catch (error: any) {
+        attempt += 1;
+        const status = Number(error?.status || 0);
+        const responseHeaders = error?.response?.headers || {};
+        const retryAfterSeconds = Number(responseHeaders['retry-after'] || 0);
+        const resetAtSeconds = Number(responseHeaders['x-ratelimit-reset'] || 0);
+        const shouldRetry =
+          attempt < maxAttempts &&
+          (status === 403 || status === 429 || status >= 500);
+
+        if (!shouldRetry) {
+          throw error;
+        }
+
+        const waitMs = this.resolveRetryDelayMs(retryAfterSeconds, resetAtSeconds, attempt);
+        this.logger.warn(
+          `GitHub request ${label} throttled/failed (attempt ${attempt}/${maxAttempts}); waiting ${waitMs}ms`,
+        );
+        await this.sleep(waitMs);
+      }
+    }
+
+    throw new Error(`GitHub request failed after retries: ${label}`);
+  }
+
+  private resolveRetryDelayMs(
+    retryAfterSeconds: number,
+    resetAtSeconds: number,
+    attempt: number,
+  ) {
+    if (retryAfterSeconds > 0) {
+      return retryAfterSeconds * 1000;
+    }
+    if (resetAtSeconds > 0) {
+      return Math.max(1000, (resetAtSeconds * 1000) - Date.now());
+    }
+    return Math.min(15000, attempt * 2000);
+  }
+
+  private async mapWithConcurrency<T, R>(
+    items: T[],
+    concurrency: number,
+    worker: (item: T, index: number) => Promise<R>,
+  ): Promise<R[]> {
+    const results: R[] = new Array(items.length);
+    let cursor = 0;
+
+    const runWorker = async () => {
+      while (true) {
+        const currentIndex = cursor;
+        cursor += 1;
+        if (currentIndex >= items.length) {
+          return;
+        }
+        results[currentIndex] = await worker(items[currentIndex], currentIndex);
+      }
+    };
+
+    await Promise.all(
+      Array.from({ length: Math.min(concurrency, items.length || 1) }, () => runWorker()),
+    );
+    return results;
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private emitSnapshotToNlp(

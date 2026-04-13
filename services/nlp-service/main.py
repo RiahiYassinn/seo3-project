@@ -28,10 +28,6 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("groq").setLevel(logging.WARNING)
-logging.getLogger("groq._base_client").setLevel(logging.WARNING)
-logging.getLogger("google").setLevel(logging.WARNING)
-logging.getLogger("google_genai").setLevel(logging.WARNING)
 logging.getLogger("kafka").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)

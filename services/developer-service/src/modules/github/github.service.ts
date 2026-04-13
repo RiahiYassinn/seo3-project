@@ -55,7 +55,7 @@ export class GithubService {
 
   private getOctokit(integration: GithubIntegration & { githubTokenEncrypted: string }) {
     const token = this.decrypt(integration.githubTokenEncrypted);
-    return new Octokit({ auth: token });
+    return new Octokit({ auth: token });  
   }
 
   // ─── Public API ─────────────────────────────────────────────────────────────
