@@ -6,9 +6,9 @@ import {
   Delete,
   Body,
   Param,
-  NotFoundException,
 } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
+import { createHash } from 'crypto';
 import { DeveloperService } from './developer.service';
 import { EmailService } from './email.service';
 
@@ -163,6 +163,19 @@ export class DeveloperController {
     @Payload() data: { userId: string; tokenHash: string },
   ) {
     const token = await this.developerService.findRefreshToken(data.userId, data.tokenHash);
+    if (!token) return null;
+    return {
+      id: token.id,
+      developer_id: token.developerId,
+      token_hash: token.tokenHash,
+      is_revoked: token.isRevoked,
+      expires_at: token.expiresAt,
+    };
+  }
+
+  @MessagePattern('find_refresh_token_by_hash')
+  async handleFindRefreshTokenByHash(@Payload() data: { tokenHash: string }) {
+    const token = await this.developerService.findRefreshTokenByHash(data.tokenHash);
     if (!token) return null;
     return {
       id: token.id,
@@ -389,7 +402,9 @@ export class DeveloperController {
 
   @MessagePattern('check_refresh_token_revoked')
   async handleCheckRefreshTokenRevoked(@Payload() data: { token: string }) {
-    const tokenRecord = await this.developerService.findRefreshTokenByHash(data.token);
+    const tokenRecord = await this.developerService.findRefreshTokenByHash(
+      createHash('sha256').update(data.token).digest('hex'),
+    );
     return { isRevoked: tokenRecord?.isRevoked || false };
   }
 }

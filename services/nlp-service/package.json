@@ -1,7 +1,7 @@
 {
   "name": "nlp-service",
   "version": "1.0.0",
-  "description": "NLP microservice for SEO3 Platform (Python)",
+  "description": "Code analysis microservice for SEO3 Platform (Python)",
   "private": true,
   "scripts": {
     "dev": "python main.py",

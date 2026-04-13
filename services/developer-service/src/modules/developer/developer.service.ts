@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Developer } from './entities/developer.entity';
@@ -8,8 +8,6 @@ import { PasswordResetToken } from './entities/password-reset-token.entity';
 
 @Injectable()
 export class DeveloperService {
-  private readonly logger = new Logger(DeveloperService.name);
-
   constructor(
     @InjectRepository(Developer)
     private readonly developerRepository: Repository<Developer>,
@@ -62,10 +60,6 @@ export class DeveloperService {
 
   async findByEmail(email: string): Promise<Developer | null> {
     return this.developerRepository.findOne({ where: { email } });
-  }
-
-  async findByUsername(username: string): Promise<Developer | null> {
-    return this.developerRepository.findOne({ where: { username } });
   }
 
   async findByEmailOrUsername(usernameOrEmail: string): Promise<Developer | null> {
@@ -138,11 +132,6 @@ export class DeveloperService {
   // async linkGoogleAccount(userId: string, googleId: string): Promise<void> {
   //   await this.developerRepository.update(userId, { googleId });
   // }
-
-  async create(createDto: Partial<Developer>): Promise<Developer> {
-    const developer = this.developerRepository.create(createDto);
-    return this.developerRepository.save(developer);
-  }
 
   async update(id: string, updateDto: Partial<Developer>): Promise<Developer> {
     await this.findOne(id);

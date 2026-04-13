@@ -12,7 +12,6 @@ import {
   Moon,
   Sun,
   Bell,
-  User,
   Activity,
   LogOut,
 } from "lucide-react";

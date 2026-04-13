@@ -1,11 +1,9 @@
 "use client";
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Navbar } from "@/components/navbar";
 import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
@@ -15,7 +13,6 @@ import {
   TrendingUp,
   Users,
   Brain,
-  Zap,
   Target,
   GitBranch,
   MessageSquare,
@@ -23,12 +20,6 @@ import {
 } from "lucide-react";
 
 export default function Home() {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
   return (
     <div className="min-h-screen">
       <Navbar />

@@ -8,6 +8,11 @@ export class RepositoryResponseDto {
   forks: number;
   is_analyzed: boolean;
   analysis_status: string | null;
+  analysis_progress: number;
+  analysis_current_stage: string | null;
+  analysis_summary: Record<string, any> | null;
+  analysis_detected_skills: Record<string, any>[] | null;
+  analysis_metadata: Record<string, any> | null;
   last_analyzed_at: Date | null;
   last_synced: Date;
 
@@ -22,6 +27,11 @@ export class RepositoryResponseDto {
       forks: entity.forks,
       is_analyzed: entity.isAnalyzed,
       analysis_status: entity.analysisStatus,
+      analysis_progress: entity.analysisProgress,
+      analysis_current_stage: entity.analysisCurrentStage,
+      analysis_summary: entity.analysisSummary,
+      analysis_detected_skills: entity.analysisDetectedSkills,
+      analysis_metadata: entity.analysisMetadata,
       last_analyzed_at: entity.lastAnalyzedAt,
       last_synced: entity.lastSynced,
     };

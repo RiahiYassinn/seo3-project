@@ -68,7 +68,7 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Login successful' })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   async login(
-    @Body() loginDto: LoginDto,
+    @Body() _loginDto: LoginDto,
     @Req() req,
     @Res({ passthrough: true }) res: Response,
     @Ip() ip: string,

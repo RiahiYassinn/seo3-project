@@ -11,7 +11,7 @@ import { Request } from 'express';
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   constructor(
-    private configService: ConfigService,
+    configService: ConfigService,
     @Inject('DEVELOPER_SERVICE') private developerService: ClientProxy
   ) {
     super({

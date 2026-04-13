@@ -8,5 +8,5 @@ async def health_check():
     """Health check endpoint"""
     return {
         "status": "healthy",
-        "service": "nlp-service"
+        "service": "code-analysis-service"
     }

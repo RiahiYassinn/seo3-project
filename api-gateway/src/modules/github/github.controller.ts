@@ -4,6 +4,7 @@ import {
   Post,
   Delete,
   Body,
+  Param,
   Req,
   HttpCode,
   HttpStatus,
@@ -45,6 +46,12 @@ export class GithubController {
   @ApiOperation({ summary: 'List synced repositories for the current user' })
   getRepositories(@Req() req: any) {
     return this.githubService.getRepositories(req.user.id);
+  }
+
+  @Get('repositories/:repositoryId')
+  @ApiOperation({ summary: 'Get a single synced repository for the current user' })
+  getRepository(@Req() req: any, @Param('repositoryId') repositoryId: string) {
+    return this.githubService.getRepository(req.user.id, repositoryId);
   }
 
   @Post('sync')

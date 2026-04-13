@@ -5,8 +5,6 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
-  ManyToOne,
-  JoinColumn,
 } from 'typeorm';
 import { Repository } from './repository.entity';
 

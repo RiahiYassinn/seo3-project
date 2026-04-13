@@ -51,6 +51,21 @@ export class Repository {
   @Column({ name: 'analysis_status', nullable: true, type: 'varchar' })
   analysisStatus: AnalysisStatus | null;
 
+  @Column({ name: 'analysis_progress', type: 'int', default: 0 })
+  analysisProgress: number;
+
+  @Column({ name: 'analysis_current_stage', nullable: true, type: 'varchar' })
+  analysisCurrentStage: string | null;
+
+  @Column({ name: 'analysis_summary', type: 'jsonb', nullable: true })
+  analysisSummary: Record<string, any> | null;
+
+  @Column({ name: 'analysis_detected_skills', type: 'jsonb', nullable: true })
+  analysisDetectedSkills: Record<string, any>[] | null;
+
+  @Column({ name: 'analysis_metadata', type: 'jsonb', nullable: true })
+  analysisMetadata: Record<string, any> | null;
+
   @Column({ name: 'last_analyzed_at', type: 'timestamptz', nullable: true })
   lastAnalyzedAt: Date | null;
 

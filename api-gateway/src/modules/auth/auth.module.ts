@@ -13,14 +13,14 @@ import { GoogleStrategy } from './strategies/google.strategy';
 import { LocalAuthGuard } from './guards/local-auth.guard';
 import { RefreshTokenGuard } from './guards/refresh-token.guard';
 import { GoogleAuthGuard } from './guards/google-auth.guard';
-import { RedisModule } from '../../redis/redis.module'; // Import Redis module
-import { RateLimiterMemory } from '../../middleware/rate-limiter.memory'; // Import rate limiter
+import { RedisModule } from '../../redis/redis.module'; 
+import { RateLimiterMemory } from '../../middleware/rate-limiter.memory'; 
 
 @Module({
   imports: [
     PassportModule,
     ConfigModule,
-    RedisModule, // Add Redis module here
+    RedisModule, 
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
@@ -56,7 +56,7 @@ import { RateLimiterMemory } from '../../middleware/rate-limiter.memory'; // Imp
     LocalAuthGuard,
     RefreshTokenGuard,
     GoogleAuthGuard,
-    RateLimiterMemory, // Add rate limiter as provider
+    RateLimiterMemory, 
   ],
   exports: [AuthService, LocalAuthGuard, RefreshTokenGuard, GoogleAuthGuard]
 })

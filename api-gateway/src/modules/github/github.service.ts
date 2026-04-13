@@ -68,6 +68,16 @@ export class GithubService {
     }
   }
 
+  async getRepository(userId: string, repositoryId: string) {
+    try {
+      return await firstValueFrom(
+        this.developerService.send('github_get_repository', { userId, repositoryId }),
+      );
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
   async syncRepositories(userId: string) {
     try {
       return await firstValueFrom(
