@@ -285,16 +285,21 @@ export const UsersManagementTable = () => {
         ...(removeAvatar && !avatarFile ? { avatar: "" } : {}),
       });
 
-      let nextAvatar = patchResponse?.data?.avatar ?? selectedUser.avatar ?? null;
+      let nextAvatar =
+        patchResponse?.data?.avatar ?? selectedUser.avatar ?? null;
 
       if (avatarFile) {
         const formData = new FormData();
         formData.append("avatar", avatarFile);
-        const uploadResponse = await api.post(`/admin/users/${selectedUser.id}/avatar`, formData, {
-          headers: {
-            "Content-Type": "multipart/form-data",
+        const uploadResponse = await api.post(
+          `/admin/users/${selectedUser.id}/avatar`,
+          formData,
+          {
+            headers: {
+              "Content-Type": "multipart/form-data",
+            },
           },
-        });
+        );
         nextAvatar =
           uploadResponse?.data?.avatar ??
           uploadResponse?.data?.avatar_url ??

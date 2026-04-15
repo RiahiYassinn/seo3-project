@@ -128,7 +128,10 @@ export function Navbar() {
                 <DropdownMenu>
                   <DropdownMenuTrigger className="outline-none">
                     <Avatar className="h-9 w-9 cursor-pointer ring-2 ring-primary/20 hover:ring-primary/40 transition-all">
-                      <AvatarImage src={avatarSrc} alt={`${user.first_name} ${user.last_name}`} />
+                      <AvatarImage
+                        src={avatarSrc}
+                        alt={`${user.first_name} ${user.last_name}`}
+                      />
                       <AvatarFallback className="bg-gradient-to-br from-primary via-secondary to-accent text-white font-semibold">
                         {initials}
                       </AvatarFallback>
@@ -148,11 +151,17 @@ export function Navbar() {
                     <DropdownMenuSeparator />
                     <DropdownMenuItem asChild>
                       <Link
-                        href={user.role === "admin" ? "/dashboard/admin/overview" : "/dashboard"}
+                        href={
+                          user.role === "admin"
+                            ? "/dashboard/admin/overview"
+                            : "/dashboard"
+                        }
                         className="cursor-pointer"
                       >
                         <User className="mr-2 h-4 w-4" />
-                        <span>{user.role === "admin" ? "Workspace" : "Profile"}</span>
+                        <span>
+                          {user.role === "admin" ? "Workspace" : "Profile"}
+                        </span>
                       </Link>
                     </DropdownMenuItem>
                     {user.role === "admin" && (

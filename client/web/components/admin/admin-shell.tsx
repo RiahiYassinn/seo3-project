@@ -183,7 +183,7 @@ export function AdminShell({
                         isDark ? "text-white" : "text-slate-900",
                       )}
                     >
-                      Wevioo
+                      Wevioo Consulting
                     </p>
                     <p
                       className={cn(
@@ -318,7 +318,10 @@ export function AdminShell({
                     isDark ? "border-white/10" : "border-slate-900/10",
                   )}
                 >
-                  <AvatarImage src={avatarSrc} alt={`${user.first_name} ${user.last_name}`} />
+                  <AvatarImage
+                    src={avatarSrc}
+                    alt={`${user.first_name} ${user.last_name}`}
+                  />
                   <AvatarFallback className="bg-gradient-to-br from-cyan-500 to-blue-600 text-white">
                     {initials}
                   </AvatarFallback>

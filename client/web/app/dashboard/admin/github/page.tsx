@@ -725,33 +725,6 @@ export default function AdminGithubPage() {
               </CardContent>
             </Card>
           </section>
-
-          <section className="mt-8">
-            <Card className="border-border/60 bg-background/80 shadow-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Users className="h-5 w-5" />
-                  Next step
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col gap-5 rounded-[1.75rem] border border-border/60 bg-muted/15 p-6 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="max-w-2xl">
-                    <p className="text-lg font-semibold">
-                      Review generated profiles on a dedicated page
-                    </p>
-                  </div>
-                  <div className="flex flex-col gap-3 sm:flex-row">
-                    <Button
-                      onClick={() => router.push("/dashboard/admin/profiles")}
-                    >
-                      View Generated Profiles
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </section>
         </>
       )}
     </AdminShell>
