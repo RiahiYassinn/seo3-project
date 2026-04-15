@@ -38,6 +38,7 @@ export interface ContributorProfileSummary {
   recommendations: Array<Record<string, any>>;
   findingsSummary: Record<string, any> | null;
   skills: Array<Record<string, any>>;
+  analysisSummary: Record<string, any> | null;
   metadata: Record<string, any>;
 }
 
@@ -642,6 +643,7 @@ export class GithubService {
             ? summary.summary
             : null,
         skills: Array.isArray(summary?.skills) ? summary.skills : [],
+        analysisSummary: summary,
         metadata,
       };
     }
@@ -712,6 +714,7 @@ export class GithubService {
         recommendations: existing?.recommendations || [],
         findingsSummary: existing?.findingsSummary || null,
         skills: existing?.skills || [],
+        analysisSummary: existing?.analysisSummary || null,
         metadata: {
           ...(existing?.metadata || {}),
           failureReason: message.reason || 'Unknown analysis failure',

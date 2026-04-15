@@ -11,7 +11,9 @@ import {
   ArrowRight,
   CircleAlert,
   Github,
+  LayoutDashboard,
   Sparkles,
+  Target,
   Users,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -78,16 +80,19 @@ export default function AdminOverviewPage() {
       label: "Repositories ready",
       value: repositories.length,
       hint: "Synced from the admin GitHub connection",
+      icon: Github,
     },
     {
       label: "Profiles generated",
       value: contributorProfiles.length,
       hint: "Contributor skill profiles created from commit analysis",
+      icon: Users,
     },
     {
       label: "Recent analyses",
       value: contributorProfiles.filter((profile) => !!profile.analyzedAt).length,
       hint: "Profiles with a completed analysis run",
+      icon: Target,
     },
   ];
 
@@ -111,35 +116,55 @@ export default function AdminOverviewPage() {
 
       <section className="grid gap-4 md:grid-cols-3">
         {stats.map((stat) => (
-          <Card key={stat.label} className="border-border/60 bg-background/80">
+          <Card
+            key={stat.label}
+            className="overflow-hidden border-border/60 bg-background/80 shadow-sm"
+          >
             <CardContent className="p-6">
-              <p className="text-sm text-muted-foreground">{stat.label}</p>
-              <p className="mt-3 text-4xl font-bold">{loading ? "--" : stat.value}</p>
-              <p className="mt-2 text-sm text-muted-foreground">{stat.hint}</p>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">{stat.label}</p>
+                  <p className="mt-3 text-4xl font-bold">{loading ? "--" : stat.value}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">{stat.hint}</p>
+                </div>
+                <div className="rounded-2xl bg-primary/10 p-3 text-primary">
+                  <stat.icon className="h-5 w-5" />
+                </div>
+              </div>
             </CardContent>
           </Card>
         ))}
       </section>
 
-      <section className="mt-8 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-        <Card className="border-border/60 bg-background/80">
+      <section className="mt-8 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        <Card className="border-border/60 bg-background/80 shadow-sm">
           <CardHeader>
-            <CardTitle>How the new admin flow works</CardTitle>
+            <div className="flex items-center gap-3">
+              <div className="rounded-2xl bg-primary/10 p-3 text-primary">
+                <LayoutDashboard className="h-5 w-5" />
+              </div>
+              <div>
+                <CardTitle>How the new admin flow works</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  A single workflow from GitHub connection to developer coaching output.
+                </p>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4 text-sm text-muted-foreground">
-            <div className="rounded-2xl border border-border/60 bg-muted/30 p-4">
+            <div className="rounded-3xl border border-border/60 bg-muted/20 p-5">
               <p className="font-semibold text-foreground">1. Link GitHub once</p>
               <p className="mt-1">
                 The admin connects the platform to GitHub and syncs accessible repositories.
               </p>
             </div>
-            <div className="rounded-2xl border border-border/60 bg-muted/30 p-4">
+            <div className="rounded-3xl border border-border/60 bg-muted/20 p-5">
               <p className="font-semibold text-foreground">2. Pick a repository and contributors</p>
               <p className="mt-1">
                 Contributors are listed from the selected repository so the admin can choose who to analyze.
               </p>
             </div>
-            <div className="rounded-2xl border border-border/60 bg-muted/30 p-4">
+            <div className="rounded-3xl border border-border/60 bg-muted/20 p-5">
               <p className="font-semibold text-foreground">3. Generate a developer profile automatically</p>
               <p className="mt-1">
                 Each contributor analysis creates a skill profile with weaknesses, strengths, and recommendations.
@@ -148,7 +173,7 @@ export default function AdminOverviewPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-border/60 bg-background/80">
+        <Card className="border-border/60 bg-background/80 shadow-sm">
           <CardHeader>
             <CardTitle>Recent contributor profiles</CardTitle>
           </CardHeader>
@@ -156,7 +181,7 @@ export default function AdminOverviewPage() {
             {contributorProfiles.slice(0, 5).map((profile) => (
               <div
                 key={`${profile.repositoryName}-${profile.contributorLogin}`}
-                className="rounded-2xl border border-border/60 p-4"
+                className="rounded-3xl border border-border/60 bg-muted/20 p-5 transition hover:border-primary/30"
               >
                 <div className="flex items-center justify-between gap-3">
                   <div>
@@ -177,17 +202,17 @@ export default function AdminOverviewPage() {
               </div>
             ))}
             {!loading && contributorProfiles.length === 0 && (
-              <div className="rounded-2xl border border-dashed border-border/60 p-6 text-sm text-muted-foreground">
+              <div className="rounded-3xl border border-dashed border-border/60 p-6 text-sm text-muted-foreground">
                 Contributor profiles will show up here after the first repository analysis batch.
               </div>
             )}
             <Button
               variant="outline"
               className="w-full gap-2"
-              onClick={() => router.push("/dashboard/admin/github")}
+              onClick={() => router.push("/dashboard/admin/profiles")}
             >
               <Sparkles className="h-4 w-4" />
-              Run contributor analysis
+              Open developer profiles
               <ArrowRight className="h-4 w-4" />
             </Button>
           </CardContent>
@@ -195,12 +220,12 @@ export default function AdminOverviewPage() {
       </section>
 
       <section className="mt-8">
-        <Card className="border-border/60 bg-background/80">
+        <Card className="border-border/60 bg-background/80 shadow-sm">
           <CardHeader>
             <CardTitle>Why this is different</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-2xl border border-border/60 bg-muted/20 p-5">
+            <div className="rounded-3xl border border-border/60 bg-muted/20 p-6">
               <div className="mb-3 inline-flex rounded-full bg-primary/10 p-2 text-primary">
                 <Users className="h-4 w-4" />
               </div>
@@ -209,7 +234,7 @@ export default function AdminOverviewPage() {
                 Developers no longer need to log in and manage their own repository analysis flow.
               </p>
             </div>
-            <div className="rounded-2xl border border-border/60 bg-muted/20 p-5">
+            <div className="rounded-3xl border border-border/60 bg-muted/20 p-6">
               <div className="mb-3 inline-flex rounded-full bg-primary/10 p-2 text-primary">
                 <Sparkles className="h-4 w-4" />
               </div>

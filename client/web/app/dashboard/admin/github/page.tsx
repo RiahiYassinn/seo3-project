@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -12,9 +13,16 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from "@/components/ui/select";
+import {
   CircleAlert,
   CircleCheck,
   FolderGit2,
+  GitBranch,
   Github,
   Loader2,
   RefreshCw,
@@ -78,13 +86,48 @@ interface ContributorProfile {
   skills: Array<{ skill?: string; issue_count?: number }>;
 }
 
+const statusTone = (status: string | null) => {
+  switch (status) {
+    case "completed":
+      return "bg-emerald-500/10 text-emerald-700 border-emerald-500/30";
+    case "failed":
+      return "bg-red-500/10 text-red-700 border-red-500/30";
+    case "pending":
+    case "in_progress":
+      return "bg-amber-500/10 text-amber-700 border-amber-500/30";
+    default:
+      return "bg-muted text-muted-foreground";
+  }
+};
+
+const getInitials = (value: string) =>
+  value
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("") || "GH";
+
+const getRepositoryStatusLabel = (status: string | null) => {
+  if (status === "in_progress") return "In progress";
+  if (status === "pending") return "Queued";
+  if (status === "completed") return "Completed";
+  if (status === "failed") return "Failed";
+  return "Ready";
+};
+
 export default function AdminGithubPage() {
-  const [integration, setIntegration] = useState<GitHubIntegration | null>(null);
+  const router = useRouter();
+  const [integration, setIntegration] = useState<GitHubIntegration | null>(
+    null,
+  );
   const [repositories, setRepositories] = useState<RepositoryRecord[]>([]);
   const [selectedRepoId, setSelectedRepoId] = useState("");
   const [contributors, setContributors] = useState<ContributorRecord[]>([]);
   const [profiles, setProfiles] = useState<ContributorProfile[]>([]);
-  const [selectedContributors, setSelectedContributors] = useState<string[]>([]);
+  const [selectedContributors, setSelectedContributors] = useState<string[]>(
+    [],
+  );
   const [username, setUsername] = useState("");
   const [token, setToken] = useState("");
   const [loading, setLoading] = useState(true);
@@ -95,7 +138,9 @@ export default function AdminGithubPage() {
   const [success, setSuccess] = useState("");
 
   const selectedRepository = useMemo(
-    () => repositories.find((repository) => repository.id === selectedRepoId) || null,
+    () =>
+      repositories.find((repository) => repository.id === selectedRepoId) ||
+      null,
     [repositories, selectedRepoId],
   );
 
@@ -142,18 +187,23 @@ export default function AdminGithubPage() {
       return;
     }
 
-    const [{ data: contributorData }, { data: profileData }] = await Promise.all([
-      api.get<ContributorRecord[]>(`/github/repositories/${repositoryId}/contributors`),
-      api.get<ContributorProfile[]>(
-        `/github/repositories/${repositoryId}/contributor-profiles`,
-      ),
-    ]);
+    const [{ data: contributorData }, { data: profileData }] =
+      await Promise.all([
+        api.get<ContributorRecord[]>(
+          `/github/repositories/${repositoryId}/contributors`,
+        ),
+        api.get<ContributorProfile[]>(
+          `/github/repositories/${repositoryId}/contributor-profiles`,
+        ),
+      ]);
 
     setContributors(contributorData || []);
     setProfiles(profileData || []);
     setSelectedContributors((current) =>
       current.filter((login) =>
-        (contributorData || []).some((contributor) => contributor.login === login),
+        (contributorData || []).some(
+          (contributor) => contributor.login === login,
+        ),
       ),
     );
   };
@@ -222,10 +272,13 @@ export default function AdminGithubPage() {
     setSuccess("");
 
     try {
-      const { data } = await api.post<GitHubIntegration>("/github/integration", {
-        github_username: username,
-        github_token: token,
-      });
+      const { data } = await api.post<GitHubIntegration>(
+        "/github/integration",
+        {
+          github_username: username,
+          github_token: token,
+        },
+      );
 
       setIntegration(data);
       setToken("");
@@ -276,9 +329,12 @@ export default function AdminGithubPage() {
     setSuccess("");
 
     try {
-      await api.post(`/github/repositories/${selectedRepoId}/analyze-contributors`, {
-        contributor_logins: selectedContributors,
-      });
+      await api.post(
+        `/github/repositories/${selectedRepoId}/analyze-contributors`,
+        {
+          contributor_logins: selectedContributors,
+        },
+      );
       setSuccess(
         `Contributor analysis queued for ${selectedContributors.length} selected contributor(s).`,
       );
@@ -295,35 +351,13 @@ export default function AdminGithubPage() {
     }
   };
 
-  const statusTone = (status: string | null) => {
-    switch (status) {
-      case "completed":
-        return "bg-emerald-500/10 text-emerald-700 border-emerald-500/30";
-      case "failed":
-        return "bg-red-500/10 text-red-700 border-red-500/30";
-      case "pending":
-      case "in_progress":
-        return "bg-amber-500/10 text-amber-700 border-amber-500/30";
-      default:
-        return "bg-muted text-muted-foreground";
-    }
-  };
-
   const formatDateTime = (value: string | null) =>
     value ? new Date(value).toLocaleString() : "Not analyzed yet";
-
-  const getInitials = (value: string) =>
-    value
-      .split(/[\s_-]+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part) => part.charAt(0).toUpperCase())
-      .join("") || "GH";
 
   return (
     <AdminShell
       title="GitHub Repository and Contributor Analysis"
-      subtitle="Link GitHub as the admin, choose a repository, select contributors, and generate developer skill profiles directly from their commit history."
+      subtitle="Connect GitHub, choose a repository, select contributors, and run analysis. Generated profiles now live on their own page for easier review."
       actions={
         integration ? (
           <Button
@@ -346,13 +380,17 @@ export default function AdminGithubPage() {
       {error && (
         <Alert className="mb-6 border-destructive/40 bg-destructive/10">
           <CircleAlert className="h-4 w-4" />
-          <AlertDescription className="text-destructive">{error}</AlertDescription>
+          <AlertDescription className="text-destructive">
+            {error}
+          </AlertDescription>
         </Alert>
       )}
       {success && (
         <Alert className="mb-6 border-emerald-500/40 bg-emerald-500/10">
           <CircleCheck className="h-4 w-4 text-emerald-600" />
-          <AlertDescription className="text-emerald-700">{success}</AlertDescription>
+          <AlertDescription className="text-emerald-700">
+            {success}
+          </AlertDescription>
         </Alert>
       )}
 
@@ -361,7 +399,7 @@ export default function AdminGithubPage() {
           <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-primary" />
         </div>
       ) : !integration ? (
-        <Card className="border-border/60 bg-background/80">
+        <Card className="mx-auto max-w-4xl border-border/60 bg-background/80 shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Github className="h-5 w-5" />
@@ -369,7 +407,10 @@ export default function AdminGithubPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleLinkGitHub} className="grid gap-4 md:grid-cols-2">
+            <form
+              onSubmit={handleLinkGitHub}
+              className="grid gap-4 md:grid-cols-2"
+            >
               <div className="space-y-2">
                 <label className="text-sm font-medium">GitHub username</label>
                 <Input
@@ -380,7 +421,9 @@ export default function AdminGithubPage() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Personal access token</label>
+                <label className="text-sm font-medium">
+                  Personal access token
+                </label>
                 <Input
                   type="password"
                   value={token}
@@ -404,39 +447,134 @@ export default function AdminGithubPage() {
         </Card>
       ) : (
         <>
-          <section className="grid gap-6 xl:grid-cols-[1fr_1.2fr]">
-            <Card className="border-border/60 bg-background/80">
+          <section className="mb-6 grid gap-4 md:grid-cols-3">
+            <Card className="border-border/60 bg-background/80 shadow-sm">
+              <CardContent className="p-5">
+                <p className="text-sm text-muted-foreground">
+                  Connected account
+                </p>
+                <p className="mt-2 text-2xl font-semibold">
+                  @{integration.github_username}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Admin-owned GitHub integration
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="border-border/60 bg-background/80 shadow-sm">
+              <CardContent className="p-5">
+                <p className="text-sm text-muted-foreground">Repositories</p>
+                <p className="mt-2 text-2xl font-semibold">
+                  {repositories.length}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Available for contributor analysis
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="border-border/60 bg-background/80 shadow-sm">
+              <CardContent className="p-5">
+                <p className="text-sm text-muted-foreground">
+                  Profiles generated
+                </p>
+                <p className="mt-2 text-2xl font-semibold">
+                  {profilesWithContributorData.length}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Review them on the dedicated profiles page
+                </p>
+              </CardContent>
+            </Card>
+          </section>
+
+          <section className="grid gap-6 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
+            <Card className="border-border/60 bg-background/80 shadow-sm">
               <CardHeader>
                 <CardTitle>1. Choose a repository</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-                  <p className="font-semibold">Connected as @{integration.github_username}</p>
+                <div className="rounded-3xl border border-emerald-500/20 bg-emerald-500/5 p-5">
+                  <p className="font-semibold">
+                    Connected as @{integration.github_username}
+                  </p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    This admin connection controls repository sync and contributor analysis.
+                    This admin connection controls repository sync and
+                    contributor analysis.
                   </p>
                 </div>
 
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Repository</label>
-                  <select
+                  <Select
                     value={selectedRepoId}
-                    onChange={(event) => setSelectedRepoId(event.target.value)}
-                    className="flex h-11 w-full rounded-xl border border-input bg-background px-3 text-sm"
+                    onValueChange={(value) => setSelectedRepoId(value)}
                   >
-                    {repositories.map((repository) => (
-                      <option key={repository.id} value={repository.id}>
-                        {repository.repo_name}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger className="h-16 rounded-3xl border-border/70 bg-background px-4 shadow-sm">
+                      <div className="flex min-w-0 items-center gap-3 text-left">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                          <FolderGit2 className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                            Selected repository
+                          </p>
+                          <div className="truncate text-sm font-semibold">
+                            {selectedRepository?.repo_name ||
+                              "Choose a repository"}
+                          </div>
+                          <div className="truncate text-xs text-muted-foreground">
+                            {selectedRepository
+                              ? `${selectedRepository.language || "Unknown stack"} - ${getRepositoryStatusLabel(selectedRepository.analysis_status)}`
+                              : "Pick a repository to load contributors"}
+                          </div>
+                        </div>
+                      </div>
+                    </SelectTrigger>
+                    <SelectContent className="rounded-3xl border-border/70 bg-background/95 p-2 backdrop-blur-xl">
+                      {repositories.map((repository) => (
+                        <SelectItem
+                          key={repository.id}
+                          value={repository.id}
+                          className="rounded-2xl px-10 py-4 focus:bg-emerald-500/10 focus:text-emerald-700 data-[state=checked]:bg-emerald-500/10 data-[state=checked]:text-emerald-700"
+                        >
+                          <div className="flex min-w-0 items-center justify-between gap-4">
+                            <div className="min-w-0">
+                              <p className="truncate font-semibold">
+                                {repository.repo_name}
+                              </p>
+                              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                                <span className="inline-flex items-center gap-1">
+                                  <GitBranch className="h-3 w-3" />
+                                  {repository.language || "Unknown stack"}
+                                </span>
+                                <span>-</span>
+                                <span>
+                                  {getRepositoryStatusLabel(
+                                    repository.analysis_status,
+                                  )}
+                                </span>
+                              </div>
+                            </div>
+                            <Badge
+                              variant="outline"
+                              className={statusTone(repository.analysis_status)}
+                            >
+                              {repository.analysis_progress || 0}%
+                            </Badge>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 {selectedRepository ? (
-                  <div className="rounded-2xl border border-border/60 p-4">
+                  <div className="rounded-3xl border border-border/60 bg-muted/15 p-5">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="font-semibold">{selectedRepository.repo_name}</p>
+                        <p className="text-lg font-semibold">
+                          {selectedRepository.repo_name}
+                        </p>
                         <p className="mt-1 text-sm text-muted-foreground">
                           {selectedRepository.repo_description ||
                             "No repository description provided."}
@@ -444,17 +582,24 @@ export default function AdminGithubPage() {
                       </div>
                       <Badge
                         variant="outline"
-                        className={statusTone(selectedRepository.analysis_status)}
+                        className={statusTone(
+                          selectedRepository.analysis_status,
+                        )}
                       >
                         {selectedRepository.analysis_status || "idle"}
                       </Badge>
                     </div>
-                    <div className="mt-4 rounded-2xl border border-border/60 bg-muted/20 p-4">
+                    <div className="mt-5 rounded-3xl border border-border/60 bg-background p-4">
                       <div className="mb-2 flex items-center justify-between text-sm">
                         <span>Batch progress</span>
-                        <span>{selectedRepository.analysis_progress || 0}%</span>
+                        <span>
+                          {selectedRepository.analysis_progress || 0}%
+                        </span>
                       </div>
-                      <Progress value={selectedRepository.analysis_progress || 0} className="h-2.5" />
+                      <Progress
+                        value={selectedRepository.analysis_progress || 0}
+                        className="h-2.5"
+                      />
                       <p className="mt-2 text-xs text-muted-foreground">
                         {selectedRepository.analysis_current_stage ||
                           "Select contributors to start a new analysis batch."}
@@ -462,21 +607,22 @@ export default function AdminGithubPage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="rounded-2xl border border-dashed border-border/60 p-6 text-sm text-muted-foreground">
+                  <div className="rounded-3xl border border-dashed border-border/60 p-6 text-sm text-muted-foreground">
                     Sync repositories to begin the contributor analysis flow.
                   </div>
                 )}
               </CardContent>
             </Card>
 
-            <Card className="border-border/60 bg-background/80">
+            <Card className="border-border/60 bg-background/80 shadow-sm">
               <CardHeader>
                 <CardTitle>2. Select contributors and run analysis</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="mb-4 flex items-center justify-between">
-                  <p className="text-sm text-muted-foreground">
-                    Pick the contributors whose commits should feed the generated developer profile.
+                <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="max-w-2xl text-sm text-muted-foreground">
+                    Pick the contributors whose commits should feed the
+                    generated developer profile.
                   </p>
                   <Button
                     type="button"
@@ -488,7 +634,7 @@ export default function AdminGithubPage() {
                       selectedRepository?.analysis_status === "pending" ||
                       selectedRepository?.analysis_status === "in_progress"
                     }
-                    className="gap-2"
+                    className="gap-2 sm:min-w-[170px]"
                   >
                     {running ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -501,12 +647,14 @@ export default function AdminGithubPage() {
 
                 <div className="grid gap-3">
                   {contributors.map((contributor) => {
-                    const checked = selectedContributors.includes(contributor.login);
+                    const checked = selectedContributors.includes(
+                      contributor.login,
+                    );
 
                     return (
                       <label
                         key={contributor.login}
-                        className="flex cursor-pointer items-start gap-3 rounded-2xl border border-border/60 p-4 transition hover:border-primary/40"
+                        className="flex cursor-pointer items-start gap-3 rounded-3xl border border-border/60 bg-muted/15 p-4 transition hover:border-primary/40 hover:bg-muted/30"
                       >
                         <Checkbox
                           checked={checked}
@@ -514,14 +662,16 @@ export default function AdminGithubPage() {
                             setSelectedContributors((current) =>
                               nextChecked
                                 ? [...current, contributor.login]
-                                : current.filter((login) => login !== contributor.login),
+                                : current.filter(
+                                    (login) => login !== contributor.login,
+                                  ),
                             );
                           }}
                           className="mt-1"
                         />
                         <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div className="flex items-center gap-3">
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="flex min-w-0 items-center gap-3">
                               <Avatar className="h-11 w-11 border border-border/60">
                                 <AvatarImage
                                   src={contributor.avatar_url || undefined}
@@ -531,8 +681,10 @@ export default function AdminGithubPage() {
                                   {getInitials(contributor.display_name)}
                                 </AvatarFallback>
                               </Avatar>
-                              <div>
-                                <p className="font-semibold">@{contributor.display_name}</p>
+                              <div className="min-w-0">
+                                <p className="font-semibold">
+                                  @{contributor.display_name}
+                                </p>
                                 <p className="text-sm text-muted-foreground">
                                   {contributor.contributions} contributions
                                 </p>
@@ -541,7 +693,9 @@ export default function AdminGithubPage() {
                             <div className="flex flex-wrap items-center gap-2">
                               <Badge
                                 variant="outline"
-                                className={statusTone(contributor.analysis_status)}
+                                className={statusTone(
+                                  contributor.analysis_status,
+                                )}
                               >
                                 {contributor.analysis_status || "not analyzed"}
                               </Badge>
@@ -553,7 +707,8 @@ export default function AdminGithubPage() {
                             </div>
                           </div>
                           <p className="mt-2 text-xs text-muted-foreground">
-                            Last profile update: {formatDateTime(contributor.last_analyzed_at)}
+                            Last profile update:{" "}
+                            {formatDateTime(contributor.last_analyzed_at)}
                           </p>
                         </div>
                       </label>
@@ -561,8 +716,9 @@ export default function AdminGithubPage() {
                   })}
 
                   {contributors.length === 0 && (
-                    <div className="rounded-2xl border border-dashed border-border/60 p-6 text-sm text-muted-foreground">
-                      Contributors will appear here after you select a repository.
+                    <div className="rounded-3xl border border-dashed border-border/60 p-6 text-sm text-muted-foreground">
+                      Contributors will appear here after you select a
+                      repository.
                     </div>
                   )}
                 </div>
@@ -571,149 +727,28 @@ export default function AdminGithubPage() {
           </section>
 
           <section className="mt-8">
-            <Card className="border-border/60 bg-background/80">
+            <Card className="border-border/60 bg-background/80 shadow-sm">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Users className="h-5 w-5" />
-                  Generated developer skill profiles
+                  Next step
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {profilesWithContributorData.length > 0 ? (
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    {profilesWithContributorData.map((profile) => (
-                      <div
-                        key={profile.profileId}
-                        className="rounded-3xl border border-border/60 bg-muted/20 p-5"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-center gap-3">
-                            <Avatar className="h-12 w-12 border border-border/60">
-                              <AvatarImage
-                                src={profile.avatarUrl || undefined}
-                                alt={`${profile.contributorLogin} GitHub avatar`}
-                              />
-                              <AvatarFallback className="bg-primary/10 text-primary">
-                                {getInitials(profile.contributorLogin)}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <p className="text-lg font-semibold">
-                                @{profile.contributorLogin}
-                              </p>
-                              <p className="text-sm text-muted-foreground">
-                                {profile.repositoryName}
-                              </p>
-                            </div>
-                          </div>
-                          <Badge
-                            variant="outline"
-                            className={statusTone(profile.status)}
-                          >
-                            {profile.status}
-                          </Badge>
-                        </div>
-
-                        {profile.profileUrl && (
-                          <a
-                            href={profile.profileUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="mt-3 inline-flex text-sm font-medium text-primary hover:underline"
-                          >
-                            View GitHub profile
-                          </a>
-                        )}
-
-                        <div className="mt-4 grid grid-cols-2 gap-3">
-                          <div className="rounded-2xl border border-border/60 bg-background p-4">
-                            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                              Quality score
-                            </p>
-                            <p className="mt-2 text-2xl font-semibold">
-                              {profile.qualityScore !== null
-                                ? `${profile.qualityScore}/10`
-                                : "--"}
-                            </p>
-                          </div>
-                          <div className="rounded-2xl border border-border/60 bg-background p-4">
-                            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                              Skill level
-                            </p>
-                            <p className="mt-2 text-2xl font-semibold">
-                              {profile.skillLevel || "--"}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="mt-4">
-                          <p className="text-sm font-semibold">Top weaknesses</p>
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {profile.topWeaknesses?.length ? (
-                              profile.topWeaknesses.slice(0, 3).map((weakness) => (
-                                <Badge key={`${profile.profileId}-${weakness.category}`} variant="secondary">
-                                  {weakness.category || "Unknown weakness"}
-                                </Badge>
-                              ))
-                            ) : (
-                              <span className="text-sm text-muted-foreground">
-                                Weakness insights will appear when analysis completes.
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="mt-4">
-                          <p className="text-sm font-semibold">Recommendations</p>
-                          <div className="mt-2 space-y-2 text-sm text-muted-foreground">
-                            {profile.recommendations?.length ? (
-                              profile.recommendations.slice(0, 2).map((recommendation, index) => (
-                                <div
-                                  key={`${profile.profileId}-${index}`}
-                                  className="rounded-2xl border border-border/60 bg-background px-3 py-2"
-                                >
-                                  {recommendation.action || recommendation.weakness}
-                                </div>
-                              ))
-                            ) : (
-                              <p>No recommendations yet.</p>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="mt-4 rounded-2xl border border-border/60 bg-background p-4">
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-muted-foreground">Findings</span>
-                            <span className="font-medium">
-                              {profile.findingsSummary?.finding_count ?? 0}
-                            </span>
-                          </div>
-                          <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                            <span>
-                              Critical: {profile.findingsSummary?.critical_count ?? 0}
-                            </span>
-                            <span>
-                              High: {profile.findingsSummary?.high_count ?? 0}
-                            </span>
-                            <span>Skills: {profile.skills?.length ?? 0}</span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="rounded-3xl border border-dashed border-border/60 p-10 text-center">
-                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary">
-                      <FolderGit2 className="h-6 w-6" />
-                    </div>
-                    <p className="mt-4 text-lg font-semibold">
-                      No contributor profiles yet
-                    </p>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      Select a repository, choose contributors, and run the analysis to generate skill profiles here.
+                <div className="flex flex-col gap-5 rounded-[1.75rem] border border-border/60 bg-muted/15 p-6 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="max-w-2xl">
+                    <p className="text-lg font-semibold">
+                      Review generated profiles on a dedicated page
                     </p>
                   </div>
-                )}
+                  <div className="flex flex-col gap-3 sm:flex-row">
+                    <Button
+                      onClick={() => router.push("/dashboard/admin/profiles")}
+                    >
+                      View Generated Profiles
+                    </Button>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </section>

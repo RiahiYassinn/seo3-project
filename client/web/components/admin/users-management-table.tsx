@@ -529,7 +529,7 @@ export const UsersManagementTable = () => {
                             <MoreVertical className="h-4 w-4 text-gray-600 dark:text-gray-400" />
                           </button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
+                        <DropdownMenuContent align="end" className="w-56">
                           <DropdownMenuLabel>Actions</DropdownMenuLabel>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/navbar";
 import { Button } from "@/components/ui/button";
@@ -10,13 +10,40 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/lib/store";
+import api from "@/lib/api";
+import { Github } from "lucide-react";
+
+interface GitHubIntegration {
+  id: string;
+  github_username: string;
+  connected_at: string;
+}
 
 export default function DeveloperProfilePage() {
   const { user, hasHydrated } = useAuthStore();
   const router = useRouter();
+  const [integration, setIntegration] = useState<GitHubIntegration | null>(null);
+
+  useEffect(() => {
+    if (!hasHydrated || !user || user.role !== "developer") return;
+
+    const loadIntegration = async () => {
+      try {
+        const { data } = await api.get<GitHubIntegration>("/github/integration");
+        setIntegration(data);
+      } catch (error: any) {
+        if (error?.response?.status !== 404) {
+          console.error("Failed to load GitHub integration:", error);
+        }
+      }
+    };
+
+    loadIntegration();
+  }, [hasHydrated, user]);
 
   useEffect(() => {
     if (!hasHydrated) return;
@@ -28,6 +55,19 @@ export default function DeveloperProfilePage() {
       router.replace("/dashboard");
     }
   }, [user, hasHydrated, router]);
+
+  const avatarFallback = useMemo(() => {
+    if (!user) return "D";
+    return (
+      `${user.first_name?.charAt(0) ?? ""}${user.last_name?.charAt(0) ?? ""}`.toUpperCase() ||
+      user.username?.charAt(0)?.toUpperCase() ||
+      "D"
+    );
+  }, [user]);
+
+  const githubAvatarUrl = integration?.github_username
+    ? `https://github.com/${integration.github_username}.png?size=240`
+    : null;
 
   if (!hasHydrated || !user)
     return (
@@ -102,6 +142,44 @@ export default function DeveloperProfilePage() {
           </Card>
 
           <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Developer Identity</CardTitle>
+                <CardDescription>
+                  Your developer profile picture now follows the linked GitHub account.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center gap-4">
+                  <Avatar className="h-20 w-20 border border-border/60">
+                    <AvatarImage
+                      src={githubAvatarUrl || undefined}
+                      alt={`${user.username} GitHub avatar`}
+                    />
+                    <AvatarFallback className="bg-primary/10 text-lg font-semibold text-primary">
+                      {avatarFallback}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0">
+                    <p className="text-lg font-semibold">
+                      {user.first_name} {user.last_name}
+                    </p>
+                    <p className="text-sm text-muted-foreground">@{user.username}</p>
+                    {integration ? (
+                      <div className="mt-2 inline-flex items-center gap-2 text-sm text-muted-foreground">
+                        <Github className="h-4 w-4" />
+                        Linked to @{integration.github_username}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        No GitHub account linked yet.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg">Account Settings</CardTitle>
