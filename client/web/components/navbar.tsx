@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { LogOut, User, Code as Code2, Shield, Moon, Sun } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
 import { useTheme } from "@/hooks/use-theme";
@@ -21,6 +21,8 @@ export function Navbar() {
   const pathname = usePathname();
   const isLanding = pathname === "/";
   const { isDark, toggleTheme } = useTheme();
+  const apiGatewayBaseUrl =
+    process.env.NEXT_PUBLIC_API_GATEWAY || "http://localhost:3006";
 
   const handleLogout = async () => {
     await logout();
@@ -35,6 +37,13 @@ export function Navbar() {
 
   const isAdminPage = pathname.startsWith("/dashboard/admin");
   const isActive = (href: string) => pathname === href;
+  const avatarSrc = user?.avatar
+    ? /^https?:\/\//i.test(user.avatar) || user.avatar.startsWith("blob:")
+      ? user.avatar
+      : user.avatar.startsWith("/")
+        ? `${apiGatewayBaseUrl}${user.avatar}`
+        : user.avatar
+    : undefined;
 
   return (
     <nav className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
@@ -119,6 +128,7 @@ export function Navbar() {
                 <DropdownMenu>
                   <DropdownMenuTrigger className="outline-none">
                     <Avatar className="h-9 w-9 cursor-pointer ring-2 ring-primary/20 hover:ring-primary/40 transition-all">
+                      <AvatarImage src={avatarSrc} alt={`${user.first_name} ${user.last_name}`} />
                       <AvatarFallback className="bg-gradient-to-br from-primary via-secondary to-accent text-white font-semibold">
                         {initials}
                       </AvatarFallback>

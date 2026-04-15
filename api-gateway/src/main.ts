@@ -4,6 +4,8 @@ import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import * as compression from 'compression';
 import helmet from 'helmet';
+import * as express from 'express';
+import { join } from 'path';
 import { AppModule } from './app.module';
 
 function parseCookies(cookieHeader?: string) {
@@ -26,6 +28,7 @@ function parseCookies(cookieHeader?: string) {
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix('api/v1');
+  app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
 
   const config = new DocumentBuilder()
     .setTitle('SEO3 Developer Platform API')

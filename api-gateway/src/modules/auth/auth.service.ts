@@ -105,7 +105,8 @@ export class AuthService {
           username: user.username,
           first_name: user.first_name,
           last_name: user.last_name,
-          role: user.role
+          role: user.role,
+          avatar: user.avatar ?? null,
         }
       };
     } catch (error) {
@@ -196,6 +197,7 @@ export class AuthService {
           first_name: user.first_name,
           last_name: user.last_name,
           role: user.role,
+          avatar: user.avatar ?? null,
           is_first_login: isFirstLogin,
         }
       };
@@ -275,6 +277,7 @@ export class AuthService {
         first_name: user.first_name,
         last_name: user.last_name,
         role: user.role,
+        avatar: user.avatar ?? null,
         is_first_login: !!user.is_first_login,
       };
     } catch (error) {
@@ -529,6 +532,7 @@ export class AuthService {
           first_name: user.first_name,
           last_name: user.last_name,
           role: user.role,
+          avatar: user.avatar ?? null,
         },
       };
     } catch (error) {

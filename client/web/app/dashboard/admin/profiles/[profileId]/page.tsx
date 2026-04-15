@@ -11,17 +11,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   ArrowLeft,
   BookOpen,
   CircleAlert,
+  X,
   ExternalLink,
   FolderGit2,
-  Gauge,
+  Mail,
   ShieldAlert,
-  Sparkles,
-  Target,
+  UserRound,
 } from "lucide-react";
 import {
   type ContributorProfile,
@@ -43,12 +42,31 @@ type ProfileRecord = ContributorProfile & {
 const formatDateTime = (value: string | null) =>
   value ? new Date(value).toLocaleString() : "Not analyzed yet";
 
+const pickFirstText = (...values: unknown[]): string | null => {
+  for (const value of values) {
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed) {
+        return trimmed;
+      }
+    }
+  }
+
+  return null;
+};
+
+const toSkillKey = (value: string | null | undefined) =>
+  String(value || "unknown_skill")
+    .trim()
+    .toLowerCase();
+
 export default function AdminProfileDetailPage() {
   const params = useParams<{ profileId: string }>();
   const router = useRouter();
   const [repositories, setRepositories] = useState<RepositoryRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [selectedSkillKey, setSelectedSkillKey] = useState<string | null>(null);
 
   const profileId =
     typeof params?.profileId === "string"
@@ -106,6 +124,65 @@ export default function AdminProfileDetailPage() {
   const resources = analysisSummary?.learning_resources || [];
   const summaryCounts =
     analysisSummary?.summary || profile?.findingsSummary || null;
+
+  const findingsBySkill = useMemo(() => {
+    return findings.reduce<Record<string, typeof findings>>((acc, finding) => {
+      const key = toSkillKey(finding.skill);
+      if (!acc[key]) {
+        acc[key] = [];
+      }
+      acc[key].push(finding);
+      return acc;
+    }, {});
+  }, [findings]);
+
+  const contributorName = useMemo(
+    () =>
+      pickFirstText(
+        profile?.contributorName,
+        profile?.metadata?.contributorName,
+        profile?.metadata?.name,
+        profile?.analysisSummary?.analysis_metadata?.contributor_name,
+        profile?.analysisSummary?.analysis_metadata?.contributorName,
+      ),
+    [profile],
+  );
+
+  const contributorEmail = useMemo(
+    () =>
+      pickFirstText(
+        profile?.contributorEmail,
+        profile?.metadata?.contributorEmail,
+        profile?.metadata?.email,
+        profile?.metadata?.authorEmail,
+        profile?.analysisSummary?.analysis_metadata?.contributor_email,
+        profile?.analysisSummary?.analysis_metadata?.contributorEmail,
+        profile?.analysisSummary?.analysis_metadata?.author_email,
+        profile?.analysisSummary?.analysis_metadata?.email,
+      ),
+    [profile],
+  );
+
+  const selectedSkillDetails = useMemo(() => {
+    if (!selectedSkillKey) {
+      return null;
+    }
+
+    const selectedSkill =
+      skills.find((skill) => toSkillKey(skill.skill) === selectedSkillKey) ||
+      null;
+    const selectedFindings = findingsBySkill[selectedSkillKey] || [];
+    const issueCount =
+      typeof selectedSkill?.issue_count === "number"
+        ? selectedSkill.issue_count
+        : selectedFindings.length;
+
+    return {
+      skillLabel: formatLabel(selectedSkill?.skill || selectedSkillKey),
+      issueCount,
+      findings: selectedFindings,
+    };
+  }, [findingsBySkill, selectedSkillKey, skills]);
 
   if (loading) {
     return (
@@ -177,6 +254,102 @@ export default function AdminProfileDetailPage() {
         </div>
       }
     >
+      {selectedSkillKey ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={() => setSelectedSkillKey(null)}
+        >
+          <div
+            className="max-h-[85vh] w-full max-w-4xl overflow-hidden rounded-xl border border-border/60 bg-background shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-border/60 px-6 py-4">
+              <div>
+                <h3 className="text-lg font-semibold">
+                  {selectedSkillDetails?.skillLabel || "Skill"} issue details
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  {selectedSkillDetails?.issueCount ?? 0} issues found for this
+                  skill.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => setSelectedSkillKey(null)}
+                aria-label="Close issue details"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <div className="max-h-[calc(85vh-96px)] overflow-y-auto p-6">
+              {selectedSkillDetails?.findings?.length ? (
+                <div className="space-y-3">
+                  {selectedSkillDetails.findings.map((finding) => (
+                    <div
+                      key={`${finding.rule_id}-${finding.file_path}-${finding.line ?? 0}`}
+                      className="rounded-2xl border border-border/60 bg-background p-3"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-semibold">
+                            {finding.title}
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {finding.message}
+                          </p>
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className={severityTone[finding.severity]}
+                        >
+                          {finding.severity}
+                        </Badge>
+                      </div>
+                      <div className="mt-2 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
+                        <p>
+                          <span className="font-medium text-foreground">
+                            Category:
+                          </span>{" "}
+                          {formatLabel(finding.category)}
+                        </p>
+                        <p>
+                          <span className="font-medium text-foreground">
+                            Confidence:
+                          </span>{" "}
+                          {confidencePercent(finding.confidence)}
+                        </p>
+                        <p className="sm:col-span-2">
+                          <span className="font-medium text-foreground">
+                            File:
+                          </span>{" "}
+                          {finding.file_path}
+                          {typeof finding.line === "number"
+                            ? `:${finding.line}`
+                            : ""}
+                        </p>
+                      </div>
+                      {finding.evidence?.length ? (
+                        <div className="mt-2 rounded-xl border border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                          {finding.evidence[0]}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No detailed findings are stored for this skill in the current
+                  profile.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {error && (
         <Alert className="mb-6 border-destructive/40 bg-destructive/10">
           <CircleAlert className="h-4 w-4" />
@@ -231,6 +404,32 @@ export default function AdminProfileDetailPage() {
                     opportunities, recurring risk areas, and recommended next
                     steps.
                   </p>
+                  {contributorName || contributorEmail ? (
+                    <div className="mt-3 grid gap-1 text-sm text-muted-foreground">
+                      {contributorName ? (
+                        <p className="inline-flex items-center gap-2">
+                          <UserRound className="h-4 w-4" />
+                          <span>
+                            <span className="font-medium text-foreground">
+                              Name:
+                            </span>{" "}
+                            {contributorName}
+                          </span>
+                        </p>
+                      ) : null}
+                      {contributorEmail ? (
+                        <p className="inline-flex items-center gap-2">
+                          <Mail className="h-4 w-4" />
+                          <span>
+                            <span className="font-medium text-foreground">
+                              Email:
+                            </span>{" "}
+                            {contributorEmail}
+                          </span>
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
@@ -302,80 +501,68 @@ export default function AdminProfileDetailPage() {
         <div className="space-y-6">
           <Card className="border-border/60 bg-background/80 shadow-sm">
             <CardHeader>
-              <CardTitle>Detailed findings</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <ShieldAlert className="h-5 w-5" />
+                Skill breakdown
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              {findings.length ? (
-                <ScrollArea className="h-[34rem] pr-4">
-                  <div className="space-y-3">
-                    {findings.map((finding) => (
+              {skills.length ? (
+                <div className="space-y-3">
+                  {skills.map((skill) => {
+                    const skillKey = toSkillKey(skill.skill);
+                    const issueCount =
+                      typeof skill.issue_count === "number"
+                        ? skill.issue_count
+                        : (findingsBySkill[skillKey] || []).length;
+
+                    return (
                       <div
-                        key={`${finding.rule_id}-${finding.file_path}-${finding.line ?? 0}`}
+                        key={skill.skill || "unknown-skill"}
                         className="rounded-3xl border border-border/60 bg-muted/15 p-4"
                       >
-                        <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
                           <div>
-                            <p className="font-semibold">{finding.title}</p>
-                            <p className="mt-1 text-sm text-muted-foreground">
-                              {finding.message}
+                            <p className="font-semibold capitalize">
+                              {formatLabel(skill.skill || "unknown_skill")}
                             </p>
+                            <button
+                              type="button"
+                              className="mt-1 text-sm text-muted-foreground underline-offset-4 transition hover:text-foreground hover:underline"
+                              onClick={() => setSelectedSkillKey(skillKey)}
+                            >
+                              {issueCount} issues (view details)
+                            </button>
                           </div>
-                          <Badge
-                            variant="outline"
-                            className={severityTone[finding.severity]}
-                          >
-                            {finding.severity}
-                          </Badge>
+                          {skill.highest_severity ? (
+                            <Badge
+                              variant="outline"
+                              className={severityTone[skill.highest_severity]}
+                            >
+                              {skill.highest_severity}
+                            </Badge>
+                          ) : null}
                         </div>
-
-                        <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-                          <p>
-                            <span className="font-medium text-foreground">
-                              Skill:
-                            </span>{" "}
-                            {formatLabel(finding.skill)}
+                        {typeof skill.average_confidence === "number" ? (
+                          <p className="mt-3 text-xs text-muted-foreground">
+                            Avg confidence:{" "}
+                            {confidencePercent(skill.average_confidence)}
                           </p>
-                          <p>
-                            <span className="font-medium text-foreground">
-                              Category:
-                            </span>{" "}
-                            {formatLabel(finding.category)}
-                          </p>
-                          <p>
-                            <span className="font-medium text-foreground">
-                              File:
-                            </span>{" "}
-                            {finding.file_path}
-                            {typeof finding.line === "number"
-                              ? `:${finding.line}`
-                              : ""}
-                          </p>
-                          <p>
-                            <span className="font-medium text-foreground">
-                              Confidence:
-                            </span>{" "}
-                            {confidencePercent(finding.confidence)}
-                          </p>
-                        </div>
-
-                        {finding.evidence?.length ? (
-                          <div className="mt-3 rounded-2xl border border-border/60 bg-background px-3 py-2 text-xs text-muted-foreground">
-                            {finding.evidence[0]}
-                          </div>
                         ) : null}
                       </div>
-                    ))}
-                  </div>
-                </ScrollArea>
+                    );
+                  })}
+                </div>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  Detailed findings were not stored for this profile. New
-                  analyses will populate them automatically.
+                  Skill summaries will appear when a full analysis payload is
+                  available.
                 </p>
               )}
             </CardContent>
           </Card>
-
+        </div>
+        <div className="space-y-6">
           <Card className="border-border/60 bg-background/80 shadow-sm">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -409,68 +596,6 @@ export default function AdminProfileDetailPage() {
               ) : (
                 <p className="text-sm text-muted-foreground">
                   Learning resources were not included for this profile.
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="space-y-6">
-          <Card className="border-border/60 bg-background/80 shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <ShieldAlert className="h-5 w-5" />
-                Skill breakdown
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {skills.length ? (
-                <div className="space-y-3">
-                  {skills.map((skill) => (
-                    <div
-                      key={skill.skill || "unknown-skill"}
-                      className="rounded-3xl border border-border/60 bg-muted/15 p-4"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <p className="font-semibold capitalize">
-                            {formatLabel(skill.skill || "unknown_skill")}
-                          </p>
-                          <p className="mt-1 text-sm text-muted-foreground">
-                            {skill.issue_count ?? 0} issues
-                          </p>
-                        </div>
-                        {skill.highest_severity ? (
-                          <Badge
-                            variant="outline"
-                            className={severityTone[skill.highest_severity]}
-                          >
-                            {skill.highest_severity}
-                          </Badge>
-                        ) : null}
-                      </div>
-                      {typeof skill.average_confidence === "number" ? (
-                        <p className="mt-3 text-xs text-muted-foreground">
-                          Avg confidence:{" "}
-                          {confidencePercent(skill.average_confidence)}
-                        </p>
-                      ) : null}
-                      {!!skill.example_titles?.length && (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {skill.example_titles.slice(0, 3).map((title) => (
-                            <Badge key={title} variant="secondary">
-                              {title}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Skill summaries will appear when a full analysis payload is
-                  available.
                 </p>
               )}
             </CardContent>

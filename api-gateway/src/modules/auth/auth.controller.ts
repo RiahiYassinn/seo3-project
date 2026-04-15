@@ -249,6 +249,7 @@ export class AuthController {
       first_name: string;
       last_name: string;
       role: string;
+      avatar?: string | null;
       is_first_login?: boolean;
     };
   }) {

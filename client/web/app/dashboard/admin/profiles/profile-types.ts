@@ -55,6 +55,8 @@ export interface ContributorAnalysisSummary {
 export interface ContributorProfile {
   profileId: string;
   contributorLogin: string;
+  contributorName?: string;
+  contributorEmail?: string;
   avatarUrl?: string | null;
   profileUrl?: string | null;
   repositoryName: string;

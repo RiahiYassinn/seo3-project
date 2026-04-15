@@ -20,9 +20,11 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
 import { useTheme } from "@/hooks/use-theme";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+
+const SIDEBAR_COLLAPSED_STORAGE_KEY = "admin-sidebar-collapsed";
 
 const navigation = [
   {
@@ -67,9 +69,19 @@ export function AdminShell({
   const pathname = usePathname();
   const router = useRouter();
   const { user, hasHydrated, logout } = useAuthStore();
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+
+    return (
+      window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === "true"
+    );
+  });
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const { isDark, toggleTheme } = useTheme();
+  const apiGatewayBaseUrl =
+    process.env.NEXT_PUBLIC_API_GATEWAY || "http://localhost:3006";
 
   useEffect(() => {
     if (!hasHydrated) return;
@@ -87,6 +99,13 @@ export function AdminShell({
     setMobileSidebarOpen(false);
   }, [pathname]);
 
+  useEffect(() => {
+    window.localStorage.setItem(
+      SIDEBAR_COLLAPSED_STORAGE_KEY,
+      collapsed.toString(),
+    );
+  }, [collapsed]);
+
   const initials = useMemo(() => {
     if (!user) return "A";
     return (
@@ -95,6 +114,18 @@ export function AdminShell({
       "A"
     );
   }, [user]);
+
+  const avatarSrc = useMemo(() => {
+    const rawAvatar = user?.avatar;
+    if (!rawAvatar) return undefined;
+    if (/^https?:\/\//i.test(rawAvatar) || rawAvatar.startsWith("blob:")) {
+      return rawAvatar;
+    }
+    if (rawAvatar.startsWith("/")) {
+      return `${apiGatewayBaseUrl}${rawAvatar}`;
+    }
+    return rawAvatar;
+  }, [apiGatewayBaseUrl, user?.avatar]);
 
   if (!hasHydrated || !user || user.role !== "admin") {
     return (
@@ -117,7 +148,10 @@ export function AdminShell({
 
         <aside
           className={cn(
-            "fixed inset-y-0 left-0 z-40 flex h-screen flex-col border-r border-white/6 bg-slate-950/92 text-slate-100 shadow-2xl backdrop-blur-xl transition-all duration-300 ease-out lg:sticky lg:top-0 lg:translate-x-0",
+            "fixed inset-y-0 left-0 z-40 flex h-screen flex-col border-r shadow-2xl backdrop-blur-xl transition-all duration-300 ease-out lg:sticky lg:top-0 lg:translate-x-0",
+            isDark
+              ? "border-white/6 bg-slate-950/92 text-slate-100"
+              : "border-slate-200/80 bg-white/90 text-slate-900",
             collapsed ? "w-24" : "w-80",
             mobileSidebarOpen ? "translate-x-0" : "-translate-x-full",
           )}
@@ -143,10 +177,20 @@ export function AdminShell({
                 </div>
                 {!collapsed && (
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold tracking-wide text-white">
+                    <p
+                      className={cn(
+                        "truncate text-sm font-semibold tracking-wide",
+                        isDark ? "text-white" : "text-slate-900",
+                      )}
+                    >
                       Wevioo
                     </p>
-                    <p className="truncate text-xs text-slate-400">
+                    <p
+                      className={cn(
+                        "truncate text-xs",
+                        isDark ? "text-slate-400" : "text-slate-600",
+                      )}
+                    >
                       Developer intelligence platform
                     </p>
                   </div>
@@ -159,7 +203,12 @@ export function AdminShell({
                   variant="ghost"
                   size="icon"
                   onClick={() => setMobileSidebarOpen(false)}
-                  className="text-slate-300 hover:bg-white/10 hover:text-white lg:hidden"
+                  className={cn(
+                    "lg:hidden",
+                    isDark
+                      ? "text-slate-300 hover:bg-white/10 hover:text-white"
+                      : "text-slate-600 hover:bg-slate-900/5 hover:text-slate-900",
+                  )}
                 >
                   <X className="h-4 w-4" />
                 </Button>
@@ -168,7 +217,12 @@ export function AdminShell({
                   variant="ghost"
                   size="icon"
                   onClick={() => setCollapsed((current) => !current)}
-                  className="hidden text-slate-300 hover:bg-white/10 hover:text-white lg:flex"
+                  className={cn(
+                    "hidden lg:flex",
+                    isDark
+                      ? "text-slate-300 hover:bg-white/10 hover:text-white"
+                      : "text-slate-600 hover:bg-slate-900/5 hover:text-slate-900",
+                  )}
                 >
                   {collapsed ? (
                     <ChevronRight className="h-4 w-4" />
@@ -195,8 +249,12 @@ export function AdminShell({
                           ? "mx-auto h-14 w-14 items-center justify-center"
                           : "items-center gap-3 px-4 py-3.5",
                         active
-                          ? "bg-white text-slate-950 shadow-lg shadow-slate-950/20"
-                          : "text-slate-300 hover:bg-white/8 hover:text-white",
+                          ? isDark
+                            ? "bg-white text-slate-950 shadow-lg shadow-slate-950/20"
+                            : "bg-slate-900 text-white shadow-lg shadow-slate-900/20"
+                          : isDark
+                            ? "text-slate-300 hover:bg-white/8 hover:text-white"
+                            : "text-slate-700 hover:bg-slate-900/5 hover:text-slate-900",
                       )}
                     >
                       <div
@@ -204,8 +262,12 @@ export function AdminShell({
                           "flex shrink-0 items-center justify-center rounded-xl",
                           collapsed ? "h-10 w-10" : "h-10 w-10",
                           active
-                            ? "bg-slate-950/8 text-slate-950"
-                            : "bg-white/5 text-slate-300 group-hover:bg-white/10 group-hover:text-white",
+                            ? isDark
+                              ? "bg-slate-950/8 text-slate-950"
+                              : "bg-white/15 text-white"
+                            : isDark
+                              ? "bg-white/5 text-slate-300 group-hover:bg-white/10 group-hover:text-white"
+                              : "bg-slate-900/5 text-slate-600 group-hover:bg-slate-900/10 group-hover:text-slate-900",
                         )}
                       >
                         <Icon className="h-4 w-4" />
@@ -218,7 +280,11 @@ export function AdminShell({
                           <p
                             className={cn(
                               "truncate text-xs",
-                              active ? "text-slate-600" : "text-slate-500",
+                              active
+                                ? isDark
+                                  ? "text-slate-600"
+                                  : "text-slate-200"
+                                : "text-slate-500",
                             )}
                           >
                             {item.description}
@@ -233,7 +299,10 @@ export function AdminShell({
 
             <div
               className={cn(
-                "mt-6 rounded-3xl border border-white/6 bg-white/[0.045] p-4",
+                "mt-6 rounded-3xl border p-4",
+                isDark
+                  ? "border-white/6 bg-white/[0.045]"
+                  : "border-slate-900/10 bg-slate-900/[0.03]",
                 collapsed && "px-2",
               )}
             >
@@ -243,17 +312,33 @@ export function AdminShell({
                   collapsed && "justify-center",
                 )}
               >
-                <Avatar className="h-11 w-11 border border-white/10">
+                <Avatar
+                  className={cn(
+                    "h-11 w-11 border",
+                    isDark ? "border-white/10" : "border-slate-900/10",
+                  )}
+                >
+                  <AvatarImage src={avatarSrc} alt={`${user.first_name} ${user.last_name}`} />
                   <AvatarFallback className="bg-gradient-to-br from-cyan-500 to-blue-600 text-white">
                     {initials}
                   </AvatarFallback>
                 </Avatar>
                 {!collapsed && (
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-white">
+                    <p
+                      className={cn(
+                        "truncate text-sm font-semibold",
+                        isDark ? "text-white" : "text-slate-900",
+                      )}
+                    >
                       {user.first_name} {user.last_name}
                     </p>
-                    <p className="truncate text-xs text-slate-400">
+                    <p
+                      className={cn(
+                        "truncate text-xs",
+                        isDark ? "text-slate-400" : "text-slate-600",
+                      )}
+                    >
                       {user.email}
                     </p>
                   </div>
@@ -272,7 +357,9 @@ export function AdminShell({
                   size={collapsed ? "icon" : "sm"}
                   onClick={toggleTheme}
                   className={cn(
-                    "border-white/12 bg-white/5 text-slate-200 hover:bg-white/10 hover:text-white",
+                    isDark
+                      ? "border-white/12 bg-white/5 text-slate-200 hover:bg-white/10 hover:text-white"
+                      : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100 hover:text-slate-900",
                     collapsed ? "mx-auto h-11 w-11" : "justify-center",
                   )}
                 >
@@ -292,7 +379,9 @@ export function AdminShell({
                     router.push("/");
                   }}
                   className={cn(
-                    "border-white/12 bg-white/5 text-slate-200 hover:bg-white/10 hover:text-white",
+                    isDark
+                      ? "border-white/12 bg-white/5 text-slate-200 hover:bg-white/10 hover:text-white"
+                      : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100 hover:text-slate-900",
                     collapsed ? "mx-auto h-11 w-11" : "justify-center",
                   )}
                 >

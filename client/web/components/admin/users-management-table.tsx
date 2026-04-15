@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useAuthStore } from "@/lib/store";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -57,6 +59,7 @@ interface User {
   first_name: string;
   last_name: string;
   role: string;
+  avatar?: string | null;
   is_email_verified: boolean;
   created_at: string;
   last_login?: string;
@@ -90,6 +93,9 @@ const generateSecurePassword = () => {
 };
 
 export const UsersManagementTable = () => {
+  const { user: currentUser, updateUser } = useAuthStore();
+  const apiGatewayBaseUrl =
+    process.env.NEXT_PUBLIC_API_GATEWAY || "http://localhost:3006";
   const [users, setUsers] = useState<User[]>([]);
   const [stats, setStats] = useState<UserStats>({
     total: 0,
@@ -112,6 +118,9 @@ export const UsersManagementTable = () => {
     last_name: "",
     role: "",
   });
+  const [avatarPreview, setAvatarPreview] = useState<string>("");
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [removeAvatar, setRemoveAvatar] = useState(false);
   const [addForm, setAddForm] = useState({
     first_name: "",
     last_name: "",
@@ -129,6 +138,17 @@ export const UsersManagementTable = () => {
   }>({});
   const [addSuccess, setAddSuccess] = useState(false);
   const [addSuccessEmail, setAddSuccessEmail] = useState("");
+
+  const resolveAvatarUrl = (avatar?: string | null) => {
+    if (!avatar) return undefined;
+    if (/^https?:\/\//i.test(avatar) || avatar.startsWith("blob:")) {
+      return avatar;
+    }
+    if (avatar.startsWith("/")) {
+      return `${apiGatewayBaseUrl}${avatar}`;
+    }
+    return avatar;
+  };
 
   useEffect(() => {
     fetchUsers();
@@ -260,15 +280,79 @@ export const UsersManagementTable = () => {
     if (!selectedUser) return;
 
     try {
-      await api.patch(`/admin/users/${selectedUser.id}`, editForm);
+      const patchResponse = await api.patch(`/admin/users/${selectedUser.id}`, {
+        ...editForm,
+        ...(removeAvatar && !avatarFile ? { avatar: "" } : {}),
+      });
+
+      let nextAvatar = patchResponse?.data?.avatar ?? selectedUser.avatar ?? null;
+
+      if (avatarFile) {
+        const formData = new FormData();
+        formData.append("avatar", avatarFile);
+        const uploadResponse = await api.post(`/admin/users/${selectedUser.id}/avatar`, formData, {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        });
+        nextAvatar =
+          uploadResponse?.data?.avatar ??
+          uploadResponse?.data?.avatar_url ??
+          nextAvatar;
+      }
+
+      if (removeAvatar && !avatarFile) {
+        nextAvatar = null;
+      }
+
+      if (currentUser?.id === selectedUser.id) {
+        updateUser({
+          email: editForm.email,
+          username: editForm.username,
+          first_name: editForm.first_name,
+          last_name: editForm.last_name,
+          role: editForm.role,
+          avatar: nextAvatar,
+        });
+      }
+
       toast.success(`User ${editForm.username} updated successfully`);
       setEditDialogOpen(false);
       setSelectedUser(null);
+      setAvatarPreview("");
+      setAvatarFile(null);
+      setRemoveAvatar(false);
       fetchUsers();
     } catch (error: any) {
       console.error("Failed to update user:", error);
       toast.error(error.response?.data?.message || "Failed to update user");
     }
+  };
+
+  const handleAvatarFileChange = (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0] || null;
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select an image file.");
+      event.target.value = "";
+      return;
+    }
+
+    const maxSize = 5 * 1024 * 1024;
+    if (file.size > maxSize) {
+      toast.error("Image must be smaller than 5MB.");
+      event.target.value = "";
+      return;
+    }
+
+    setAvatarFile(file);
+    setRemoveAvatar(false);
+    setAvatarPreview(URL.createObjectURL(file));
   };
 
   const openEditDialog = (user: User) => {
@@ -280,6 +364,9 @@ export const UsersManagementTable = () => {
       last_name: user.last_name,
       role: user.role,
     });
+    setAvatarPreview(resolveAvatarUrl(user.avatar) || "");
+    setAvatarFile(null);
+    setRemoveAvatar(false);
     setEditDialogOpen(true);
   };
 
@@ -470,10 +557,16 @@ export const UsersManagementTable = () => {
                 >
                   <td className="py-4 px-4">
                     <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-semibold">
-                        {user.first_name?.[0]}
-                        {user.last_name?.[0]}
-                      </div>
+                      <Avatar className="h-10 w-10">
+                        <AvatarImage
+                          src={resolveAvatarUrl(user.avatar)}
+                          alt={`${user.first_name} ${user.last_name}`}
+                        />
+                        <AvatarFallback className="bg-gradient-to-br from-blue-500 to-blue-600 text-white font-semibold">
+                          {user.first_name?.[0]}
+                          {user.last_name?.[0]}
+                        </AvatarFallback>
+                      </Avatar>
                       <div>
                         <p className="font-medium text-gray-900 dark:text-gray-100">
                           {user.first_name} {user.last_name}
@@ -639,6 +732,44 @@ export const UsersManagementTable = () => {
                   }
                 />
               </div>
+            </div>
+            <div className="grid gap-3">
+              <Label htmlFor="avatar">Avatar Image</Label>
+              <div className="flex items-center gap-3">
+                <Avatar className="h-12 w-12">
+                  <AvatarImage
+                    src={removeAvatar ? undefined : avatarPreview || undefined}
+                    alt={`${editForm.first_name} ${editForm.last_name}`}
+                  />
+                  <AvatarFallback className="bg-gradient-to-br from-blue-500 to-blue-600 text-white font-semibold">
+                    {editForm.first_name?.[0] || selectedUser?.first_name?.[0]}
+                    {editForm.last_name?.[0] || selectedUser?.last_name?.[0]}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex flex-1 items-center gap-2">
+                  <Input
+                    id="avatar"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleAvatarFileChange}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setAvatarFile(null);
+                      setAvatarPreview("");
+                      setRemoveAvatar(true);
+                    }}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Choose an image from your computer (max 5MB). Click Remove to
+                clear current avatar.
+              </p>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="role">Role</Label>

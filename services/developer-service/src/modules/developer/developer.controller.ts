@@ -357,6 +357,7 @@ export class DeveloperController {
       first_name?: string;
       last_name?: string;
       role?: string;
+      avatar?: string;
     },
   ) {
     const updateData: any = {};
@@ -365,6 +366,9 @@ export class DeveloperController {
     if (data.first_name) updateData.firstName = data.first_name;
     if (data.last_name) updateData.lastName = data.last_name;
     if (data.role) updateData.role = data.role;
+    if (typeof data.avatar === 'string') {
+      updateData.avatar = data.avatar.trim() || null;
+    }
 
     const updated = await this.developerService.update(data.userId, updateData);
     return this.developerService.toUserDto(updated);

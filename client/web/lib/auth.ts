@@ -23,6 +23,7 @@ export interface AuthResponse {
     first_name: string
     last_name: string
     role: string
+    avatar?: string | null
     is_first_login?: boolean
   }
 }
@@ -34,6 +35,7 @@ export interface UserProfile {
   first_name: string
   last_name: string
   role: string
+  avatar?: string | null
   is_first_login?: boolean
 }
 

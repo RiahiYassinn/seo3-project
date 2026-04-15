@@ -9,6 +9,8 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -21,6 +23,7 @@ import { UpdateUserDto, CreateUserDto } from './dto/user.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './decorators/roles.decorator';
+import { FileInterceptor } from '@nestjs/platform-express';
 
 @ApiTags('Admin')
 @Controller('admin')
@@ -70,6 +73,21 @@ export class AdminController {
     @Body() updateUserDto: UpdateUserDto,
   ) {
     return this.adminService.updateUser(id, updateUserDto);
+  }
+
+  @Post('users/:id/avatar')
+  @Roles('admin')
+  @UseInterceptors(FileInterceptor('avatar'))
+  @ApiOperation({ summary: 'Upload user avatar (Admin only)' })
+  @ApiResponse({ status: 200, description: 'Avatar uploaded successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid file' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({ status: 403, description: 'Forbidden - Admin access required' })
+  async uploadUserAvatar(
+    @Param('id') id: string,
+    @UploadedFile() avatar: any,
+  ) {
+    return this.adminService.uploadUserAvatar(id, avatar);
   }
 
   @Delete('users/:id')
