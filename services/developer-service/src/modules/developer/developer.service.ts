@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Developer } from './entities/developer.entity';
@@ -48,6 +48,32 @@ export class DeveloperService {
 
   async findAll(): Promise<Developer[]> {
     return this.developerRepository.find();
+  }
+
+  async findAvailableMentors(): Promise<Developer[]> {
+    return this.developerRepository
+      .createQueryBuilder('developer')
+      .where('developer.isActive = :isActive', { isActive: true })
+      .andWhere('developer.role = :techLeadRole', {
+        techLeadRole: 'tech_lead',
+      })
+      .andWhere('developer.isMentor = :isMentor', {
+        isMentor: true,
+      })
+      .orderBy('developer.lastLoginAt', 'DESC', 'NULLS LAST')
+      .addOrderBy('developer.createdAt', 'ASC')
+      .getMany();
+  }
+
+  async updateMentorAvailability(userId: string, isMentor: boolean): Promise<Developer> {
+    const developer = await this.findOne(userId);
+
+    if (developer.role !== 'tech_lead') {
+      throw new BadRequestException('Only tech leads can be marked as mentors');
+    }
+
+    await this.developerRepository.update(userId, { isMentor });
+    return this.findOne(userId);
   }
 
   async findOne(id: string): Promise<Developer> {

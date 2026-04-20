@@ -27,7 +27,7 @@ export class RepositoryResponseDto {
       forks: entity.forks,
       is_analyzed: entity.isAnalyzed,
       analysis_status: entity.analysisStatus,
-      analysis_progress: entity.analysisProgress,
+      analysis_progress: Math.max(0, Math.min(100, entity.analysisProgress ?? 0)),
       analysis_current_stage: entity.analysisCurrentStage,
       analysis_summary: entity.analysisSummary,
       analysis_detected_skills: entity.analysisDetectedSkills,

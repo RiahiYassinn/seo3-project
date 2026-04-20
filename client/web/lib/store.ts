@@ -11,6 +11,7 @@ interface User {
   role: string
   avatar?: string | null
   is_first_login?: boolean
+  is_mentor?: boolean
 }
 
 interface AuthState {

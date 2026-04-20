@@ -46,6 +46,12 @@ const navigation = [
     icon: Sparkles,
   },
   {
+    href: "/dashboard/admin/recommendations",
+    label: "Recommendations",
+    description: "AI action plans",
+    icon: Shield,
+  },
+  {
     href: "/dashboard/admin/users",
     label: "Users",
     description: "Access and administration",

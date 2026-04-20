@@ -80,6 +80,52 @@ export interface ContributorProfile {
   metadata?: Record<string, any>;
 }
 
+export type RecommendationType = "mentorship" | "learning_path" | "docs_review";
+
+export interface RecommendationCase {
+  id: string;
+  repository_id: string;
+  contributor_login: string;
+  recommendation_type: RecommendationType;
+  status: "open" | "assigned" | "completed" | "dismissed";
+  priority_score: number;
+  quality_score: number | null;
+  title: string;
+  description: string;
+  mentor_id?: string | null;
+  mentor_snapshot?: {
+    id?: string;
+    name?: string;
+    email?: string;
+    username?: string;
+    role?: string;
+  } | null;
+  learning_path?: {
+    durationWeeks?: number;
+    steps?: Array<{
+      order: number;
+      skill: string;
+      goal: string;
+      resources?: Array<{ title: string; type: string; url: string }>;
+    }>;
+  } | null;
+  docs_review?: {
+    checklist?: Array<{
+      title: string;
+      skill: string;
+      file: string;
+      note: string;
+    }>;
+    resources?: Array<{ title: string; type: string; url: string }>;
+  } | null;
+  weakness_snapshot?: {
+    topWeaknesses?: Array<{ skill: string; score: number }>;
+    weaknessScores?: Record<string, number>;
+  } | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface RepositoryRecord {
   id: string;
   repo_name: string;
@@ -87,6 +133,9 @@ export interface RepositoryRecord {
     contributorProfiles?: Record<string, ContributorProfile>;
   } | null;
 }
+
+export const recommendationKey = (repositoryId: string, contributorLogin: string) =>
+  `${repositoryId}:${String(contributorLogin || "").trim().toLowerCase()}`;
 
 const toNumber = (value: unknown): number | null => {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -142,6 +191,27 @@ export const severityTone: Record<Severity, string> = {
   high: "bg-orange-500/15 text-orange-700 border-orange-500/30",
   medium: "bg-amber-500/15 text-amber-700 border-amber-500/30",
   low: "bg-blue-500/15 text-blue-700 border-blue-500/30",
+};
+
+export const recommendationTypeTone: Record<RecommendationType, string> = {
+  mentorship: "bg-violet-500/10 text-violet-700 border-violet-500/30",
+  learning_path: "bg-cyan-500/10 text-cyan-700 border-cyan-500/30",
+  docs_review: "bg-emerald-500/10 text-emerald-700 border-emerald-500/30",
+};
+
+export const recommendationStatusTone = (status: string | null) => {
+  switch (status) {
+    case "completed":
+      return "bg-emerald-500/10 text-emerald-700 border-emerald-500/30";
+    case "assigned":
+      return "bg-blue-500/10 text-blue-700 border-blue-500/30";
+    case "open":
+      return "bg-amber-500/10 text-amber-700 border-amber-500/30";
+    case "dismissed":
+      return "bg-muted text-muted-foreground";
+    default:
+      return "bg-muted text-muted-foreground";
+  }
 };
 
 export const normalizeContributorAnalysisSummary = (

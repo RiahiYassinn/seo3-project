@@ -13,23 +13,29 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import {
   ArrowLeft,
+  Bot,
   BookOpen,
   CircleAlert,
+  CircleCheck,
   X,
   ExternalLink,
   FolderGit2,
+  Loader2,
   Mail,
   ShieldAlert,
   UserRound,
 } from "lucide-react";
 import {
   type ContributorProfile,
+  type RecommendationCase,
   type RepositoryRecord,
   confidencePercent,
   formatLabel,
   getContributorAvatarUrl,
   getInitials,
   normalizeContributorAnalysisSummary,
+  recommendationStatusTone,
+  recommendationTypeTone,
   scorePercent,
   severityTone,
   statusTone,
@@ -65,6 +71,11 @@ export default function AdminProfileDetailPage() {
   const router = useRouter();
   const [repositories, setRepositories] = useState<RepositoryRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [recommendationLoading, setRecommendationLoading] = useState(false);
+  const [recommendationActionLoading, setRecommendationActionLoading] =
+    useState(false);
+  const [recommendation, setRecommendation] =
+    useState<RecommendationCase | null>(null);
   const [error, setError] = useState("");
   const [selectedSkillKey, setSelectedSkillKey] = useState<string | null>(null);
 
@@ -183,6 +194,53 @@ export default function AdminProfileDetailPage() {
       findings: selectedFindings,
     };
   }, [findingsBySkill, selectedSkillKey, skills]);
+
+  useEffect(() => {
+    const loadRecommendation = async () => {
+      if (!profile?.repositoryId || !profile?.contributorLogin) {
+        setRecommendation(null);
+        return;
+      }
+
+      setRecommendationLoading(true);
+      try {
+        const { data } = await api.get<RecommendationCase | null>(
+          `/recommendations/repository/${profile.repositoryId}/contributor/${encodeURIComponent(profile.contributorLogin)}`,
+        );
+        setRecommendation(data || null);
+      } catch {
+        setRecommendation(null);
+      } finally {
+        setRecommendationLoading(false);
+      }
+    };
+
+    loadRecommendation();
+  }, [profile?.contributorLogin, profile?.repositoryId]);
+
+  const acknowledgeRecommendation = async () => {
+    if (!recommendation?.id) {
+      return;
+    }
+
+    setRecommendationActionLoading(true);
+    try {
+      const { data } = await api.post<RecommendationCase>(
+        `/recommendations/${recommendation.id}/acknowledge`,
+      );
+      if (data) {
+        setRecommendation(data);
+      }
+    } catch (requestError: any) {
+      setError(
+        requestError?.response?.data?.message ||
+          requestError?.message ||
+          "Failed to update recommendation status",
+      );
+    } finally {
+      setRecommendationActionLoading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -566,36 +624,146 @@ export default function AdminProfileDetailPage() {
           <Card className="border-border/60 bg-background/80 shadow-sm">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <BookOpen className="h-5 w-5" />
-                Learning resources
+                <Bot className="h-5 w-5" />
+                Recommendation engine output
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {resources.length ? (
-                <div className="space-y-3">
-                  {resources.map((resource) => (
-                    <a
-                      key={`${resource.skill}-${resource.url}`}
-                      href={resource.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block rounded-3xl border border-border/60 bg-muted/15 p-4 transition hover:border-primary/30 hover:bg-background"
+              {recommendationLoading ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading recommendation plan...
+                </div>
+              ) : recommendation ? (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant="outline"
+                      className={
+                        recommendationTypeTone[
+                          recommendation.recommendation_type
+                        ]
+                      }
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-semibold">{resource.title}</p>
-                          <p className="mt-1 text-sm text-muted-foreground">
-                            Skill: {formatLabel(resource.skill)}
-                          </p>
-                        </div>
-                        <Badge variant="outline">{resource.type}</Badge>
+                      {formatLabel(recommendation.recommendation_type)}
+                    </Badge>
+                    <Badge
+                      variant="outline"
+                      className={recommendationStatusTone(
+                        recommendation.status,
+                      )}
+                    >
+                      {formatLabel(recommendation.status)}
+                    </Badge>
+                    <Badge variant="secondary">
+                      Priority {recommendation.priority_score}
+                    </Badge>
+                  </div>
+
+                  <div className="rounded-2xl border border-border/60 bg-muted/15 p-4">
+                    <p className="font-semibold">{recommendation.title}</p>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {recommendation.description}
+                    </p>
+                  </div>
+
+                  {recommendation.recommendation_type === "mentorship" ? (
+                    <div className="rounded-2xl border border-violet-500/25 bg-violet-500/5 p-4 text-sm text-muted-foreground">
+                      <p className="font-medium text-foreground">
+                        Mentorship assignment
+                      </p>
+                      <p className="mt-2">
+                        {recommendation.mentor_snapshot?.name
+                          ? `${recommendation.mentor_snapshot.name}${recommendation.mentor_snapshot.email ? ` (${recommendation.mentor_snapshot.email})` : ""}`
+                          : "No mentor assigned yet. A tech lead can claim this recommendation from mentor queue."}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {recommendation.recommendation_type === "learning_path" &&
+                  recommendation.learning_path?.steps?.length ? (
+                    <div className="rounded-2xl border border-cyan-500/25 bg-cyan-500/5 p-4">
+                      <p className="font-medium text-foreground">
+                        Learning path (
+                        {recommendation.learning_path.durationWeeks || 0} weeks)
+                      </p>
+                      <div className="mt-3 space-y-2 text-sm text-muted-foreground">
+                        {recommendation.learning_path.steps
+                          .slice(0, 3)
+                          .map((step) => (
+                            <div
+                              key={`${recommendation.id}-${step.order}`}
+                              className="rounded-xl border border-border/60 bg-background px-3 py-2"
+                            >
+                              <p className="font-medium text-foreground">
+                                Step {step.order}: {formatLabel(step.skill)}
+                              </p>
+                              <p className="mt-1">{step.goal}</p>
+                            </div>
+                          ))}
                       </div>
-                    </a>
-                  ))}
+                    </div>
+                  ) : null}
+
+                  {recommendation.recommendation_type === "docs_review" &&
+                  recommendation.docs_review?.checklist?.length ? (
+                    <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/5 p-4">
+                      <p className="font-medium text-foreground">
+                        Docs review checklist
+                      </p>
+                      <div className="mt-3 space-y-2 text-sm text-muted-foreground">
+                        {recommendation.docs_review.checklist
+                          .slice(0, 3)
+                          .map((item, index) => (
+                            <div
+                              key={`${recommendation.id}-${index}`}
+                              className="rounded-xl border border-border/60 bg-background px-3 py-2"
+                            >
+                              <p className="font-medium text-foreground">
+                                {item.title}
+                              </p>
+                              <p className="mt-1">{item.note}</p>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs text-muted-foreground">
+                      Generated{" "}
+                      {new Date(recommendation.created_at).toLocaleString()}
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="gap-2"
+                      variant={
+                        recommendation.status === "completed"
+                          ? "outline"
+                          : "default"
+                      }
+                      disabled={
+                        recommendation.status === "completed" ||
+                        recommendationActionLoading
+                      }
+                      onClick={acknowledgeRecommendation}
+                    >
+                      {recommendationActionLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : recommendation.status === "completed" ? (
+                        <CircleCheck className="h-4 w-4" />
+                      ) : null}
+                      {recommendation.status === "completed"
+                        ? "Completed"
+                        : "Mark completed"}
+                    </Button>
+                  </div>
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  Learning resources were not included for this profile.
+                  Recommendation is not available yet. It will be generated
+                  automatically once the analysis event is fully processed.
                 </p>
               )}
             </CardContent>

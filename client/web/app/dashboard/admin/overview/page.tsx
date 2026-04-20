@@ -298,25 +298,25 @@ export default function AdminOverviewPage() {
     <AdminShell
       title="Contributor Intelligence Overview"
       subtitle="Operational analytics for contributor profiles, quality outcomes, severity exposure, and repository-level coaching signals."
-      actions={
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            onClick={() => router.push("/dashboard/admin/github")}
-            className="gap-2"
-          >
-            <Github className="h-4 w-4" />
-            GitHub Analysis
-          </Button>
-          <Button
-            onClick={() => router.push("/dashboard/admin/profiles")}
-            className="gap-2"
-          >
-            <Sparkles className="h-4 w-4" />
-            Developer Profiles
-          </Button>
-        </div>
-      }
+      // actions={
+      //   <div className="flex flex-wrap gap-2">
+      //     <Button
+      //       variant="outline"
+      //       onClick={() => router.push("/dashboard/admin/github")}
+      //       className="gap-2"
+      //     >
+      //       <Github className="h-4 w-4" />
+      //       GitHub Analysis
+      //     </Button>
+      //     <Button
+      //       onClick={() => router.push("/dashboard/admin/profiles")}
+      //       className="gap-2"
+      //     >
+      //       <Sparkles className="h-4 w-4" />
+      //       Developer Profiles
+      //     </Button>
+      //   </div>
+      // }
     >
       {error && (
         <Alert className="mb-6 border-destructive/40 bg-destructive/10">

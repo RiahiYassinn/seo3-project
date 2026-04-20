@@ -25,6 +25,7 @@ export interface AuthResponse {
     role: string
     avatar?: string | null
     is_first_login?: boolean
+    is_mentor?: boolean
   }
 }
 
@@ -37,10 +38,16 @@ export interface UserProfile {
   role: string
   avatar?: string | null
   is_first_login?: boolean
+  is_mentor?: boolean
 }
 
 export interface MessageResponse {
   message: string
+}
+
+export interface MentorAvailabilityResponse {
+  message: string
+  user: UserProfile
 }
 
 class AuthAPI {
@@ -98,6 +105,13 @@ class AuthAPI {
   async changePassword(newPassword: string): Promise<{ message: string }> {
     const response = await api.post('/auth/change-password', {
       new_password: newPassword
+    })
+    return response.data
+  }
+
+  async updateMentorAvailability(isMentor: boolean): Promise<MentorAvailabilityResponse> {
+    const response = await api.patch('/auth/me/mentor-availability', {
+      is_mentor: isMentor,
     })
     return response.data
   }

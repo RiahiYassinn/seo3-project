@@ -27,6 +27,7 @@ import {
   Loader2,
   RefreshCw,
   Sparkles,
+  Unlink,
   Users,
 } from "lucide-react";
 
@@ -132,6 +133,7 @@ export default function AdminGithubPage() {
   const [token, setToken] = useState("");
   const [loading, setLoading] = useState(true);
   const [linking, setLinking] = useState(false);
+  const [unlinking, setUnlinking] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
@@ -321,6 +323,45 @@ export default function AdminGithubPage() {
     }
   };
 
+  const handleUnlinkGitHub = async () => {
+    if (!integration) {
+      return;
+    }
+
+    if (
+      !confirm(
+        "Are you sure you want to unlink this GitHub account? This will remove all synced repositories for this admin integration.",
+      )
+    ) {
+      return;
+    }
+
+    setUnlinking(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      await api.delete("/github/integration");
+      setIntegration(null);
+      setRepositories([]);
+      setSelectedRepoId("");
+      setContributors([]);
+      setProfiles([]);
+      setSelectedContributors([]);
+      setUsername("");
+      setToken("");
+      setSuccess("GitHub account unlinked successfully.");
+    } catch (err: any) {
+      setError(
+        err?.response?.data?.message ??
+          err.message ??
+          "Failed to unlink GitHub account",
+      );
+    } finally {
+      setUnlinking(false);
+    }
+  };
+
   const handleRunAnalysis = async () => {
     if (!selectedRepoId || selectedContributors.length === 0) return;
 
@@ -357,23 +398,39 @@ export default function AdminGithubPage() {
   return (
     <AdminShell
       title="GitHub Repository and Contributor Analysis"
-      subtitle="Connect GitHub, choose a repository, select contributors, and run analysis. Generated profiles now live on their own page for easier review."
+      subtitle="Connect GitHub, choose a repository, select contributors, and run analysis. Each generated profile now automatically receives a recommendation plan visible in admin workflow."
       actions={
         integration ? (
-          <Button
-            type="button"
-            onClick={handleSyncRepositories}
-            variant="outline"
-            className="gap-2"
-            disabled={syncing}
-          >
-            {syncing ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4" />
-            )}
-            Sync repositories
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              onClick={handleSyncRepositories}
+              variant="outline"
+              className="gap-2"
+              disabled={syncing || unlinking}
+            >
+              {syncing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              Sync repositories
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              className="gap-2"
+              onClick={handleUnlinkGitHub}
+              disabled={unlinking || syncing || running}
+            >
+              {unlinking ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Unlink className="h-4 w-4" />
+              )}
+              {unlinking ? "Unlinking..." : "Unlink GitHub"}
+            </Button>
+          </div>
         ) : null
       }
     >

@@ -3,6 +3,7 @@ import {
   UnauthorizedException,
   ConflictException,
   BadRequestException,
+  ForbiddenException,
   Inject,
   Logger
 } from '@nestjs/common';
@@ -107,6 +108,7 @@ export class AuthService {
           last_name: user.last_name,
           role: user.role,
           avatar: user.avatar ?? null,
+          is_mentor: !!user.is_mentor,
         }
       };
     } catch (error) {
@@ -199,6 +201,7 @@ export class AuthService {
           role: user.role,
           avatar: user.avatar ?? null,
           is_first_login: isFirstLogin,
+          is_mentor: !!user.is_mentor,
         }
       };
     } catch (error) {
@@ -279,9 +282,47 @@ export class AuthService {
         role: user.role,
         avatar: user.avatar ?? null,
         is_first_login: !!user.is_first_login,
+        is_mentor: !!user.is_mentor,
       };
     } catch (error) {
       this.logger.error(`Get current user failed: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async updateMentorAvailability(userId: string, isMentor: boolean) {
+    try {
+      const currentUser = await this.getCurrentUser(userId);
+
+      if (currentUser.role !== 'tech_lead') {
+        throw new ForbiddenException('Only tech leads can update mentor availability');
+      }
+
+      const updatedUser = await firstValueFrom(
+        this.developerService.send('update_my_mentor_availability', {
+          userId,
+          is_mentor: isMentor,
+        })
+      );
+
+      return {
+        message: isMentor
+          ? 'You are now available for new mentorship assignments.'
+          : 'You will not receive new mentorship assignments until re-enabled.',
+        user: {
+          id: updatedUser.id,
+          email: updatedUser.email,
+          username: updatedUser.username,
+          first_name: updatedUser.first_name,
+          last_name: updatedUser.last_name,
+          role: updatedUser.role,
+          avatar: updatedUser.avatar ?? null,
+          is_first_login: !!updatedUser.is_first_login,
+          is_mentor: !!updatedUser.is_mentor,
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Update mentor availability failed: ${error.message}`);
       throw error;
     }
   }
@@ -533,6 +574,7 @@ export class AuthService {
           last_name: user.last_name,
           role: user.role,
           avatar: user.avatar ?? null,
+          is_mentor: !!user.is_mentor,
         },
       };
     } catch (error) {

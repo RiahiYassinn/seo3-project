@@ -30,7 +30,7 @@ export default function DashboardPage() {
     }
 
     if (normalizedRole === "tech_lead") {
-      router.replace("/dashboard/tech_lead");
+      router.replace("/dashboard/tech_lead/recommendations");
       return;
     }
 

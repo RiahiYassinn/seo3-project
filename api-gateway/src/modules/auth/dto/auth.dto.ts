@@ -131,6 +131,15 @@ export class ChangePasswordDto {
   new_password: string;
 }
 
+export class UpdateMentorAvailabilityDto {
+  @ApiProperty({
+    description: 'Whether the current tech lead is available for new mentorship assignments',
+    example: true,
+  })
+  @IsBoolean()
+  is_mentor: boolean;
+}
+
 // Optional: Add a DTO for updating user role (for admin use)
 export class UpdateUserRoleDto {
   @ApiProperty({

@@ -44,6 +44,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -60,6 +61,7 @@ interface User {
   last_name: string;
   role: string;
   avatar?: string | null;
+  is_mentor?: boolean;
   is_email_verified: boolean;
   created_at: string;
   last_login?: string;
@@ -117,6 +119,7 @@ export const UsersManagementTable = () => {
     first_name: "",
     last_name: "",
     role: "",
+    is_mentor: false,
   });
   const [avatarPreview, setAvatarPreview] = useState<string>("");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -368,6 +371,7 @@ export const UsersManagementTable = () => {
       first_name: user.first_name,
       last_name: user.last_name,
       role: user.role,
+      is_mentor: Boolean(user.is_mentor),
     });
     setAvatarPreview(resolveAvatarUrl(user.avatar) || "");
     setAvatarFile(null);
@@ -544,6 +548,9 @@ export const UsersManagementTable = () => {
                   Role
                 </th>
                 <th className="text-left py-3 px-4 font-semibold text-sm text-gray-700 dark:text-gray-300">
+                  Mentor
+                </th>
+                <th className="text-left py-3 px-4 font-semibold text-sm text-gray-700 dark:text-gray-300">
                   Status
                 </th>
                 <th className="text-left py-3 px-4 font-semibold text-sm text-gray-700 dark:text-gray-300">
@@ -595,6 +602,17 @@ export const UsersManagementTable = () => {
                       className={`px-3 py-1 rounded-full text-xs font-medium ${getRoleBadgeColor(user.role)}`}
                     >
                       {user.role.replace("_", " ").toUpperCase()}
+                    </span>
+                  </td>
+                  <td className="py-4 px-4">
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-medium ${
+                        user.is_mentor
+                          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-400"
+                          : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                      }`}
+                    >
+                      {user.is_mentor ? "Yes" : "No"}
                     </span>
                   </td>
                   <td className="py-4 px-4">
@@ -781,7 +799,11 @@ export const UsersManagementTable = () => {
               <Select
                 value={editForm.role}
                 onValueChange={(value) =>
-                  setEditForm({ ...editForm, role: value })
+                  setEditForm((prev) => ({
+                    ...prev,
+                    role: value,
+                    is_mentor: value === "tech_lead" ? prev.is_mentor : false,
+                  }))
                 }
               >
                 <SelectTrigger>
@@ -793,6 +815,32 @@ export const UsersManagementTable = () => {
                   <SelectItem value="developer">Developer</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="grid gap-2 rounded-lg border border-border p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <Label htmlFor="is_mentor" className="text-sm font-medium">
+                    Mentor Eligible
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Only tech leads with this enabled can be assigned mentorship
+                    recommendations.
+                  </p>
+                </div>
+                <Switch
+                  id="is_mentor"
+                  checked={editForm.is_mentor}
+                  disabled={editForm.role !== "tech_lead"}
+                  onCheckedChange={(checked) =>
+                    setEditForm((prev) => ({ ...prev, is_mentor: checked }))
+                  }
+                />
+              </div>
+              {editForm.role !== "tech_lead" ? (
+                <p className="text-xs text-muted-foreground">
+                  Set role to Tech Lead to enable mentor assignment.
+                </p>
+              ) : null}
             </div>
           </div>
           <DialogFooter>

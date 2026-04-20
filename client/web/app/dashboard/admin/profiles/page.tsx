@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   ArrowUpRight,
+  Bot,
   CircleAlert,
   FolderGit2,
   Search,
@@ -20,26 +21,69 @@ import {
 } from "lucide-react";
 import {
   type ContributorProfile,
+  type RecommendationCase,
   type RepositoryRecord,
+  formatLabel,
   getContributorAvatarUrl,
   getInitials,
+  recommendationKey,
+  recommendationStatusTone,
+  recommendationTypeTone,
   statusTone,
 } from "./profile-types";
 
 export default function AdminProfilesPage() {
   const router = useRouter();
   const [repositories, setRepositories] = useState<RepositoryRecord[]>([]);
+  const [recommendationMap, setRecommendationMap] = useState<
+    Record<string, RecommendationCase>
+  >({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
+    const loadRecommendations = async (repoRecords: RepositoryRecord[]) => {
+      if (!repoRecords.length) {
+        setRecommendationMap({});
+        return;
+      }
+
+      const recommendationEntries = await Promise.all(
+        repoRecords.map(async (repository) => {
+          try {
+            const { data } = await api.get<RecommendationCase[]>(
+              `/recommendations/repository/${repository.id}`,
+            );
+            return (data || []).map((recommendation) => [
+              recommendationKey(
+                recommendation.repository_id,
+                recommendation.contributor_login,
+              ),
+              recommendation,
+            ]) as Array<[string, RecommendationCase]>;
+          } catch {
+            return [] as Array<[string, RecommendationCase]>;
+          }
+        }),
+      );
+
+      setRecommendationMap(
+        Object.fromEntries(recommendationEntries.flat()) as Record<
+          string,
+          RecommendationCase
+        >,
+      );
+    };
+
     const loadRepositories = async () => {
       try {
         const { data } = await api.get<RepositoryRecord[]>(
           "/github/repositories",
         );
-        setRepositories(data || []);
+        const repoRecords = data || [];
+        setRepositories(repoRecords);
+        await loadRecommendations(repoRecords);
       } catch (err: any) {
         setError(
           err?.response?.data?.message ??
@@ -75,6 +119,14 @@ export default function AdminProfilesPage() {
     if (!query) return profiles;
 
     return profiles.filter((profile) => {
+      const recommendation =
+        recommendationMap[
+          recommendationKey(
+            profile.repositoryId || "",
+            profile.contributorLogin,
+          )
+        ];
+
       return (
         profile.contributorLogin.toLowerCase().includes(query) ||
         profile.repositoryName.toLowerCase().includes(query) ||
@@ -82,10 +134,27 @@ export default function AdminProfilesPage() {
           String(weakness.category || "")
             .toLowerCase()
             .includes(query),
-        )
+        ) ||
+        String(recommendation?.title || "")
+          .toLowerCase()
+          .includes(query) ||
+        String(recommendation?.recommendation_type || "")
+          .toLowerCase()
+          .includes(query)
       );
     });
-  }, [profiles, searchQuery]);
+  }, [profiles, recommendationMap, searchQuery]);
+
+  const recommendationStats = useMemo(() => {
+    const records = Object.values(recommendationMap);
+    return {
+      total: records.length,
+      mentorship: records.filter(
+        (record) => record.recommendation_type === "mentorship",
+      ).length,
+      open: records.filter((record) => record.status === "open").length,
+    };
+  }, [recommendationMap]);
 
   return (
     <AdminShell
@@ -110,7 +179,7 @@ export default function AdminProfilesPage() {
         </Alert>
       )}
 
-      <section className="mb-6 grid gap-4 md:grid-cols-3">
+      <section className="mb-6 grid gap-4 md:grid-cols-4">
         <Card className="border-border/60 bg-background/80 shadow-sm">
           <CardContent className="p-5">
             <p className="text-sm text-muted-foreground">Profiles</p>
@@ -137,6 +206,18 @@ export default function AdminProfilesPage() {
                 ? "--"
                 : profiles.filter((profile) => profile.status === "completed")
                     .length}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="border-border/60 bg-background/80 shadow-sm">
+          <CardContent className="p-5">
+            <p className="text-sm text-muted-foreground">AI recommendations</p>
+            <p className="mt-2 text-2xl font-semibold">
+              {loading ? "--" : recommendationStats.total}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Mentorship: {recommendationStats.mentorship} · Open:{" "}
+              {recommendationStats.open}
             </p>
           </CardContent>
         </Card>
@@ -167,155 +248,206 @@ export default function AdminProfilesPage() {
         <CardContent>
           {filteredProfiles.length > 0 ? (
             <div className="grid gap-4 lg:grid-cols-2">
-              {filteredProfiles.map((profile) => (
-                <div
-                  key={profile.profileId}
-                  className="group cursor-pointer rounded-[1.75rem] border border-border/60 bg-muted/15 p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-primary/30 hover:bg-background"
-                  onClick={() =>
-                    router.push(
-                      `/dashboard/admin/profiles/${encodeURIComponent(profile.profileId)}`,
+              {filteredProfiles.map((profile) => {
+                const generatedRecommendation =
+                  recommendationMap[
+                    recommendationKey(
+                      profile.repositoryId || "",
+                      profile.contributorLogin,
                     )
-                  }
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
+                  ];
+
+                return (
+                  <div
+                    key={profile.profileId}
+                    className="group cursor-pointer rounded-[1.75rem] border border-border/60 bg-muted/15 p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-primary/30 hover:bg-background"
+                    onClick={() =>
                       router.push(
                         `/dashboard/admin/profiles/${encodeURIComponent(profile.profileId)}`,
-                      );
+                      )
                     }
-                  }}
-                >
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <Avatar className="h-12 w-12 border border-border/60">
-                        <AvatarImage
-                          src={getContributorAvatarUrl(
-                            profile.contributorLogin,
-                            profile.avatarUrl,
-                          )}
-                          alt={`${profile.contributorLogin} GitHub avatar`}
-                        />
-                        <AvatarFallback className="bg-primary/10 text-primary">
-                          {getInitials(profile.contributorLogin)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0">
-                        <p className="text-lg font-semibold">
-                          @{profile.contributorLogin}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        router.push(
+                          `/dashboard/admin/profiles/${encodeURIComponent(profile.profileId)}`,
+                        );
+                      }
+                    }}
+                  >
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <Avatar className="h-12 w-12 border border-border/60">
+                          <AvatarImage
+                            src={getContributorAvatarUrl(
+                              profile.contributorLogin,
+                              profile.avatarUrl,
+                            )}
+                            alt={`${profile.contributorLogin} GitHub avatar`}
+                          />
+                          <AvatarFallback className="bg-primary/10 text-primary">
+                            {getInitials(profile.contributorLogin)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <p className="text-lg font-semibold">
+                            @{profile.contributorLogin}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            {profile.repositoryName}
+                          </p>
+                        </div>
+                      </div>
+                      <Badge
+                        variant="outline"
+                        className={statusTone(profile.status)}
+                      >
+                        {profile.status}
+                      </Badge>
+                    </div>
+
+                    <div className="mt-3 flex items-center justify-between text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                      <span>Open detailed analysis</span>
+                      <ArrowUpRight className="h-4 w-4 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                    </div>
+
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-3xl border border-border/60 bg-background p-4">
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                          Quality score
                         </p>
-                        <p className="text-sm text-muted-foreground">
-                          {profile.repositoryName}
+                        <p className="mt-2 text-2xl font-semibold">
+                          {profile.qualityScore !== null
+                            ? `${profile.qualityScore}/10`
+                            : "--"}
+                        </p>
+                      </div>
+                      <div className="rounded-3xl border border-border/60 bg-background p-4">
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                          Skill level
+                        </p>
+                        <p className="mt-2 text-2xl font-semibold">
+                          {profile.skillLevel || "--"}
                         </p>
                       </div>
                     </div>
-                    <Badge
-                      variant="outline"
-                      className={statusTone(profile.status)}
-                    >
-                      {profile.status}
-                    </Badge>
-                  </div>
 
-                  <div className="mt-3 flex items-center justify-between text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                    <span>Open detailed analysis</span>
-                    <ArrowUpRight className="h-4 w-4 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-                  </div>
-
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-3xl border border-border/60 bg-background p-4">
-                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                        Quality score
-                      </p>
-                      <p className="mt-2 text-2xl font-semibold">
-                        {profile.qualityScore !== null
-                          ? `${profile.qualityScore}/10`
-                          : "--"}
-                      </p>
-                    </div>
-                    <div className="rounded-3xl border border-border/60 bg-background p-4">
-                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                        Skill level
-                      </p>
-                      <p className="mt-2 text-2xl font-semibold">
-                        {profile.skillLevel || "--"}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-4">
-                    <p className="text-sm font-semibold">Top weaknesses</p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {profile.topWeaknesses?.length ? (
-                        profile.topWeaknesses.slice(0, 3).map((weakness) => (
-                          <Badge
-                            key={`${profile.profileId}-${weakness.category}`}
-                            variant="secondary"
-                          >
-                            {weakness.category || "Unknown weakness"}
-                          </Badge>
-                        ))
-                      ) : (
-                        <span className="text-sm text-muted-foreground">
-                          Weakness insights will appear when analysis completes.
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="mt-4">
-                    <p className="text-sm font-semibold">Recommendations</p>
-                    <div className="mt-2 space-y-2 text-sm text-muted-foreground">
-                      {profile.recommendations?.length ? (
-                        profile.recommendations
-                          .slice(0, 2)
-                          .map((recommendation, index) => (
-                            <div
-                              key={`${profile.profileId}-${index}`}
-                              className="rounded-2xl border border-border/60 bg-background px-3 py-2"
+                    <div className="mt-4 rounded-3xl border border-border/60 bg-background p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="inline-flex items-center gap-2 text-sm font-semibold">
+                          <Bot className="h-4 w-4" />
+                          Recommendation engine
+                        </p>
+                        {generatedRecommendation ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge
+                              variant="outline"
+                              className={
+                                recommendationTypeTone[
+                                  generatedRecommendation.recommendation_type
+                                ]
+                              }
                             >
-                              {recommendation.action || recommendation.weakness}
-                            </div>
+                              {formatLabel(
+                                generatedRecommendation.recommendation_type,
+                              )}
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className={recommendationStatusTone(
+                                generatedRecommendation.status,
+                              )}
+                            >
+                              {formatLabel(generatedRecommendation.status)}
+                            </Badge>
+                          </div>
+                        ) : null}
+                      </div>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        {generatedRecommendation
+                          ? generatedRecommendation.title
+                          : "Pending generation. Recommendation appears automatically after analysis completion."}
+                      </p>
+                    </div>
+
+                    <div className="mt-4">
+                      <p className="text-sm font-semibold">Top weaknesses</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {profile.topWeaknesses?.length ? (
+                          profile.topWeaknesses.slice(0, 3).map((weakness) => (
+                            <Badge
+                              key={`${profile.profileId}-${weakness.category}`}
+                              variant="secondary"
+                            >
+                              {weakness.category || "Unknown weakness"}
+                            </Badge>
                           ))
-                      ) : (
-                        <p>No recommendations yet.</p>
-                      )}
+                        ) : (
+                          <span className="text-sm text-muted-foreground">
+                            Weakness insights will appear when analysis
+                            completes.
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="mt-4 rounded-3xl border border-border/60 bg-background p-4">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Findings</span>
-                      <span className="font-medium">
-                        {profile.findingsSummary?.finding_count ?? 0}
-                      </span>
+                    <div className="mt-4">
+                      <p className="text-sm font-semibold">Recommendations</p>
+                      <div className="mt-2 space-y-2 text-sm text-muted-foreground">
+                        {profile.recommendations?.length ? (
+                          profile.recommendations
+                            .slice(0, 2)
+                            .map((recommendation, index) => (
+                              <div
+                                key={`${profile.profileId}-${index}`}
+                                className="rounded-2xl border border-border/60 bg-background px-3 py-2"
+                              >
+                                {recommendation.action ||
+                                  recommendation.weakness}
+                              </div>
+                            ))
+                        ) : (
+                          <p>No recommendations yet.</p>
+                        )}
+                      </div>
                     </div>
-                    <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                      <span>
-                        Critical: {profile.findingsSummary?.critical_count ?? 0}
-                      </span>
-                      <span>
-                        High: {profile.findingsSummary?.high_count ?? 0}
-                      </span>
-                      <span>Skills: {profile.skills?.length ?? 0}</span>
-                    </div>
-                  </div>
 
-                  {profile.profileUrl && (
-                    <a
-                      href={profile.profileUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(event) => event.stopPropagation()}
-                      className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
-                    >
-                      <FolderGit2 className="h-4 w-4" />
-                      View GitHub profile
-                    </a>
-                  )}
-                </div>
-              ))}
+                    <div className="mt-4 rounded-3xl border border-border/60 bg-background p-4">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">Findings</span>
+                        <span className="font-medium">
+                          {profile.findingsSummary?.finding_count ?? 0}
+                        </span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                        <span>
+                          Critical:{" "}
+                          {profile.findingsSummary?.critical_count ?? 0}
+                        </span>
+                        <span>
+                          High: {profile.findingsSummary?.high_count ?? 0}
+                        </span>
+                        <span>Skills: {profile.skills?.length ?? 0}</span>
+                      </div>
+                    </div>
+
+                    {profile.profileUrl && (
+                      <a
+                        href={profile.profileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(event) => event.stopPropagation()}
+                        className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
+                      >
+                        <FolderGit2 className="h-4 w-4" />
+                        View GitHub profile
+                      </a>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div className="rounded-[1.75rem] border border-dashed border-border/60 p-10 text-center">

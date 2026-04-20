@@ -110,6 +110,71 @@ export class GithubService {
     };
   }
 
+  private deriveSkillLevel(summary: Record<string, any> | null): string | null {
+    if (!summary) {
+      return null;
+    }
+
+    if (typeof summary.skill_level === 'string' && summary.skill_level.trim()) {
+      return summary.skill_level;
+    }
+
+    if (typeof summary.quality_score !== 'number') {
+      return null;
+    }
+
+    if (summary.quality_score >= 8) {
+      return 'advanced';
+    }
+    if (summary.quality_score >= 5.5) {
+      return 'intermediate';
+    }
+    return 'beginner';
+  }
+
+  private deriveTopWeaknesses(summary: Record<string, any> | null) {
+    if (!summary) {
+      return [];
+    }
+
+    if (Array.isArray(summary.top_weaknesses) && summary.top_weaknesses.length > 0) {
+      return summary.top_weaknesses;
+    }
+
+    if (!summary.weakness_scores || typeof summary.weakness_scores !== 'object') {
+      return [];
+    }
+
+    return Object.entries(summary.weakness_scores)
+      .map(([category, score]) => ({
+        category,
+        score,
+      }))
+      .sort((left, right) => Number(right.score || 0) - Number(left.score || 0))
+      .slice(0, 3);
+  }
+
+  private deriveRecommendations(summary: Record<string, any> | null) {
+    if (!summary) {
+      return [];
+    }
+
+    if (Array.isArray(summary.recommendations) && summary.recommendations.length > 0) {
+      return summary.recommendations;
+    }
+
+    const learningResources = Array.isArray(summary.learning_resources)
+      ? summary.learning_resources
+      : [];
+
+    return learningResources.slice(0, 5).map((resource: Record<string, any>) => ({
+      weakness: resource.skill || 'general_code_quality',
+      action: resource.title ? `Review ${resource.title}` : 'Review recommended resource',
+      learning_query: resource.url || '',
+      type: resource.type || 'resource',
+    }));
+  }
+
   private getContributorProfiles(
     metadata: Record<string, any> | null | undefined,
   ): Record<string, ContributorProfileSummary> {
@@ -153,7 +218,62 @@ export class GithubService {
       ? Math.max(0, Math.min(100, activeProgress)) / 100
       : 0;
 
-    return Math.round(((completedCount + activeFraction) / state.total) * 100);
+    const rawProgress = Math.round(
+      ((completedCount + activeFraction) / state.total) * 100,
+    );
+    return Math.max(0, Math.min(100, rawProgress));
+  }
+
+  private normalizeRepositoryAnalysisState(repo: Repository): boolean {
+    let changed = false;
+
+    const clampedProgress = Math.max(0, Math.min(100, repo.analysisProgress || 0));
+    if (repo.analysisProgress !== clampedProgress) {
+      repo.analysisProgress = clampedProgress;
+      changed = true;
+    }
+
+    const state = this.getContributorAnalysisState(repo.analysisMetadata);
+    if (!state) {
+      return changed;
+    }
+
+    const settled =
+      state.total > 0 &&
+      !state.activeContributor &&
+      state.queue.length === 0;
+
+    if (!settled) {
+      return changed;
+    }
+
+    const hasFailures = state.failed.length > 0 && state.processed.length === 0;
+    const finalStatus: AnalysisStatus = hasFailures ? 'failed' : 'completed';
+    const finalStage = hasFailures
+      ? 'Contributor analysis finished with failures'
+      : 'Contributor analysis completed';
+
+    if (repo.analysisStatus !== finalStatus) {
+      repo.analysisStatus = finalStatus;
+      changed = true;
+    }
+
+    if (repo.analysisProgress !== 100) {
+      repo.analysisProgress = 100;
+      changed = true;
+    }
+
+    if (!repo.analysisCurrentStage || repo.analysisCurrentStage.includes('in progress')) {
+      repo.analysisCurrentStage = finalStage;
+      changed = true;
+    }
+
+    if (repo.isAnalyzed !== !hasFailures) {
+      repo.isAnalyzed = !hasFailures;
+      changed = true;
+    }
+
+    return changed;
   }
 
   private async getIntegrationForDeveloper(
@@ -199,6 +319,10 @@ export class GithubService {
         statusCode: 404,
         message: 'Repository not found',
       });
+    }
+
+    if (this.normalizeRepositoryAnalysisState(repository)) {
+      await this.repositoryRepo.save(repository);
     }
 
     return { integration, repository };
@@ -411,10 +535,19 @@ export class GithubService {
     });
     if (!integration) return [];
 
-    return this.repositoryRepo.find({
+    const repositories = await this.repositoryRepo.find({
       where: { integrationId: integration.id },
       order: { lastSynced: 'DESC' },
     });
+
+    const dirtyRepositories = repositories.filter((repo) =>
+      this.normalizeRepositoryAnalysisState(repo),
+    );
+    if (dirtyRepositories.length > 0) {
+      await Promise.all(dirtyRepositories.map((repo) => this.repositoryRepo.save(repo)));
+    }
+
+    return repositories;
   }
 
   async getRepository(developerId: string, repositoryId: string): Promise<Repository> {
@@ -566,6 +699,10 @@ export class GithubService {
 
     const state = this.getContributorAnalysisState(repo.analysisMetadata);
     if (!state) {
+      if (repo.analysisStatus === 'completed' || repo.analysisStatus === 'failed') {
+        return;
+      }
+
       await this.updateRepositoryAnalysis(message.repositoryId, {
         status: 'in_progress',
         progress: message.progress ?? 0,
@@ -574,8 +711,29 @@ export class GithubService {
       return;
     }
 
+    const settled =
+      state.total > 0 &&
+      !state.activeContributor &&
+      state.queue.length === 0 &&
+      state.processed.length + state.failed.length >= state.total;
+    if (settled) {
+      return;
+    }
+
     const contributorLogin = this.normalizeContributorLogin(message.githubUsername || state.activeContributor || '');
-    if (!state.activeContributor && contributorLogin) {
+    if (!contributorLogin && !state.activeContributor) {
+      return;
+    }
+
+    const alreadyFinishedContributor = contributorLogin
+      ? state.processed.includes(contributorLogin) || state.failed.includes(contributorLogin)
+      : false;
+
+    if (alreadyFinishedContributor && state.activeContributor !== contributorLogin) {
+      return;
+    }
+
+    if (!state.activeContributor && contributorLogin && !alreadyFinishedContributor) {
       state.activeContributor = contributorLogin;
     }
 
@@ -611,6 +769,8 @@ export class GithubService {
     const state = this.getContributorAnalysisState(repo.analysisMetadata);
     const summary = (message.summary || null) as Record<string, any> | null;
     const metadata = (message.metadata || {}) as Record<string, any>;
+    const topWeaknesses = this.deriveTopWeaknesses(summary);
+    const recommendations = this.deriveRecommendations(summary);
 
     if (contributorLogin) {
       profiles[contributorLogin] = {
@@ -625,19 +785,14 @@ export class GithubService {
         analyzedAt: message.analyzedAt || new Date().toISOString(),
         qualityScore:
           typeof summary?.quality_score === 'number' ? summary.quality_score : null,
-        skillLevel:
-          typeof summary?.skill_level === 'string' ? summary.skill_level : null,
+        skillLevel: this.deriveSkillLevel(summary),
         strengths: Array.isArray(summary?.strengths) ? summary.strengths : [],
         weaknessScores:
           summary?.weakness_scores && typeof summary.weakness_scores === 'object'
             ? summary.weakness_scores
             : {},
-        topWeaknesses: Array.isArray(summary?.top_weaknesses)
-          ? summary.top_weaknesses
-          : [],
-        recommendations: Array.isArray(summary?.recommendations)
-          ? summary.recommendations
-          : [],
+        topWeaknesses,
+        recommendations,
         findingsSummary:
           summary?.summary && typeof summary.summary === 'object'
             ? summary.summary
@@ -772,7 +927,9 @@ export class GithubService {
 
     const currentProgress = repo.analysisProgress || 0;
     const incomingProgress =
-      typeof update.progress === 'number' ? Math.max(0, update.progress) : null;
+      typeof update.progress === 'number'
+        ? Math.max(0, Math.min(100, update.progress))
+        : null;
 
     if (update.status) {
       repo.analysisStatus = update.status;

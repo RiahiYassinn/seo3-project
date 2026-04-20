@@ -2,16 +2,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { LogOut, User, Code as Code2, Shield, Moon, Sun } from "lucide-react";
+import { LogOut, Moon, Sun } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
 import { useTheme } from "@/hooks/use-theme";
 
@@ -76,7 +68,64 @@ export function Navbar() {
                 </Link>
               </>
             )}
-
+            {user?.role === "developer" && (
+              <>
+                <Link
+                  href="/dashboard"
+                  className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
+                    isActive("/dashboard")
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Dashboard
+                </Link>
+                <Link
+                  href="/dashboard/developer/github"
+                  className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
+                    isActive("/dashboard/developer/github")
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  GitHub
+                </Link>
+                <Link
+                  href="/dashboard/developer/recommendations"
+                  className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
+                    isActive("/dashboard/developer/recommendations")
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Recommendations
+                </Link>
+                <Link
+                  href="/dashboard/developer/profile"
+                  className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
+                    isActive("/dashboard/developer/profile")
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Profile
+                </Link>
+              </>
+            )}
+            {user?.role === "tech_lead" && (
+              <>
+                <Link
+                  href="/dashboard/tech_lead/recommendations"
+                  className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
+                    isActive("/dashboard/tech_lead/recommendations")
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Mentor Queue
+                </Link>
+              </>
+            )}
             {/* Admin Dashboard Navigation */}
             {user?.role === "admin" && isAdminPage && (
               <div className="flex items-center gap-1">
@@ -125,72 +174,34 @@ export function Navbar() {
                     <Moon className="h-4 w-4" />
                   )}
                 </button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger className="outline-none">
-                    <Avatar className="h-9 w-9 cursor-pointer ring-2 ring-primary/20 hover:ring-primary/40 transition-all">
-                      <AvatarImage
-                        src={avatarSrc}
-                        alt={`${user.first_name} ${user.last_name}`}
-                      />
-                      <AvatarFallback className="bg-gradient-to-br from-primary via-secondary to-accent text-white font-semibold">
-                        {initials}
-                      </AvatarFallback>
-                    </Avatar>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56">
-                    <DropdownMenuLabel>
-                      <div className="flex flex-col space-y-1">
-                        <p className="text-sm font-medium leading-none">
-                          {user.first_name} {user.last_name}
-                        </p>
-                        <p className="text-xs leading-none text-muted-foreground">
-                          {user.email}
-                        </p>
-                      </div>
-                    </DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem asChild>
-                      <Link
-                        href={
-                          user.role === "admin"
-                            ? "/dashboard/admin/overview"
-                            : "/dashboard"
-                        }
-                        className="cursor-pointer"
-                      >
-                        <User className="mr-2 h-4 w-4" />
-                        <span>
-                          {user.role === "admin" ? "Workspace" : "Profile"}
-                        </span>
-                      </Link>
-                    </DropdownMenuItem>
-                    {user.role === "admin" && (
-                      <DropdownMenuItem asChild>
-                        <Link
-                          href="/dashboard/admin/github"
-                          className="cursor-pointer"
-                        >
-                          <Shield className="mr-2 h-4 w-4" />
-                          <span>GitHub Analysis</span>
-                        </Link>
-                      </DropdownMenuItem>
-                    )}
-                    {user.role === "developer" && (
-                      <DropdownMenuItem disabled>
-                        <Code2 className="mr-2 h-4 w-4" />
-                        <span>Admin-managed access</span>
-                      </DropdownMenuItem>
-                    )}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={handleLogout}
-                      className="text-destructive focus:text-destructive cursor-pointer"
-                    >
-                      <LogOut className="mr-2 h-4 w-4" />
-                      <span>Logout</span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <Link
+                  href={
+                    user.role === "admin"
+                      ? "/dashboard/admin/overview"
+                      : user.role === "tech_lead"
+                        ? "/dashboard/tech_lead/recommendations"
+                        : "/dashboard"
+                  }
+                  className="text-sm font-medium px-3 py-2 rounded-md text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {user.first_name}
+                </Link>
+                <Avatar className="h-9 w-9 ring-2 ring-primary/20">
+                  <AvatarImage
+                    src={avatarSrc}
+                    alt={`${user.first_name} ${user.last_name}`}
+                  />
+                  <AvatarFallback className="bg-gradient-to-br from-primary via-secondary to-accent text-white font-semibold">
+                    {initials}
+                  </AvatarFallback>
+                </Avatar>
+                <button
+                  onClick={handleLogout}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-background hover:bg-muted text-destructive transition-colors"
+                  aria-label="Logout"
+                >
+                  <LogOut className="h-4 w-4" />
+                </button>
               </>
             ) : (
               <div className="flex items-center gap-3">

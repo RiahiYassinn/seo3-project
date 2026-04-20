@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Get,
+  Patch,
   Body,
   HttpCode,
   HttpStatus,
@@ -27,6 +28,7 @@ import {
   ForgotPasswordDto,
   ResetPasswordDto,
   ChangePasswordDto,
+  UpdateMentorAvailabilityDto,
 } from './dto/auth.dto';
 import {
   ApiTags,
@@ -116,6 +118,22 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async getCurrentUser(@Req() req) {
     return this.authService.getCurrentUser(req.user.id);
+  }
+
+  @Patch('me/mentor-availability')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update mentor availability for the current tech lead' })
+  @ApiResponse({ status: 200, description: 'Mentor availability updated' })
+  @ApiResponse({ status: 403, description: 'Only tech leads can update mentor availability' })
+  async updateMentorAvailability(
+    @Req() req,
+    @Body() updateMentorAvailabilityDto: UpdateMentorAvailabilityDto,
+  ) {
+    return this.authService.updateMentorAvailability(
+      req.user.id,
+      updateMentorAvailabilityDto.is_mentor,
+    );
   }
 
   @Post('logout')
@@ -251,6 +269,7 @@ export class AuthController {
       role: string;
       avatar?: string | null;
       is_first_login?: boolean;
+      is_mentor?: boolean;
     };
   }) {
     return {
