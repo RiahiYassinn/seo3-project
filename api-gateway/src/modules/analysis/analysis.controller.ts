@@ -9,13 +9,13 @@ import { AuthGuard } from '@nestjs/passport';
 export class AnalysisController {
   @Post('webhook/github')
   @ApiOperation({ summary: 'GitHub webhook handler' })
-  handleGithubWebhook(@Body() payload: any) {
+  handleGithubWebhook(@Body() _payload: any) {
     return { message: 'GitHub webhook received - proxied to Analysis Service' };
   }
 
   @Post('webhook/gitlab')
   @ApiOperation({ summary: 'GitLab webhook handler' })
-  handleGitlabWebhook(@Body() payload: any) {
+  handleGitlabWebhook(@Body() _payload: any) {
     return { message: 'GitLab webhook received - proxied to Analysis Service' };
   }
 

@@ -1,28 +1,20 @@
-from pydantic_settings import BaseSettings
-from typing import Optional
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    # Application settings
-    APP_NAME: str = "NLP Service"
+    APP_NAME: str = "Code Analysis Service"
     DEBUG: bool = True
+    HOST: str = "0.0.0.0"
     PORT: int = 8000
-    
-    # MongoDB settings
-    MONGODB_URL: str = "mongodb://seo3_user:seo3_password@localhost:27017/seo3_analytics?authSource=admin"
-    
-    # Kafka settings
+    LOG_LEVEL: str = "INFO"
     KAFKA_BROKERS: str = "localhost:29092"
     KAFKA_CONSUMER_GROUP: str = "nlp-service-group"
-    
-    # NLP settings
-    SPACY_MODEL: str = "en_core_web_sm"
-    MODEL_PATH: Optional[str] = "./models"
-    
-    class Config:
-        env_file = "../../.env"
-        case_sensitive = True
-        extra = "ignore"  # Allow extra env vars from shared .env file
+
+    model_config = SettingsConfigDict(
+        env_file="../../.env",
+        case_sensitive=True,
+        extra="ignore",
+    )
 
 
 settings = Settings()

@@ -1,8 +1,16 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DeveloperModule } from './modules/developer/developer.module';
-import { AuthModule } from './modules/auth/auth.module';
+import { GithubModule } from "./modules/github/github.module";
+
+import { Developer } from './modules/developer/entities/developer.entity';
+import { RefreshToken } from './modules/developer/entities/refresh-token.entity';
+import { VerificationToken } from './modules/developer/entities/verification-token.entity';
+import { PasswordResetToken } from './modules/developer/entities/password-reset-token.entity';
+import { GithubIntegration } from './modules/github/entities/github-integration.entity';
+import { Repository } from './modules/github/entities/repository.entity';
+
 
 @Module({
   imports: [
@@ -10,18 +18,24 @@ import { AuthModule } from './modules/auth/auth.module';
       isGlobal: true,
       envFilePath: '../../.env',
     }),
-    TypeOrmModule.forRoot({
-      type: 'postgres',
-      host: process.env.POSTGRES_HOST,
-      port: parseInt(process.env.POSTGRES_PORT) || 5432,
-      username: process.env.POSTGRES_USER,
-      password: process.env.POSTGRES_PASSWORD,
-      database: process.env.POSTGRES_DB,
-      entities: [__dirname + '/**/*.entity{.ts,.js}'],
-      synchronize: process.env.NODE_ENV === 'development',
+    TypeOrmModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: (configService: ConfigService) => ({
+        type: 'postgres',
+        host: configService.get('POSTGRES_HOST'),
+        port: parseInt(configService.get('POSTGRES_PORT')) || 5432,
+        username: configService.get('POSTGRES_USER'),
+        password: configService.get('POSTGRES_PASSWORD'),
+        database: configService.get('POSTGRES_DB'),
+        entities: [Developer, RefreshToken, VerificationToken, PasswordResetToken, GithubIntegration, Repository],
+        synchronize: configService.get('NODE_ENV') === 'development',
+        logging: configService.get('NODE_ENV') === 'development',
+      }),
+      inject: [ConfigService],
     }),
     DeveloperModule,
-    AuthModule,
+    GithubModule,
   ],
 })
 export class AppModule {}
+
