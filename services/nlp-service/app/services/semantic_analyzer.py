@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import re
 from pathlib import Path
+from typing import Any
 
 from app.services.analysis_types import DiffFileSummary, SemanticFact, SemanticReport, SymbolFact
 
@@ -102,7 +103,14 @@ class SemanticAnalyzer:
         fact.intents = sorted(intents)
         fact.entities = sorted(entity for entity in entities if entity != "generic")
         fact.symbols = symbols
-        fact.signals.update(self._derive_python_signals(tree, content, changed_lines))
+        python_signals, python_observations = self._derive_python_signals(
+            tree,
+            content,
+            changed_lines,
+            symbols,
+        )
+        fact.signals.update(python_signals)
+        fact.observations.update(python_observations)
         fact.tokens = sorted(
             set(fact.tokens + self._tokenize_text(" ".join(fact.imports)))
         )
@@ -145,49 +153,95 @@ class SemanticAnalyzer:
         tree: ast.AST,
         content: str,
         changed_lines: list[int],
-    ) -> dict[str, bool]:
+        symbols: list[SymbolFact],
+    ) -> tuple[dict[str, bool], dict[str, Any]]:
         has_try = False
-        broad_except = False
-        bare_except = False
-        has_raise = False
-        has_logging = "logger." in content or "logging." in content
         has_docstrings = bool(ast.get_docstring(tree))
         has_assert = False
-        hardcoded_secret = bool(
-            re.search(
-                r"(secret|token|password)\s*=\s*[\"'][^\"']+[\"']",
-                content,
-                re.IGNORECASE,
-            )
-        )
+        has_logging = "logger." in content or "logging." in content
+        changed_scope = self._expand_line_scope(changed_lines, len(content.splitlines()), radius=1)
+        bare_except_lines: list[int] = []
+        broad_except_lines: list[int] = []
+        raise_lines: list[int] = []
+        try_lines: list[int] = []
+        assert_lines: list[int] = []
+        hardcoded_secret_lines = self._find_secret_assignment_lines(content)
 
         for node in ast.walk(tree):
             if isinstance(node, ast.Try):
                 has_try = True
+                if getattr(node, "lineno", None):
+                    try_lines.append(node.lineno)
             elif isinstance(node, ast.ExceptHandler):
                 if node.type is None:
-                    bare_except = True
+                    if getattr(node, "lineno", None):
+                        bare_except_lines.append(node.lineno)
                 elif isinstance(node.type, ast.Name) and node.type.id == "Exception":
-                    broad_except = True
+                    if getattr(node, "lineno", None):
+                        broad_except_lines.append(node.lineno)
             elif isinstance(node, ast.Raise):
-                has_raise = True
+                if getattr(node, "lineno", None):
+                    raise_lines.append(node.lineno)
             elif isinstance(node, ast.Assert):
                 has_assert = True
+                if getattr(node, "lineno", None):
+                    assert_lines.append(node.lineno)
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 if ast.get_docstring(node):
                     has_docstrings = True
 
-        return {
-            "has_try": has_try,
-            "broad_except": broad_except,
-            "bare_except": bare_except,
-            "has_raise": has_raise,
+        typed_symbols = [
+            symbol.name
+            for symbol in symbols
+            if symbol.changed and self._python_symbol_has_type_hints(tree, symbol.name)
+        ]
+        changed_bare_except_lines = self._lines_in_scope(bare_except_lines, changed_scope)
+        changed_broad_except_lines = self._lines_in_scope(
+            broad_except_lines,
+            changed_scope,
+        )
+        changed_raise_lines = self._lines_in_scope(raise_lines, changed_scope)
+        changed_try_lines = self._lines_in_scope(try_lines, changed_scope)
+        changed_assert_lines = self._lines_in_scope(assert_lines, changed_scope)
+        changed_secret_lines = self._lines_in_scope(hardcoded_secret_lines, changed_scope)
+
+        observations = {
+            "changed_scope_line_count": len(changed_scope),
+            "try_lines": try_lines,
+            "changed_try_lines": changed_try_lines,
+            "bare_except_lines": bare_except_lines,
+            "changed_bare_except_lines": changed_bare_except_lines,
+            "broad_except_lines": broad_except_lines,
+            "changed_broad_except_lines": changed_broad_except_lines,
+            "raise_lines": raise_lines,
+            "changed_raise_lines": changed_raise_lines,
+            "assert_lines": assert_lines,
+            "changed_assert_lines": changed_assert_lines,
+            "hardcoded_secret_lines": hardcoded_secret_lines,
+            "changed_hardcoded_secret_lines": changed_secret_lines,
+            "typed_symbol_names": typed_symbols,
+            "typed_symbol_count": len(typed_symbols),
+            "docstring_count": sum(
+                1
+                for node in ast.walk(tree)
+                if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                and ast.get_docstring(node)
+            ),
+        }
+
+        signals = {
+            "has_try": bool(changed_try_lines) or (has_try and not changed_lines),
+            "broad_except": bool(changed_broad_except_lines),
+            "bare_except": bool(changed_bare_except_lines),
+            "has_raise": bool(changed_raise_lines) or (bool(raise_lines) and not changed_lines),
             "has_logging": has_logging,
             "has_docstrings": has_docstrings,
             "has_tests": has_assert or "test" in content.lower(),
-            "hardcoded_secret": hardcoded_secret,
+            "hardcoded_secret": bool(changed_secret_lines),
             "changed_scope_present": bool(changed_lines),
+            "typed_changed_symbols": len(typed_symbols) > 0,
         }
+        return signals, observations
 
     def _analyze_script_file(
         self,
@@ -204,25 +258,12 @@ class SemanticAnalyzer:
         intents: set[str] = set()
         for symbol in symbols:
             intents.update(symbol.intent)
-
-        signals = {
-            "uses_fetch": "fetch(" in content,
-            "checks_response_ok": "response.ok" in content,
-            "uses_use_effect": "useEffect(" in content,
-            "has_cleanup": "return () =>" in content or "return () => {" in content,
-            "has_loading_state": bool(
-                re.search(r"\b(isLoading|loading|setLoading)\b", content)
-            ),
-            "has_error_handling": "catch (" in content
-            or "try {" in content
-            or ".catch(" in content,
-            "uses_any": ": any" in content or "<any>" in content or " as any" in content,
-            "has_tests": ".test." in file_path
-            or ".spec." in file_path
-            or "describe(" in content
-            or "it(" in content,
-            "has_docs": bool(re.search(r"/\*\*[\s\S]+?\*/", content)),
-        }
+        signals, observations = self._build_script_semantic_signals(
+            file_path=file_path,
+            content=content,
+            changed_lines=changed_lines,
+            symbols=symbols,
+        )
         entities = sorted(
             {
                 self._classify_name(Path(file_path).stem),
@@ -249,8 +290,115 @@ class SemanticAnalyzer:
             changed=bool(changed_lines),
             confidence=0.72,
             signals=signals,
+            observations=observations,
             symbols=symbols,
         )
+
+    def _build_script_semantic_signals(
+        self,
+        file_path: str,
+        content: str,
+        changed_lines: list[int],
+        symbols: list[SymbolFact],
+    ) -> tuple[dict[str, bool], dict[str, Any]]:
+        lines = content.splitlines()
+        changed_scope = self._expand_changed_scope(changed_lines, symbols, len(lines))
+        fetch_lines = self._find_pattern_lines(lines, r"\bfetch\s*\(")
+        response_ok_lines = self._find_pattern_lines(lines, r"\bresponse\.ok\b")
+        effect_lines = self._find_pattern_lines(lines, r"\buseEffect\s*\(")
+        cleanup_lines = self._find_pattern_lines(lines, r"\breturn\s*\(\)\s*=>")
+        loading_lines = self._find_pattern_lines(
+            lines,
+            r"\b(isLoading|loading|setLoading|startTransition|isPending)\b",
+        )
+        catch_lines = self._find_pattern_lines(lines, r"\.catch\s*\(|\bcatch\s*\(")
+        try_lines = self._find_pattern_lines(lines, r"\btry\s*\{")
+        any_lines = self._find_pattern_lines(lines, r":\s*any\b|<any>|(?:\s|^)as\s+any\b")
+        test_lines = self._find_pattern_lines(lines, r"\b(describe|it|test|expect)\s*\(")
+        doc_block_lines = self._find_pattern_lines(lines, r"/\*\*")
+
+        paired_symbols: list[str] = []
+        typed_symbols: list[str] = []
+        async_symbols: list[str] = []
+        for symbol in symbols:
+            if not symbol.changed or not symbol.line:
+                continue
+            window_end = symbol.end_line or symbol.line
+            window = "\n".join(lines[symbol.line - 1 : window_end])
+            if "useEffect(" in window and "fetch(" in window:
+                paired_symbols.append(symbol.name)
+            if re.search(r":\s*[A-Za-z_][A-Za-z0-9_<>\[\]\|&,\s]*", window):
+                typed_symbols.append(symbol.name)
+            if symbol.kind.startswith("async") or "await " in window:
+                async_symbols.append(symbol.name)
+
+        observations = {
+            "changed_scope_lines": sorted(changed_scope),
+            "changed_scope_line_count": len(changed_scope),
+            "fetch_call_lines": fetch_lines,
+            "fetch_call_count_in_changed_scope": self._count_lines_in_scope(fetch_lines, changed_scope),
+            "response_ok_lines": response_ok_lines,
+            "response_ok_count_in_changed_scope": self._count_lines_in_scope(
+                response_ok_lines,
+                changed_scope,
+            ),
+            "use_effect_lines": effect_lines,
+            "use_effect_count_in_changed_scope": self._count_lines_in_scope(
+                effect_lines,
+                changed_scope,
+            ),
+            "cleanup_lines": cleanup_lines,
+            "cleanup_count_in_changed_scope": self._count_lines_in_scope(
+                cleanup_lines,
+                changed_scope,
+            ),
+            "loading_state_lines": loading_lines,
+            "loading_state_count_in_changed_scope": self._count_lines_in_scope(
+                loading_lines,
+                changed_scope,
+            ),
+            "catch_lines": catch_lines,
+            "try_lines": try_lines,
+            "error_handler_count_in_changed_scope": self._count_lines_in_scope(
+                [*catch_lines, *try_lines],
+                changed_scope,
+            ),
+            "explicit_any_lines": any_lines,
+            "explicit_any_count_in_changed_scope": self._count_lines_in_scope(
+                any_lines,
+                changed_scope,
+            ),
+            "test_marker_lines": test_lines,
+            "test_marker_count": len(test_lines),
+            "doc_block_lines": doc_block_lines,
+            "doc_block_count_in_changed_scope": self._count_lines_in_scope(
+                doc_block_lines,
+                changed_scope,
+            ),
+            "react_effect_fetch_symbol_names": sorted(set(paired_symbols)),
+            "react_effect_fetch_pairs_in_changed_scope": len(set(paired_symbols)),
+            "typed_symbol_names": sorted(set(typed_symbols)),
+            "typed_symbol_count": len(set(typed_symbols)),
+            "async_symbol_names": sorted(set(async_symbols)),
+            "async_symbol_count": len(set(async_symbols)),
+        }
+
+        signals = {
+            "uses_fetch": observations["fetch_call_count_in_changed_scope"] > 0,
+            "checks_response_ok": observations["response_ok_count_in_changed_scope"] > 0,
+            "uses_use_effect": observations["use_effect_count_in_changed_scope"] > 0,
+            "has_cleanup": observations["cleanup_count_in_changed_scope"] > 0,
+            "has_loading_state": observations["loading_state_count_in_changed_scope"] > 0,
+            "has_error_handling": observations["error_handler_count_in_changed_scope"] > 0,
+            "uses_any": observations["explicit_any_count_in_changed_scope"] > 0,
+            "has_tests": ".test." in file_path
+            or ".spec." in file_path
+            or observations["test_marker_count"] > 0,
+            "has_docs": observations["doc_block_count_in_changed_scope"] > 0,
+            "typed_changed_symbols": observations["typed_symbol_count"] > 0,
+            "react_effect_fetch_pair": observations["react_effect_fetch_pairs_in_changed_scope"] > 0,
+        }
+        return signals, observations
 
     def _extract_script_symbols(
         self,
@@ -357,6 +505,73 @@ class SemanticAnalyzer:
 
     def _extract_topics(self, commit_message: str) -> list[str]:
         return sorted(set(self._tokenize_text(commit_message)))
+
+    def _expand_changed_scope(
+        self,
+        changed_lines: list[int],
+        symbols: list[SymbolFact],
+        total_lines: int,
+        radius: int = 2,
+    ) -> set[int]:
+        scope: set[int] = set(changed_lines)
+        for line in changed_lines:
+            for candidate in range(max(1, line - radius), min(total_lines, line + radius) + 1):
+                scope.add(candidate)
+        for symbol in symbols:
+            if not symbol.changed or not symbol.line:
+                continue
+            for candidate in range(symbol.line, min(total_lines, (symbol.end_line or symbol.line)) + 1):
+                scope.add(candidate)
+        return scope
+
+    def _find_pattern_lines(self, lines: list[str], pattern: str) -> list[int]:
+        compiled = re.compile(pattern)
+        return [
+            index
+            for index, line in enumerate(lines, start=1)
+            if compiled.search(line)
+        ]
+
+    def _count_lines_in_scope(self, lines: list[int], scope: set[int]) -> int:
+        if not scope:
+            return len(lines)
+        return sum(1 for line in lines if line in scope)
+
+    def _lines_in_scope(self, lines: list[int], scope: set[int]) -> list[int]:
+        if not scope:
+            return lines
+        return [line for line in lines if line in scope]
+
+    def _expand_line_scope(
+        self,
+        lines: list[int],
+        total_lines: int,
+        radius: int = 1,
+    ) -> set[int]:
+        scope: set[int] = set()
+        for line in lines:
+            for candidate in range(max(1, line - radius), min(total_lines, line + radius) + 1):
+                scope.add(candidate)
+        return scope
+
+    def _find_secret_assignment_lines(self, content: str) -> list[int]:
+        pattern = re.compile(
+            r"(secret|token|password)\s*=\s*[\"'][^\"']+[\"']",
+            re.IGNORECASE,
+        )
+        return [
+            index
+            for index, line in enumerate(content.splitlines(), start=1)
+            if pattern.search(line)
+        ]
+
+    def _python_symbol_has_type_hints(self, tree: ast.AST, symbol_name: str) -> bool:
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == symbol_name:
+                if node.returns is not None:
+                    return True
+                return any(arg.annotation is not None for arg in node.args.args)
+        return False
 
     def _tokenize_text(self, text: str) -> list[str]:
         return [

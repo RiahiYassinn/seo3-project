@@ -333,6 +333,49 @@ export class RecommendationService implements OnModuleInit {
     };
   }
 
+  private async fetchLatestAnalysisSummary(
+    targetDeveloperId: string,
+    repositoryId: string,
+    contributorLogin: string,
+    fallbackSummary: AnalysisSummary | null | undefined,
+  ): Promise<AnalysisSummary> {
+    try {
+      const repository = await firstValueFrom(
+        this.developerService.send('github_get_repository', {
+          userId: targetDeveloperId,
+          repositoryId,
+        }),
+      );
+
+      const normalizedLogin = this.normalizeContributorLogin(contributorLogin);
+      const contributorProfiles =
+        repository?.analysis_metadata?.contributorProfiles || {};
+      const profile = contributorProfiles[normalizedLogin] || null;
+
+      const profileSummary =
+        profile?.analysisSummary ||
+        profile?.analysis_summary ||
+        repository?.analysis_summary ||
+        null;
+
+      if (profileSummary && typeof profileSummary === 'object') {
+        return profileSummary as AnalysisSummary;
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Failed to fetch latest analysis snapshot for recommendation regeneration: ${error?.message || error}`,
+      );
+    }
+
+    if (fallbackSummary && typeof fallbackSummary === 'object') {
+      return fallbackSummary;
+    }
+
+    throw new BadRequestException(
+      'No analysis summary available to regenerate this recommendation',
+    );
+  }
+
   async processAnalysisCompleted(payload: AnalysisCompletedEvent) {
     const targetDeveloperId = this.resolveTargetDeveloperId(payload);
     const contributorLogin = this.normalizeContributorLogin(payload.githubUsername);
@@ -405,9 +448,96 @@ export class RecommendationService implements OnModuleInit {
     return this.mapCase(saved);
   }
 
+  async regenerateRecommendation(recommendationId: string) {
+    const recommendation = await this.recommendationRepo.findOne({
+      where: { id: recommendationId },
+    });
+
+    if (!recommendation) {
+      throw new BadRequestException('Recommendation not found');
+    }
+
+    const latestSummary = await this.fetchLatestAnalysisSummary(
+      recommendation.targetDeveloperId,
+      recommendation.repositoryId,
+      recommendation.contributorLogin,
+      recommendation.analysisSummary as AnalysisSummary | null,
+    );
+
+    const risk = this.computeRiskProfile(latestSummary);
+    const mentors = await this.fetchMentorCandidates();
+    const mentor = await this.pickMentor(mentors);
+
+    const recommendationType = this.chooseRecommendationType(risk, !!mentor);
+    const learningPath =
+      recommendationType === 'learning_path'
+        ? this.buildLearningPath(latestSummary)
+        : null;
+    const docsReview =
+      recommendationType === 'docs_review' ? this.buildDocsReview(latestSummary) : null;
+    const shouldAssignMentor = recommendationType === 'mentorship' && !!mentor;
+
+    recommendation.recommendationType = recommendationType;
+    recommendation.status = shouldAssignMentor ? 'assigned' : 'open';
+    recommendation.priorityScore = Math.max(
+      1,
+      Math.min(100, Math.round(risk.riskScore)),
+    );
+    recommendation.qualityScore = risk.qualityScore;
+    recommendation.title = this.buildTitle(
+      recommendationType,
+      recommendation.contributorLogin,
+    );
+    recommendation.description = this.buildDescription(
+      recommendationType,
+      recommendation.priorityScore,
+    );
+    recommendation.mentorId = shouldAssignMentor ? mentor?.id || null : null;
+    recommendation.mentorSnapshot = shouldAssignMentor
+      ? {
+          id: mentor?.id,
+          name: `${mentor?.first_name || ''} ${mentor?.last_name || ''}`.trim(),
+          username: mentor?.username || null,
+          email: mentor?.email || null,
+          role: mentor?.role,
+        }
+      : null;
+    recommendation.learningPath = learningPath;
+    recommendation.docsReview = docsReview;
+    recommendation.weaknessSnapshot = {
+      topWeaknesses: this.buildTopWeaknesses(latestSummary),
+      weaknessScores: latestSummary.weakness_scores || {},
+    };
+    recommendation.decisionReasons = {
+      risk,
+      mentorAvailable: !!mentor,
+      recommendationType,
+      regeneratedAt: new Date().toISOString(),
+      generatedBy: 'admin_manual_regeneration',
+    };
+    recommendation.analysisSummary = latestSummary as Record<string, any>;
+
+    const saved = await this.recommendationRepo.save(recommendation);
+    return this.mapCase(saved);
+  }
+
   async getRecommendationsForDeveloper(developerId: string) {
     const cases = await this.recommendationRepo.find({
       where: { targetDeveloperId: developerId },
+      order: { priorityScore: 'DESC', createdAt: 'DESC' },
+    });
+
+    return cases.map((item) => this.mapCase(item));
+  }
+
+  async getRecommendationsForContributorLogin(contributorLogin: string) {
+    const normalizedLogin = this.normalizeContributorLogin(contributorLogin);
+    if (!normalizedLogin) {
+      return [];
+    }
+
+    const cases = await this.recommendationRepo.find({
+      where: { contributorLogin: normalizedLogin },
       order: { priorityScore: 'DESC', createdAt: 'DESC' },
     });
 

@@ -1,7 +1,9 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
+  NotFoundException,
   Param,
   Post,
   Req,
@@ -10,17 +12,45 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { RecommendationService } from './recommendation.service';
+import { GithubService } from '../github/github.service';
 
 @ApiTags('recommendations')
 @Controller('recommendations')
 @UseGuards(AuthGuard('jwt'))
 @ApiBearerAuth()
 export class RecommendationController {
-  constructor(private readonly recommendationService: RecommendationService) {}
+  constructor(
+    private readonly recommendationService: RecommendationService,
+    private readonly githubService: GithubService,
+  ) {}
 
   @Get('me')
-  @ApiOperation({ summary: 'Get all recommendations for current developer' })
-  getMyRecommendations(@Req() req: any) {
+  @ApiOperation({ summary: 'Get recommendations for current authenticated user' })
+  async getMyRecommendations(@Req() req: any) {
+    const normalizedRole = String(req?.user?.role || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[-\s]+/g, '_');
+
+    if (normalizedRole === 'developer') {
+      try {
+        const integration = await this.githubService.getIntegration(req.user.id);
+        const contributorLogin = String(integration?.github_username || '').trim();
+        if (!contributorLogin) {
+          return [];
+        }
+
+        return this.recommendationService.getRecommendationsForContributorLogin(
+          contributorLogin,
+        );
+      } catch (error) {
+        if (error instanceof NotFoundException) {
+          return [];
+        }
+        throw error;
+      }
+    }
+
     return this.recommendationService.getMyRecommendations(req.user.id);
   }
 
@@ -84,5 +114,23 @@ export class RecommendationController {
       recommendationId,
       body.mentor_id,
     );
+  }
+
+  @Post(':recommendationId/regenerate')
+  @ApiOperation({ summary: 'Regenerate recommendation using latest analysis data' })
+  regenerateRecommendation(
+    @Req() req: any,
+    @Param('recommendationId') recommendationId: string,
+  ) {
+    const normalizedRole = String(req?.user?.role || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[-\s]+/g, '_');
+
+    if (normalizedRole !== 'admin') {
+      throw new ForbiddenException('Only admins can regenerate recommendations');
+    }
+
+    return this.recommendationService.regenerateRecommendation(recommendationId);
   }
 }

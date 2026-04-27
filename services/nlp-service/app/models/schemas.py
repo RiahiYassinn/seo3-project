@@ -55,6 +55,7 @@ class WeaknessProfileResponse(BaseModel):
     dominant_language: str
     commit_topics: list[str] = Field(default_factory=list)
     quality_score: float
+    strengths: list[str] = Field(default_factory=list)
     summary: AnalysisSummaryResponse
     weakness_scores: dict[str, float] = Field(default_factory=dict)
     skills: list[SkillSummaryResponse] = Field(default_factory=list)

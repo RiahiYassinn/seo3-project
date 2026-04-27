@@ -25,7 +25,7 @@ export default function DashboardPage() {
     }
 
     if (normalizedRole === "developer") {
-      router.replace("/dashboard/developer/overview");
+      router.replace("/dashboard/developer");
       return;
     }
 

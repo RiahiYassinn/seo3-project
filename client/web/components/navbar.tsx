@@ -71,16 +71,6 @@ export function Navbar() {
             {user?.role === "developer" && (
               <>
                 <Link
-                  href="/dashboard"
-                  className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
-                    isActive("/dashboard")
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  Dashboard
-                </Link>
-                <Link
                   href="/dashboard/developer/github"
                   className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
                     isActive("/dashboard/developer/github")
@@ -99,16 +89,6 @@ export function Navbar() {
                   }`}
                 >
                   Recommendations
-                </Link>
-                <Link
-                  href="/dashboard/developer/profile"
-                  className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
-                    isActive("/dashboard/developer/profile")
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  Profile
                 </Link>
               </>
             )}
@@ -180,7 +160,7 @@ export function Navbar() {
                       ? "/dashboard/admin/overview"
                       : user.role === "tech_lead"
                         ? "/dashboard/tech_lead/recommendations"
-                        : "/dashboard"
+                        : "/dashboard/developer"
                   }
                   className="text-sm font-medium px-3 py-2 rounded-md text-muted-foreground hover:text-foreground transition-colors"
                 >

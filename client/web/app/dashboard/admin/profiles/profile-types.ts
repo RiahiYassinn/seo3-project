@@ -172,7 +172,7 @@ export const statusTone = (status: string | null) => {
       return "bg-red-500/10 text-red-700 border-red-500/30";
     case "pending":
     case "in_progress":
-      return "bg-amber-500/10 text-amber-700 border-amber-500/30";
+      return "bg-sky-500/10 text-sky-700 border-sky-500/30";
     default:
       return "bg-muted text-muted-foreground";
   }
@@ -188,8 +188,8 @@ export const scorePercent = (value: number) =>
 
 export const severityTone: Record<Severity, string> = {
   critical: "bg-red-500/15 text-red-700 border-red-500/30",
-  high: "bg-orange-500/15 text-orange-700 border-orange-500/30",
-  medium: "bg-amber-500/15 text-amber-700 border-amber-500/30",
+  high: "bg-cyan-500/15 text-cyan-700 border-cyan-500/30",
+  medium: "bg-sky-500/15 text-sky-700 border-sky-500/30",
   low: "bg-blue-500/15 text-blue-700 border-blue-500/30",
 };
 
@@ -206,7 +206,7 @@ export const recommendationStatusTone = (status: string | null) => {
     case "assigned":
       return "bg-blue-500/10 text-blue-700 border-blue-500/30";
     case "open":
-      return "bg-amber-500/10 text-amber-700 border-amber-500/30";
+      return "bg-sky-500/10 text-sky-700 border-sky-500/30";
     case "dismissed":
       return "bg-muted text-muted-foreground";
     default:

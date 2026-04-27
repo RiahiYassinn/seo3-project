@@ -254,7 +254,7 @@ export default function AdminGithubPage() {
       !integration ||
       !selectedRepository ||
       (selectedRepository.analysis_status !== "pending" &&
-        selectedRepository.analysis_status !== "in_progress")
+        selectedRepository.analysis_status !== "in progress")
     ) {
       return;
     }
@@ -689,7 +689,7 @@ export default function AdminGithubPage() {
                       !selectedRepoId ||
                       selectedContributors.length === 0 ||
                       selectedRepository?.analysis_status === "pending" ||
-                      selectedRepository?.analysis_status === "in_progress"
+                      selectedRepository?.analysis_status === "in progress"
                     }
                     className="gap-2 sm:min-w-[170px]"
                   >

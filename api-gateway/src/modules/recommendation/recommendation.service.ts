@@ -28,6 +28,17 @@ export class RecommendationService {
     }
   }
 
+  async getRecommendationsForContributorLogin(contributorLogin: string) {
+    try {
+      const response = await axios.get(
+        `${this.baseUrl}/recommendations/contributor/${encodeURIComponent(contributorLogin)}`,
+      );
+      return response.data;
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
   async getRepositoryRecommendations(userId: string, repositoryId: string) {
     try {
       const response = await axios.get(
@@ -70,6 +81,17 @@ export class RecommendationService {
       const response = await axios.post(
         `${this.baseUrl}/recommendations/${recommendationId}/assign`,
         { mentorId },
+      );
+      return response.data;
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  async regenerateRecommendation(recommendationId: string) {
+    try {
+      const response = await axios.post(
+        `${this.baseUrl}/recommendations/${recommendationId}/regenerate`,
       );
       return response.data;
     } catch (error) {

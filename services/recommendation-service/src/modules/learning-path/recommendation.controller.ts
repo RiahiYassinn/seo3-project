@@ -10,6 +10,15 @@ export class RecommendationController {
     return this.recommendationService.getRecommendationsForDeveloper(developerId);
   }
 
+  @Get('contributor/:contributorLogin')
+  async getContributorRecommendations(
+    @Param('contributorLogin') contributorLogin: string,
+  ) {
+    return this.recommendationService.getRecommendationsForContributorLogin(
+      contributorLogin,
+    );
+  }
+
   @Get('developer/:developerId/repository/:repositoryId')
   async getRepositoryRecommendations(
     @Param('developerId') developerId: string,
@@ -48,6 +57,13 @@ export class RecommendationController {
       recommendationId,
       body.mentorId,
     );
+  }
+
+  @Post(':recommendationId/regenerate')
+  async regenerateRecommendation(
+    @Param('recommendationId') recommendationId: string,
+  ) {
+    return this.recommendationService.regenerateRecommendation(recommendationId);
   }
 
   @Post(':recommendationId/acknowledge')

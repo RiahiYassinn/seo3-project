@@ -258,7 +258,7 @@ export default function LoginPage() {
       {/* Left Side - Logo-inspired gradient */}
       <span className="flex flex-col justify-center w-1/2 max-lg:hidden overflow-hidden bg-gradient-to-br ">
         <Ripple mainCircleSize={200} />
-        <TechOrbitDisplay iconsArray={iconsArray} text="SEO3 Platform" />
+        <TechOrbitDisplay iconsArray={iconsArray} text="Wevioo Consulting" />
       </span>
 
       {/* Right Side */}

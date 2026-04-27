@@ -13,7 +13,7 @@ import {
   Menu,
   Moon,
   Sparkles,
-  Shield,
+  Bot,
   Sun,
   Users,
   X,
@@ -49,7 +49,7 @@ const navigation = [
     href: "/dashboard/admin/recommendations",
     label: "Recommendations",
     description: "AI action plans",
-    icon: Shield,
+    icon: Bot,
   },
   {
     href: "/dashboard/admin/users",

@@ -32,6 +32,35 @@ import {
   statusTone,
 } from "./profile-types";
 
+type ContributorGlobalProfile = {
+  contributorLogin: string;
+  contributorName?: string;
+  contributorEmail?: string;
+  avatarUrl?: string | null;
+  profileUrl?: string | null;
+  analyses: ContributorProfile[];
+  repositoriesCovered: number;
+  completedAnalyses: number;
+  averageQualityScore: number | null;
+  latestAnalyzedAt: string | null;
+  topWeaknesses: Array<{ category: string; occurrences: number }>;
+};
+
+const toTimestamp = (value: string | null | undefined) => {
+  if (!value) return 0;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const formatAnalysisDate = (value: string | null) =>
+  value ? new Date(value).toLocaleString() : "Not analyzed yet";
+
+const summaryBadgeTone =
+  "border-slate-400/35 bg-slate-500/10 text-slate-700 hover:bg-slate-500/15 dark:border-slate-300/30 dark:text-slate-200";
+
+const weaknessBadgeTone =
+  "border-slate-400/35 bg-slate-500/10 text-slate-700 hover:bg-slate-500/15 dark:border-slate-300/30 dark:text-slate-200";
+
 export default function AdminProfilesPage() {
   const router = useRouter();
   const [repositories, setRepositories] = useState<RepositoryRecord[]>([]);
@@ -104,46 +133,182 @@ export default function AdminProfilesPage() {
         Object.values(repository.analysis_metadata?.contributorProfiles || {}),
       )
       .sort((left, right) => {
-        const leftTime = left.analyzedAt
-          ? new Date(left.analyzedAt).getTime()
-          : 0;
-        const rightTime = right.analyzedAt
-          ? new Date(right.analyzedAt).getTime()
-          : 0;
-        return rightTime - leftTime;
+        return toTimestamp(right.analyzedAt) - toTimestamp(left.analyzedAt);
       });
   }, [repositories]);
 
-  const filteredProfiles = useMemo(() => {
+  const contributorProfiles = useMemo<ContributorGlobalProfile[]>(() => {
+    const grouped = new Map<string, ContributorGlobalProfile>();
+
+    profiles.forEach((profile) => {
+      const normalizedLogin = String(profile.contributorLogin || "")
+        .trim()
+        .toLowerCase();
+
+      if (!normalizedLogin) {
+        return;
+      }
+
+      const existingGroup = grouped.get(normalizedLogin);
+      if (!existingGroup) {
+        grouped.set(normalizedLogin, {
+          contributorLogin: profile.contributorLogin,
+          contributorName: profile.contributorName,
+          contributorEmail: profile.contributorEmail,
+          avatarUrl: profile.avatarUrl,
+          profileUrl: profile.profileUrl,
+          analyses: [profile],
+          repositoriesCovered: 0,
+          completedAnalyses: 0,
+          averageQualityScore: null,
+          latestAnalyzedAt: null,
+          topWeaknesses: [],
+        });
+        return;
+      }
+
+      existingGroup.analyses.push(profile);
+      if (!existingGroup.contributorName && profile.contributorName) {
+        existingGroup.contributorName = profile.contributorName;
+      }
+      if (!existingGroup.contributorEmail && profile.contributorEmail) {
+        existingGroup.contributorEmail = profile.contributorEmail;
+      }
+      if (!existingGroup.avatarUrl && profile.avatarUrl) {
+        existingGroup.avatarUrl = profile.avatarUrl;
+      }
+      if (!existingGroup.profileUrl && profile.profileUrl) {
+        existingGroup.profileUrl = profile.profileUrl;
+      }
+    });
+
+    return Array.from(grouped.values())
+      .map((group) => {
+        const analyses = [...group.analyses].sort(
+          (left, right) =>
+            toTimestamp(right.analyzedAt) - toTimestamp(left.analyzedAt),
+        );
+        const repositories = new Set(
+          analyses.map(
+            (analysis) => analysis.repositoryId || analysis.repositoryName,
+          ),
+        );
+        const qualityScores = analyses
+          .map((analysis) => analysis.qualityScore)
+          .filter((score): score is number => typeof score === "number");
+        const weaknessCountMap = new Map<
+          string,
+          { category: string; count: number }
+        >();
+
+        analyses.forEach((analysis) => {
+          (analysis.topWeaknesses || []).forEach((weakness) => {
+            const category = String(weakness.category || "").trim();
+            if (!category) return;
+            const weaknessKey = category.toLowerCase();
+            const existingWeakness = weaknessCountMap.get(weaknessKey);
+            if (!existingWeakness) {
+              weaknessCountMap.set(weaknessKey, { category, count: 1 });
+              return;
+            }
+            existingWeakness.count += 1;
+          });
+        });
+
+        const topWeaknesses = Array.from(weaknessCountMap.values())
+          .sort((left, right) => right.count - left.count)
+          .slice(0, 4)
+          .map((weakness) => ({
+            category: weakness.category,
+            occurrences: weakness.count,
+          }));
+
+        return {
+          ...group,
+          analyses,
+          repositoriesCovered: repositories.size,
+          completedAnalyses: analyses.filter(
+            (analysis) => analysis.status === "completed",
+          ).length,
+          averageQualityScore: qualityScores.length
+            ? qualityScores.reduce((sum, score) => sum + score, 0) /
+              qualityScores.length
+            : null,
+          latestAnalyzedAt: analyses[0]?.analyzedAt || null,
+          topWeaknesses,
+        };
+      })
+      .sort((left, right) => {
+        const byRecentActivity =
+          toTimestamp(right.latestAnalyzedAt) -
+          toTimestamp(left.latestAnalyzedAt);
+        if (byRecentActivity !== 0) {
+          return byRecentActivity;
+        }
+        return left.contributorLogin.localeCompare(right.contributorLogin);
+      });
+  }, [profiles]);
+
+  const filteredContributorProfiles = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return profiles;
+    if (!query) return contributorProfiles;
 
-    return profiles.filter((profile) => {
-      const recommendation =
-        recommendationMap[
-          recommendationKey(
-            profile.repositoryId || "",
-            profile.contributorLogin,
-          )
-        ];
-
-      return (
-        profile.contributorLogin.toLowerCase().includes(query) ||
-        profile.repositoryName.toLowerCase().includes(query) ||
-        profile.topWeaknesses.some((weakness) =>
-          String(weakness.category || "")
-            .toLowerCase()
-            .includes(query),
-        ) ||
-        String(recommendation?.title || "")
+    return contributorProfiles.filter((contributorProfile) => {
+      if (
+        contributorProfile.contributorLogin.toLowerCase().includes(query) ||
+        String(contributorProfile.contributorName || "")
           .toLowerCase()
           .includes(query) ||
-        String(recommendation?.recommendation_type || "")
+        String(contributorProfile.contributorEmail || "")
           .toLowerCase()
           .includes(query)
-      );
+      ) {
+        return true;
+      }
+
+      if (
+        contributorProfile.topWeaknesses.some((weakness) =>
+          weakness.category.toLowerCase().includes(query),
+        )
+      ) {
+        return true;
+      }
+
+      return contributorProfile.analyses.some((analysis) => {
+        const recommendation =
+          recommendationMap[
+            recommendationKey(
+              analysis.repositoryId || "",
+              analysis.contributorLogin,
+            )
+          ];
+
+        return (
+          analysis.repositoryName.toLowerCase().includes(query) ||
+          String(analysis.skillLevel || "")
+            .toLowerCase()
+            .includes(query) ||
+          analysis.status.toLowerCase().includes(query) ||
+          (analysis.topWeaknesses || []).some((weakness) =>
+            String(weakness.category || "")
+              .toLowerCase()
+              .includes(query),
+          ) ||
+          (analysis.recommendations || []).some((recommendationItem) =>
+            `${recommendationItem.action || ""} ${recommendationItem.weakness || ""}`
+              .toLowerCase()
+              .includes(query),
+          ) ||
+          String(recommendation?.title || "")
+            .toLowerCase()
+            .includes(query) ||
+          String(recommendation?.recommendation_type || "")
+            .toLowerCase()
+            .includes(query)
+        );
+      });
     });
-  }, [profiles, recommendationMap, searchQuery]);
+  }, [contributorProfiles, recommendationMap, searchQuery]);
 
   const recommendationStats = useMemo(() => {
     const records = Object.values(recommendationMap);
@@ -182,9 +347,24 @@ export default function AdminProfilesPage() {
       <section className="mb-6 grid gap-4 md:grid-cols-4">
         <Card className="border-border/60 bg-background/80 shadow-sm">
           <CardContent className="p-5">
-            <p className="text-sm text-muted-foreground">Profiles</p>
+            <p className="text-sm text-muted-foreground">Contributors</p>
+            <p className="mt-2 text-2xl font-semibold">
+              {loading ? "--" : contributorProfiles.length}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="border-border/60 bg-background/80 shadow-sm">
+          <CardContent className="p-5">
+            <p className="text-sm text-muted-foreground">Repository analyses</p>
             <p className="mt-2 text-2xl font-semibold">
               {loading ? "--" : profiles.length}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Completed:{" "}
+              {
+                profiles.filter((profile) => profile.status === "completed")
+                  .length
+              }
             </p>
           </CardContent>
         </Card>
@@ -195,17 +375,6 @@ export default function AdminProfilesPage() {
             </p>
             <p className="mt-2 text-2xl font-semibold">
               {loading ? "--" : repositories.length}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="border-border/60 bg-background/80 shadow-sm">
-          <CardContent className="p-5">
-            <p className="text-sm text-muted-foreground">Completed profiles</p>
-            <p className="mt-2 text-2xl font-semibold">
-              {loading
-                ? "--"
-                : profiles.filter((profile) => profile.status === "completed")
-                    .length}
             </p>
           </CardContent>
         </Card>
@@ -228,10 +397,10 @@ export default function AdminProfilesPage() {
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <CardTitle className="flex items-center gap-2">
-                Generated profiles
+                Global contributor profiles
               </CardTitle>
               <p className="mt-1 text-sm text-muted-foreground">
-                Search by contributor, repository, or weakness area.
+                Each contributor groups all repository analyses in one place.
               </p>
             </div>
             <div className="relative w-full max-w-sm">
@@ -239,222 +408,265 @@ export default function AdminProfilesPage() {
               <Input
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Search profiles"
+                placeholder="Search contributors or repositories"
                 className="pl-10"
               />
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          {filteredProfiles.length > 0 ? (
-            <div className="grid gap-4 lg:grid-cols-2">
-              {filteredProfiles.map((profile) => {
-                const generatedRecommendation =
-                  recommendationMap[
-                    recommendationKey(
-                      profile.repositoryId || "",
-                      profile.contributorLogin,
-                    )
-                  ];
-
-                return (
-                  <div
-                    key={profile.profileId}
-                    className="group cursor-pointer rounded-[1.75rem] border border-border/60 bg-muted/15 p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-primary/30 hover:bg-background"
-                    onClick={() =>
-                      router.push(
-                        `/dashboard/admin/profiles/${encodeURIComponent(profile.profileId)}`,
-                      )
-                    }
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        router.push(
-                          `/dashboard/admin/profiles/${encodeURIComponent(profile.profileId)}`,
-                        );
-                      }
-                    }}
-                  >
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <Avatar className="h-12 w-12 border border-border/60">
-                          <AvatarImage
-                            src={getContributorAvatarUrl(
-                              profile.contributorLogin,
-                              profile.avatarUrl,
-                            )}
-                            alt={`${profile.contributorLogin} GitHub avatar`}
-                          />
-                          <AvatarFallback className="bg-primary/10 text-primary">
-                            {getInitials(profile.contributorLogin)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0">
-                          <p className="text-lg font-semibold">
-                            @{profile.contributorLogin}
-                          </p>
+          {filteredContributorProfiles.length > 0 ? (
+            <div className="space-y-5">
+              {filteredContributorProfiles.map((contributorProfile) => (
+                <div
+                  key={contributorProfile.contributorLogin}
+                  className="rounded-[1.75rem] border border-border/60 bg-muted/15 p-5 shadow-sm"
+                >
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <Avatar className="h-12 w-12 border border-border/60">
+                        <AvatarImage
+                          src={getContributorAvatarUrl(
+                            contributorProfile.contributorLogin,
+                            contributorProfile.avatarUrl,
+                          )}
+                          alt={`${contributorProfile.contributorLogin} GitHub avatar`}
+                        />
+                        <AvatarFallback className="bg-primary/10 text-primary">
+                          {getInitials(contributorProfile.contributorLogin)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0">
+                        <p className="text-lg font-semibold">
+                          @{contributorProfile.contributorLogin}
+                        </p>
+                        {contributorProfile.contributorName ? (
                           <p className="text-sm text-muted-foreground">
-                            {profile.repositoryName}
+                            {contributorProfile.contributorName}
                           </p>
-                        </div>
-                      </div>
-                      <Badge
-                        variant="outline"
-                        className={statusTone(profile.status)}
-                      >
-                        {profile.status}
-                      </Badge>
-                    </div>
-
-                    <div className="mt-3 flex items-center justify-between text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                      <span>Open detailed analysis</span>
-                      <ArrowUpRight className="h-4 w-4 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-                    </div>
-
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-3xl border border-border/60 bg-background p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                          Quality score
-                        </p>
-                        <p className="mt-2 text-2xl font-semibold">
-                          {profile.qualityScore !== null
-                            ? `${profile.qualityScore}/10`
-                            : "--"}
-                        </p>
-                      </div>
-                      <div className="rounded-3xl border border-border/60 bg-background p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                          Skill level
-                        </p>
-                        <p className="mt-2 text-2xl font-semibold">
-                          {profile.skillLevel || "--"}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 rounded-3xl border border-border/60 bg-background p-4">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="inline-flex items-center gap-2 text-sm font-semibold">
-                          <Bot className="h-4 w-4" />
-                          Recommendation engine
-                        </p>
-                        {generatedRecommendation ? (
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge
-                              variant="outline"
-                              className={
-                                recommendationTypeTone[
-                                  generatedRecommendation.recommendation_type
-                                ]
-                              }
-                            >
-                              {formatLabel(
-                                generatedRecommendation.recommendation_type,
-                              )}
-                            </Badge>
-                            <Badge
-                              variant="outline"
-                              className={recommendationStatusTone(
-                                generatedRecommendation.status,
-                              )}
-                            >
-                              {formatLabel(generatedRecommendation.status)}
-                            </Badge>
-                          </div>
+                        ) : null}
+                        {contributorProfile.contributorEmail ? (
+                          <p className="text-xs text-muted-foreground">
+                            {contributorProfile.contributorEmail}
+                          </p>
                         ) : null}
                       </div>
-                      <p className="mt-2 text-sm text-muted-foreground">
-                        {generatedRecommendation
-                          ? generatedRecommendation.title
-                          : "Pending generation. Recommendation appears automatically after analysis completion."}
-                      </p>
                     </div>
 
-                    <div className="mt-4">
-                      <p className="text-sm font-semibold">Top weaknesses</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline" className={summaryBadgeTone}>
+                        {contributorProfile.analyses.length} analyses
+                      </Badge>
+                      <Badge variant="outline" className={summaryBadgeTone}>
+                        {contributorProfile.repositoriesCovered} repositories
+                      </Badge>
+                      <Badge variant="outline" className={summaryBadgeTone}>
+                        {contributorProfile.completedAnalyses}/
+                        {contributorProfile.analyses.length} completed
+                      </Badge>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-3xl border border-border/60 bg-background p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                        Last analyzed
+                      </p>
+                      <p className="mt-2 text-sm font-medium">
+                        {formatAnalysisDate(
+                          contributorProfile.latestAnalyzedAt,
+                        )}
+                      </p>
+                    </div>
+                    <div className="rounded-3xl border border-border/60 bg-background p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                        Avg quality score
+                      </p>
+                      <p className="mt-2 text-2xl font-semibold">
+                        {contributorProfile.averageQualityScore !== null
+                          ? `${contributorProfile.averageQualityScore.toFixed(1)}/10`
+                          : "--"}
+                      </p>
+                    </div>
+                    <div className="rounded-3xl border border-border/60 bg-background p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                        Top weakness themes
+                      </p>
                       <div className="mt-2 flex flex-wrap gap-2">
-                        {profile.topWeaknesses?.length ? (
-                          profile.topWeaknesses.slice(0, 3).map((weakness) => (
+                        {contributorProfile.topWeaknesses.length ? (
+                          contributorProfile.topWeaknesses.map((weakness) => (
                             <Badge
-                              key={`${profile.profileId}-${weakness.category}`}
-                              variant="secondary"
+                              key={`${contributorProfile.contributorLogin}-${weakness.category}`}
+                              variant="outline"
                             >
-                              {weakness.category || "Unknown weakness"}
+                              {weakness.category} ({weakness.occurrences})
                             </Badge>
                           ))
                         ) : (
                           <span className="text-sm text-muted-foreground">
-                            Weakness insights will appear when analysis
-                            completes.
+                            No recurring weaknesses yet.
                           </span>
                         )}
                       </div>
                     </div>
-
-                    <div className="mt-4">
-                      <p className="text-sm font-semibold">Recommendations</p>
-                      <div className="mt-2 space-y-2 text-sm text-muted-foreground">
-                        {profile.recommendations?.length ? (
-                          profile.recommendations
-                            .slice(0, 2)
-                            .map((recommendation, index) => (
-                              <div
-                                key={`${profile.profileId}-${index}`}
-                                className="rounded-2xl border border-border/60 bg-background px-3 py-2"
-                              >
-                                {recommendation.action ||
-                                  recommendation.weakness}
-                              </div>
-                            ))
-                        ) : (
-                          <p>No recommendations yet.</p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="mt-4 rounded-3xl border border-border/60 bg-background p-4">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground">Findings</span>
-                        <span className="font-medium">
-                          {profile.findingsSummary?.finding_count ?? 0}
-                        </span>
-                      </div>
-                      <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                        <span>
-                          Critical:{" "}
-                          {profile.findingsSummary?.critical_count ?? 0}
-                        </span>
-                        <span>
-                          High: {profile.findingsSummary?.high_count ?? 0}
-                        </span>
-                        <span>Skills: {profile.skills?.length ?? 0}</span>
-                      </div>
-                    </div>
-
-                    {profile.profileUrl && (
-                      <a
-                        href={profile.profileUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(event) => event.stopPropagation()}
-                        className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
-                      >
-                        <FolderGit2 className="h-4 w-4" />
-                        View GitHub profile
-                      </a>
-                    )}
                   </div>
-                );
-              })}
+
+                  <div className="mt-5 grid gap-4 xl:grid-cols-2">
+                    {contributorProfile.analyses.map((analysis) => {
+                      const generatedRecommendation =
+                        recommendationMap[
+                          recommendationKey(
+                            analysis.repositoryId || "",
+                            analysis.contributorLogin,
+                          )
+                        ];
+
+                      return (
+                        <div
+                          key={analysis.profileId}
+                          className="group rounded-3xl border border-border/60 bg-background p-4"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="inline-flex items-center gap-2 text-base font-semibold">
+                                <FolderGit2 className="h-4 w-4" />
+                                {analysis.repositoryName}
+                              </p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Profile ID: {analysis.profileId}
+                              </p>
+                            </div>
+                            <Badge
+                              variant="outline"
+                              className={statusTone(analysis.status)}
+                            >
+                              {analysis.status}
+                            </Badge>
+                          </div>
+
+                          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                            <div className="rounded-2xl border border-border/60 bg-muted/15 p-3">
+                              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                Quality
+                              </p>
+                              <p className="mt-2 text-xl font-semibold">
+                                {analysis.qualityScore !== null
+                                  ? `${analysis.qualityScore}/10`
+                                  : "--"}
+                              </p>
+                            </div>
+                            <div className="rounded-2xl border border-border/60 bg-muted/15 p-3">
+                              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                Skill level
+                              </p>
+                              <p className="mt-2 text-xl font-semibold">
+                                {analysis.skillLevel || "--"}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="mt-4 rounded-2xl border border-border/60 bg-muted/15 p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="inline-flex items-center gap-2 text-sm font-semibold">
+                                <Bot className="h-4 w-4" />
+                                Recommendation
+                              </p>
+                              {generatedRecommendation ? (
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge
+                                    variant="outline"
+                                    className={
+                                      recommendationTypeTone[
+                                        generatedRecommendation
+                                          .recommendation_type
+                                      ]
+                                    }
+                                  >
+                                    {formatLabel(
+                                      generatedRecommendation.recommendation_type,
+                                    )}
+                                  </Badge>
+                                  <Badge
+                                    variant="outline"
+                                    className={recommendationStatusTone(
+                                      generatedRecommendation.status,
+                                    )}
+                                  >
+                                    {formatLabel(
+                                      generatedRecommendation.status,
+                                    )}
+                                  </Badge>
+                                </div>
+                              ) : null}
+                            </div>
+                            <p className="mt-2 text-sm text-muted-foreground">
+                              {generatedRecommendation
+                                ? generatedRecommendation.title
+                                : "Pending generation. Recommendation appears automatically after analysis completion."}
+                            </p>
+                          </div>
+
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            {analysis.topWeaknesses?.length ? (
+                              analysis.topWeaknesses
+                                .slice(0, 3)
+                                .map((weakness) => (
+                                  <Badge
+                                    key={`${analysis.profileId}-${weakness.category}`}
+                                    variant="outline"
+                                    className={weaknessBadgeTone}
+                                  >
+                                    {weakness.category || "Unknown weakness"}
+                                  </Badge>
+                                ))
+                            ) : (
+                              <span className="text-sm text-muted-foreground">
+                                Weakness insights will appear when analysis
+                                completes.
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="mt-4 flex flex-wrap items-center gap-3">
+                            <Button
+                              size="sm"
+                              className="gap-2"
+                              onClick={() =>
+                                router.push(
+                                  `/dashboard/admin/profiles/${encodeURIComponent(analysis.profileId)}`,
+                                )
+                              }
+                            >
+                              Open detailed analysis
+                              <ArrowUpRight className="h-4 w-4" />
+                            </Button>
+
+                            {analysis.profileUrl ? (
+                              <a
+                                href={analysis.profileUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
+                              >
+                                View GitHub profile
+                              </a>
+                            ) : null}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           ) : (
             <div className="rounded-[1.75rem] border border-dashed border-border/60 p-10 text-center">
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary">
                 <Sparkles className="h-6 w-6" />
               </div>
-              <p className="mt-4 text-lg font-semibold">No profiles found</p>
+              <p className="mt-4 text-lg font-semibold">
+                No contributor profiles found
+              </p>
               <p className="mt-2 text-sm text-muted-foreground">
                 Run contributor analysis from the GitHub Analysis page to
                 generate profiles here.

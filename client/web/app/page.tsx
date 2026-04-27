@@ -30,7 +30,7 @@ export default function Home() {
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
             <h1 className="text-5xl md:text-7xl font-bold mb-6 bg-gradient-to-br from-primary via-secondary to-accent bg-clip-text text-transparent">
-              SEO3
+              Wevioo
             </h1>
 
             <p className="text-2xl md:text-3xl font-semibold text-foreground mb-4">
@@ -185,7 +185,7 @@ export default function Home() {
                 step: "01",
                 title: "Connect Your Repositories",
                 description:
-                  "Link your GitHub, GitLab, or other version control systems to SEO3",
+                  "Link your GitHub, GitLab, or other version control systems",
               },
               {
                 step: "02",
@@ -237,7 +237,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <p className="text-sm text-muted-foreground">
-              SEO3 - Technical Skill Intelligence System
+              Technical Skill Intelligence System
             </p>
             <p className="text-sm text-muted-foreground">Powered by Wevioo</p>
           </div>
