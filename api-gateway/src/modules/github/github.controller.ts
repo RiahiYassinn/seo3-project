@@ -54,6 +54,21 @@ export class GithubController {
     return this.githubService.getRepository(req.user.id, repositoryId);
   }
 
+  @Get('repositories/:repositoryId/contributors')
+  @ApiOperation({ summary: 'List contributors for a synced repository' })
+  getRepositoryContributors(@Req() req: any, @Param('repositoryId') repositoryId: string) {
+    return this.githubService.getRepositoryContributors(req.user.id, repositoryId);
+  }
+
+  @Get('repositories/:repositoryId/contributor-profiles')
+  @ApiOperation({ summary: 'Get generated contributor skill profiles for a synced repository' })
+  getRepositoryContributorProfiles(
+    @Req() req: any,
+    @Param('repositoryId') repositoryId: string,
+  ) {
+    return this.githubService.getRepositoryContributorProfiles(req.user.id, repositoryId);
+  }
+
   @Post('sync')
   @ApiOperation({ summary: 'Sync repositories from GitHub' })
   syncRepositories(@Req() req: any) {
@@ -65,5 +80,20 @@ export class GithubController {
   @ApiOperation({ summary: 'Trigger repository analysis' })
   triggerAnalysis(@Req() req: any, @Body() body: any) {
     return this.githubService.triggerAnalysis(req.user.id, body.repository_id);
+  }
+
+  @Post('repositories/:repositoryId/analyze-contributors')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({ summary: 'Trigger contributor analysis for a repository' })
+  triggerContributorAnalysis(
+    @Req() req: any,
+    @Param('repositoryId') repositoryId: string,
+    @Body() body: { contributor_logins?: string[] },
+  ) {
+    return this.githubService.triggerContributorAnalysis(
+      req.user.id,
+      repositoryId,
+      body.contributor_logins || [],
+    );
   }
 }

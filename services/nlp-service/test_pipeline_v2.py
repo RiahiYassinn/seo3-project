@@ -37,6 +37,7 @@ def assert_base_shape(result: dict[str, Any]) -> None:
         "dominant_language",
         "commit_topics",
         "quality_score",
+        "strengths",
         "summary",
         "weakness_scores",
         "skills",
@@ -47,6 +48,7 @@ def assert_base_shape(result: dict[str, Any]) -> None:
     missing = required_keys - set(result.keys())
     assert not missing, f"Missing response keys: {sorted(missing)}"
     assert isinstance(result["findings"], list), "`findings` must be a list"
+    assert isinstance(result["strengths"], list), "`strengths` must be a list"
     assert "top_weaknesses" not in result, "Legacy field `top_weaknesses` should not exist"
 
 
@@ -145,6 +147,7 @@ def find_user(client, user_id: str):
     assert cleaner_case["quality_score"] > python_case["quality_score"], (
         "Cleaner Python sample should outscore weaker Python sample"
     )
+    assert len(cleaner_case["strengths"]) > 0, "Cleaner sample should surface at least one strength"
     print_case_summary("cleaner_case", cleaner_case)
 
     print("\nAll pipeline-v2 checks passed.")

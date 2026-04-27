@@ -37,88 +37,113 @@ class RuleEngine:
     ) -> list[RuleFinding]:
         findings: list[RuleFinding] = []
         changed_line = fact.changed_lines[0] if fact.changed_lines else None
+        observations = fact.observations or {}
 
         if fact.language in {"typescript", "javascript"}:
-            if fact.signals.get("uses_use_effect") and fact.signals.get("uses_fetch"):
+            react_fetch_pair_count = int(
+                observations.get("react_effect_fetch_pairs_in_changed_scope", 0) or 0
+            )
+            fetch_count = int(observations.get("fetch_call_count_in_changed_scope", 0) or 0)
+            response_ok_count = int(
+                observations.get("response_ok_count_in_changed_scope", 0) or 0
+            )
+            error_handler_count = int(
+                observations.get("error_handler_count_in_changed_scope", 0) or 0
+            )
+            loading_state_count = int(
+                observations.get("loading_state_count_in_changed_scope", 0) or 0
+            )
+            cleanup_count = int(observations.get("cleanup_count_in_changed_scope", 0) or 0)
+            any_count = int(observations.get("explicit_any_count_in_changed_scope", 0) or 0)
+
+            if react_fetch_pair_count > 0:
                 if not fact.signals.get("has_cleanup"):
                     findings.append(
                         self._finding(
                             fact=fact,
-                            line=changed_line,
+                            line=self._observation_line(observations, "use_effect_lines", changed_line),
                             category="performance",
                             skill="frontend_react_hooks",
                             title="Missing cleanup in React side effect",
-                            message="This changed code looks like a React effect performing async work without a cleanup path.",
+                            message="The changed React effect appears to perform async work without a cleanup path in the same changed symbol.",
                             severity="medium",
                             rule_id="react.effect.cleanup",
                             confidence=0.88,
-                            evidence=["useEffect + fetch detected without cleanup return"],
+                            evidence=[
+                                f"{react_fetch_pair_count} changed symbol(s) combine useEffect and fetch without cleanup",
+                            ],
                             tags=["react", "useEffect", "async"],
                         )
                     )
-                if not fact.signals.get("has_error_handling"):
+                if error_handler_count == 0:
                     findings.append(
                         self._finding(
                             fact=fact,
-                            line=changed_line,
+                            line=self._observation_line(observations, "fetch_call_lines", changed_line),
                             category="error_handling",
                             skill="async_error_handling",
                             title="API side effect is missing error handling",
-                            message="The semantic analyzer identified an API call inside UI side-effect code without catch/try handling.",
+                            message="The changed React side-effect path performs async work without visible try/catch handling in the changed scope.",
                             severity="high",
                             rule_id="react.effect.api.error-handling",
                             confidence=0.9,
-                            evidence=["useEffect + fetch detected without catch/try"],
+                            evidence=[
+                                f"{react_fetch_pair_count} changed symbol(s) combine useEffect and fetch with no changed-scope error handler",
+                            ],
                             tags=["react", "api_call"],
                         )
                     )
-                if not fact.signals.get("has_loading_state"):
+                if loading_state_count == 0:
                     findings.append(
                         self._finding(
                             fact=fact,
-                            line=changed_line,
+                            line=self._observation_line(observations, "fetch_call_lines", changed_line),
                             category="code_quality",
                             skill="frontend_async_state_management",
                             title="Async UI flow lacks loading-state handling",
-                            message="The code appears to initiate user-visible async work without a loading state signal.",
+                            message="The changed UI async path appears to initiate network work without a visible loading-state signal nearby.",
                             severity="medium",
                             rule_id="frontend.async.loading-state",
                             confidence=0.7,
-                            evidence=["fetch detected without loading-state signal"],
+                            evidence=[
+                                f"{fetch_count} fetch call(s) in changed scope without loading-state markers",
+                            ],
                             tags=["ux", "async"],
                         )
                     )
 
-            if fact.signals.get("uses_fetch") and not fact.signals.get("checks_response_ok"):
+            if fetch_count > 0 and response_ok_count < fetch_count:
                 findings.append(
                     self._finding(
                         fact=fact,
-                        line=changed_line,
+                        line=self._observation_line(observations, "fetch_call_lines", changed_line),
                         category="error_handling",
                         skill="async_error_handling",
                         title="HTTP response is consumed without status validation",
-                        message="The changed path performs a fetch call but does not validate `response.ok` before reading the payload.",
+                        message="The changed path performs fetch calls but does not appear to validate `response.ok` for each changed-scope request.",
                         severity="high",
                         rule_id="http.response.ok-check",
                         confidence=0.95,
-                        evidence=["fetch detected without response.ok"],
+                        evidence=[
+                            f"{fetch_count} fetch call(s) vs {response_ok_count} response.ok check(s) in changed scope",
+                        ],
                         tags=["http", "fetch"],
                     )
                 )
 
-            if fact.signals.get("uses_any"):
+            if any_count > 0 and fact.file_role != "test":
                 findings.append(
                     self._finding(
                         fact=fact,
-                        line=changed_line,
+                        line=self._observation_line(observations, "explicit_any_lines", changed_line),
                         category="code_quality",
                         skill="type_safety",
                         title="Weak typing reduces deterministic guarantees",
-                        message="The semantic layer found use of `any`, which weakens type safety and usually hides shape validation gaps.",
+                        message="The changed code uses `any`, which weakens type guarantees and usually hides validation or shape assumptions.",
                         severity="medium",
                         rule_id="typescript.any",
                         confidence=0.86,
-                        evidence=["TypeScript any usage detected"],
+                        evidence=[f"{any_count} explicit any usage(s) detected in changed scope"],
                         tags=["typescript"],
                     )
                 )
@@ -145,51 +170,58 @@ class RuleEngine:
                 )
 
         if fact.language == "python":
-            if fact.signals.get("bare_except"):
+            bare_except_lines = observations.get("changed_bare_except_lines", []) or []
+            broad_except_lines = observations.get("changed_broad_except_lines", []) or []
+            secret_lines = observations.get("changed_hardcoded_secret_lines", []) or []
+            if bare_except_lines:
                 findings.append(
                     self._finding(
                         fact=fact,
-                        line=changed_line,
+                        line=bare_except_lines[0],
                         category="error_handling",
                         skill="python_error_handling",
                         title="Bare except hides the real failure type",
-                        message="The semantic parser found a bare `except` block in changed Python code.",
+                        message="The semantic parser found a bare `except` block directly in changed Python code.",
                         severity="critical",
                         rule_id="python.except.bare",
                         confidence=0.98,
-                        evidence=["bare except detected"],
+                        evidence=[f"Bare except in changed scope at line {bare_except_lines[0]}"],
                         tags=["python", "exceptions"],
                     )
                 )
-            if fact.signals.get("broad_except") and not fact.signals.get("has_raise"):
+            if broad_except_lines and not fact.signals.get("has_raise"):
                 findings.append(
                     self._finding(
                         fact=fact,
-                        line=changed_line,
+                        line=broad_except_lines[0],
                         category="error_handling",
                         skill="python_error_handling",
                         title="Broad exception handling without re-raise",
-                        message="The changed Python path catches `Exception` broadly and does not appear to re-raise.",
+                        message="The changed Python path catches `Exception` broadly and does not appear to re-raise in the changed scope.",
                         severity="high",
                         rule_id="python.except.exception-swallow",
                         confidence=0.9,
-                        evidence=["broad except detected without raise"],
+                        evidence=[
+                            f"Broad except in changed scope at line {broad_except_lines[0]} without matching changed-scope raise",
+                        ],
                         tags=["python", "exceptions"],
                     )
                 )
-            if fact.signals.get("hardcoded_secret"):
+            if secret_lines:
                 findings.append(
                     self._finding(
                         fact=fact,
-                        line=changed_line,
+                        line=secret_lines[0],
                         category="security",
                         skill="security_secrets_auth",
                         title="Hardcoded secret-like value in source code",
-                        message="The changed Python code appears to embed a secret/token/password literal directly in source.",
+                        message="The changed Python code appears to embed a secret, token, or password literal directly in source.",
                         severity="critical",
                         rule_id="python.security.hardcoded-secret",
                         confidence=0.96,
-                        evidence=["secret/password/token assignment detected"],
+                        evidence=[
+                            f"Secret-like assignment detected in changed scope at line {secret_lines[0]}",
+                        ],
                         tags=["security", "secret-management"],
                     )
                 )
@@ -226,7 +258,15 @@ class RuleEngine:
                     )
                 )
 
-        if fact.changed and not fact.signals.get("has_tests") and fact.file_role != "test":
+        production_boundary = fact.file_role in {"controller", "service", "repository", "hook", "module"}
+        changed_scope_size = int(observations.get("changed_scope_line_count", 0) or len(fact.changed_lines))
+        if (
+            fact.changed
+            and production_boundary
+            and changed_scope_size >= 3
+            and not fact.signals.get("has_tests")
+            and fact.file_role != "test"
+        ):
             findings.append(
                 self._finding(
                     fact=fact,
@@ -234,11 +274,11 @@ class RuleEngine:
                     category="testing",
                     skill="testing_reliability",
                     title="Changed production code has no nearby testing signal",
-                    message="Changed code path looks like production logic, but no test-oriented signal was found in the file.",
+                    message="Changed production logic has no nearby test-oriented signal, which lowers confidence in safe iteration.",
                     severity="medium",
                     rule_id="testing.missing-signal",
                     confidence=0.66,
-                    evidence=["changed non-test file without test signal"],
+                    evidence=[f"{changed_scope_size} changed-scope line(s) with no test markers detected"],
                     tags=["testing"],
                 )
             )
@@ -248,6 +288,7 @@ class RuleEngine:
             and fact.file_role in {"controller", "service", "repository"}
             and not fact.signals.get("has_docs", False)
             and not fact.signals.get("has_docstrings", False)
+            and len([symbol for symbol in fact.symbols if symbol.changed]) > 0
         ):
             findings.append(
                 self._finding(
@@ -267,6 +308,19 @@ class RuleEngine:
 
         findings.extend(self._promote_static_findings(fact, static_findings))
         return findings
+
+    def _observation_line(
+        self,
+        observations: dict[str, object],
+        key: str,
+        fallback: int | None,
+    ) -> int | None:
+        raw_value = observations.get(key, [])
+        if isinstance(raw_value, list) and raw_value:
+            first = raw_value[0]
+            if isinstance(first, int):
+                return first
+        return fallback
 
     def _promote_static_findings(
         self,

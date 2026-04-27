@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useAuthStore } from "@/lib/store";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -42,6 +44,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -57,6 +60,8 @@ interface User {
   first_name: string;
   last_name: string;
   role: string;
+  avatar?: string | null;
+  is_mentor?: boolean;
   is_email_verified: boolean;
   created_at: string;
   last_login?: string;
@@ -90,6 +95,9 @@ const generateSecurePassword = () => {
 };
 
 export const UsersManagementTable = () => {
+  const { user: currentUser, updateUser } = useAuthStore();
+  const apiGatewayBaseUrl =
+    process.env.NEXT_PUBLIC_API_GATEWAY || "http://localhost:3006";
   const [users, setUsers] = useState<User[]>([]);
   const [stats, setStats] = useState<UserStats>({
     total: 0,
@@ -111,7 +119,11 @@ export const UsersManagementTable = () => {
     first_name: "",
     last_name: "",
     role: "",
+    is_mentor: false,
   });
+  const [avatarPreview, setAvatarPreview] = useState<string>("");
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [removeAvatar, setRemoveAvatar] = useState(false);
   const [addForm, setAddForm] = useState({
     first_name: "",
     last_name: "",
@@ -129,6 +141,17 @@ export const UsersManagementTable = () => {
   }>({});
   const [addSuccess, setAddSuccess] = useState(false);
   const [addSuccessEmail, setAddSuccessEmail] = useState("");
+
+  const resolveAvatarUrl = (avatar?: string | null) => {
+    if (!avatar) return undefined;
+    if (/^https?:\/\//i.test(avatar) || avatar.startsWith("blob:")) {
+      return avatar;
+    }
+    if (avatar.startsWith("/")) {
+      return `${apiGatewayBaseUrl}${avatar}`;
+    }
+    return avatar;
+  };
 
   useEffect(() => {
     fetchUsers();
@@ -260,15 +283,84 @@ export const UsersManagementTable = () => {
     if (!selectedUser) return;
 
     try {
-      await api.patch(`/admin/users/${selectedUser.id}`, editForm);
+      const patchResponse = await api.patch(`/admin/users/${selectedUser.id}`, {
+        ...editForm,
+        ...(removeAvatar && !avatarFile ? { avatar: "" } : {}),
+      });
+
+      let nextAvatar =
+        patchResponse?.data?.avatar ?? selectedUser.avatar ?? null;
+
+      if (avatarFile) {
+        const formData = new FormData();
+        formData.append("avatar", avatarFile);
+        const uploadResponse = await api.post(
+          `/admin/users/${selectedUser.id}/avatar`,
+          formData,
+          {
+            headers: {
+              "Content-Type": "multipart/form-data",
+            },
+          },
+        );
+        nextAvatar =
+          uploadResponse?.data?.avatar ??
+          uploadResponse?.data?.avatar_url ??
+          nextAvatar;
+      }
+
+      if (removeAvatar && !avatarFile) {
+        nextAvatar = null;
+      }
+
+      if (currentUser?.id === selectedUser.id) {
+        updateUser({
+          email: editForm.email,
+          username: editForm.username,
+          first_name: editForm.first_name,
+          last_name: editForm.last_name,
+          role: editForm.role,
+          avatar: nextAvatar,
+        });
+      }
+
       toast.success(`User ${editForm.username} updated successfully`);
       setEditDialogOpen(false);
       setSelectedUser(null);
+      setAvatarPreview("");
+      setAvatarFile(null);
+      setRemoveAvatar(false);
       fetchUsers();
     } catch (error: any) {
       console.error("Failed to update user:", error);
       toast.error(error.response?.data?.message || "Failed to update user");
     }
+  };
+
+  const handleAvatarFileChange = (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0] || null;
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select an image file.");
+      event.target.value = "";
+      return;
+    }
+
+    const maxSize = 5 * 1024 * 1024;
+    if (file.size > maxSize) {
+      toast.error("Image must be smaller than 5MB.");
+      event.target.value = "";
+      return;
+    }
+
+    setAvatarFile(file);
+    setRemoveAvatar(false);
+    setAvatarPreview(URL.createObjectURL(file));
   };
 
   const openEditDialog = (user: User) => {
@@ -279,7 +371,11 @@ export const UsersManagementTable = () => {
       first_name: user.first_name,
       last_name: user.last_name,
       role: user.role,
+      is_mentor: Boolean(user.is_mentor),
     });
+    setAvatarPreview(resolveAvatarUrl(user.avatar) || "");
+    setAvatarFile(null);
+    setRemoveAvatar(false);
     setEditDialogOpen(true);
   };
 
@@ -452,6 +548,9 @@ export const UsersManagementTable = () => {
                   Role
                 </th>
                 <th className="text-left py-3 px-4 font-semibold text-sm text-gray-700 dark:text-gray-300">
+                  Mentor
+                </th>
+                <th className="text-left py-3 px-4 font-semibold text-sm text-gray-700 dark:text-gray-300">
                   Status
                 </th>
                 <th className="text-left py-3 px-4 font-semibold text-sm text-gray-700 dark:text-gray-300">
@@ -470,10 +569,16 @@ export const UsersManagementTable = () => {
                 >
                   <td className="py-4 px-4">
                     <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-semibold">
-                        {user.first_name?.[0]}
-                        {user.last_name?.[0]}
-                      </div>
+                      <Avatar className="h-10 w-10">
+                        <AvatarImage
+                          src={resolveAvatarUrl(user.avatar)}
+                          alt={`${user.first_name} ${user.last_name}`}
+                        />
+                        <AvatarFallback className="bg-gradient-to-br from-blue-500 to-blue-600 text-white font-semibold">
+                          {user.first_name?.[0]}
+                          {user.last_name?.[0]}
+                        </AvatarFallback>
+                      </Avatar>
                       <div>
                         <p className="font-medium text-gray-900 dark:text-gray-100">
                           {user.first_name} {user.last_name}
@@ -497,6 +602,17 @@ export const UsersManagementTable = () => {
                       className={`px-3 py-1 rounded-full text-xs font-medium ${getRoleBadgeColor(user.role)}`}
                     >
                       {user.role.replace("_", " ").toUpperCase()}
+                    </span>
+                  </td>
+                  <td className="py-4 px-4">
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-medium ${
+                        user.is_mentor
+                          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-400"
+                          : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                      }`}
+                    >
+                      {user.is_mentor ? "Yes" : "No"}
                     </span>
                   </td>
                   <td className="py-4 px-4">
@@ -529,7 +645,7 @@ export const UsersManagementTable = () => {
                             <MoreVertical className="h-4 w-4 text-gray-600 dark:text-gray-400" />
                           </button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
+                        <DropdownMenuContent align="end" className="w-56">
                           <DropdownMenuLabel>Actions</DropdownMenuLabel>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
@@ -640,12 +756,54 @@ export const UsersManagementTable = () => {
                 />
               </div>
             </div>
+            <div className="grid gap-3">
+              <Label htmlFor="avatar">Avatar Image</Label>
+              <div className="flex items-center gap-3">
+                <Avatar className="h-12 w-12">
+                  <AvatarImage
+                    src={removeAvatar ? undefined : avatarPreview || undefined}
+                    alt={`${editForm.first_name} ${editForm.last_name}`}
+                  />
+                  <AvatarFallback className="bg-gradient-to-br from-blue-500 to-blue-600 text-white font-semibold">
+                    {editForm.first_name?.[0] || selectedUser?.first_name?.[0]}
+                    {editForm.last_name?.[0] || selectedUser?.last_name?.[0]}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex flex-1 items-center gap-2">
+                  <Input
+                    id="avatar"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleAvatarFileChange}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setAvatarFile(null);
+                      setAvatarPreview("");
+                      setRemoveAvatar(true);
+                    }}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Choose an image from your computer (max 5MB). Click Remove to
+                clear current avatar.
+              </p>
+            </div>
             <div className="grid gap-2">
               <Label htmlFor="role">Role</Label>
               <Select
                 value={editForm.role}
                 onValueChange={(value) =>
-                  setEditForm({ ...editForm, role: value })
+                  setEditForm((prev) => ({
+                    ...prev,
+                    role: value,
+                    is_mentor: value === "tech_lead" ? prev.is_mentor : false,
+                  }))
                 }
               >
                 <SelectTrigger>
@@ -657,6 +815,32 @@ export const UsersManagementTable = () => {
                   <SelectItem value="developer">Developer</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="grid gap-2 rounded-lg border border-border p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <Label htmlFor="is_mentor" className="text-sm font-medium">
+                    Mentor Eligible
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Only tech leads with this enabled can be assigned mentorship
+                    recommendations.
+                  </p>
+                </div>
+                <Switch
+                  id="is_mentor"
+                  checked={editForm.is_mentor}
+                  disabled={editForm.role !== "tech_lead"}
+                  onCheckedChange={(checked) =>
+                    setEditForm((prev) => ({ ...prev, is_mentor: checked }))
+                  }
+                />
+              </div>
+              {editForm.role !== "tech_lead" ? (
+                <p className="text-xs text-muted-foreground">
+                  Set role to Tech Lead to enable mentor assignment.
+                </p>
+              ) : null}
             </div>
           </div>
           <DialogFooter>

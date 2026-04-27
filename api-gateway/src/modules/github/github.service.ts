@@ -97,4 +97,48 @@ export class GithubService {
       this.handleError(error);
     }
   }
+
+  async getRepositoryContributors(userId: string, repositoryId: string) {
+    try {
+      return await firstValueFrom(
+        this.developerService.send('github_get_repository_contributors', {
+          userId,
+          repositoryId,
+        }),
+      );
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  async getRepositoryContributorProfiles(userId: string, repositoryId: string) {
+    try {
+      return await firstValueFrom(
+        this.developerService.send('github_get_repository_contributor_profiles', {
+          userId,
+          repositoryId,
+        }),
+      );
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  async triggerContributorAnalysis(
+    userId: string,
+    repositoryId: string,
+    contributorLogins: string[],
+  ) {
+    try {
+      return await firstValueFrom(
+        this.developerService.send('github_trigger_contributor_analysis', {
+          userId,
+          repositoryId,
+          contributorLogins,
+        }),
+      );
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
 }

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 from typing import Literal
 
 
@@ -60,6 +61,7 @@ class SemanticFact:
     changed: bool = False
     confidence: float = 0.5
     signals: dict[str, bool] = field(default_factory=dict)
+    observations: dict[str, Any] = field(default_factory=dict)
     symbols: list[SymbolFact] = field(default_factory=list)
 
 

@@ -9,7 +9,7 @@ async function bootstrap() {
     transport: Transport.KAFKA,
     options: {
       client: {
-        clientId: 'recommendation-service',
+        clientId: '-service',
         brokers: (process.env.KAFKA_BROKERS || 'localhost:29092').split(','),
       },
       consumer: {

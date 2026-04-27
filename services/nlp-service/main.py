@@ -51,6 +51,7 @@ def emit_progress(
     repository_id: str,
     developer_id: str,
     integration_id: str | None,
+    github_username: str | None,
     progress: int,
     stage: str,
 ):
@@ -72,6 +73,7 @@ def emit_progress(
                 "repositoryId": repository_id,
                 "developerId": developer_id,
                 "integrationId": integration_id,
+                "githubUsername": github_username,
                 "progress": progress,
                 "stage": stage,
             }
@@ -85,6 +87,7 @@ async def process_analysis_job(message: dict) -> None:
     repository_id = message["repositoryId"]
     integration_id = message.get("integrationId")
     developer_id = message["developer_id"]
+    github_username = message.get("githubUsername")
     current_progress = 68
     current_stage = "Preparing analysis runtime"
     logger.info(
@@ -98,6 +101,7 @@ async def process_analysis_job(message: dict) -> None:
         repository_id,
         developer_id,
         integration_id,
+        github_username,
         current_progress,
         current_stage,
     )
@@ -111,6 +115,7 @@ async def process_analysis_job(message: dict) -> None:
                 repository_id,
                 developer_id,
                 integration_id,
+                github_username,
                 progress,
                 stage,
             )
@@ -119,6 +124,7 @@ async def process_analysis_job(message: dict) -> None:
         repository_id,
         developer_id,
         integration_id,
+        github_username,
         70,
         "Running code weakness analysis",
     )
@@ -131,6 +137,7 @@ async def process_analysis_job(message: dict) -> None:
                 repository_id,
                 developer_id,
                 integration_id,
+                github_username,
                 current_progress,
                 f"{current_stage} (still running)",
             )
@@ -156,6 +163,7 @@ async def process_analysis_job(message: dict) -> None:
         repository_id,
         developer_id,
         integration_id,
+        github_username,
         96,
         "Publishing analysis insights",
     )
@@ -179,6 +187,7 @@ async def process_analysis_job(message: dict) -> None:
                 "repoName": message.get("repoName"),
                 "repoUrl": message.get("repoUrl"),
                 "githubUsername": message.get("githubUsername"),
+                "requestedByUserId": message.get("requestedByUserId"),
                 "analyzedAt": message.get("analyzedAt"),
                 "summary": profile,
                 "metadata": metadata,
@@ -230,6 +239,7 @@ def _reassemble_snapshot_chunk(message: dict) -> dict | None:
         repository_id,
         state.get("developer_id"),
         state.get("integration_id"),
+        message.get("githubUsername"),
         66,
         f"Receiving repository snapshot in NLP ({received_count}/{state['chunk_count']})",
     )

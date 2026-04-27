@@ -357,6 +357,8 @@ export class DeveloperController {
       first_name?: string;
       last_name?: string;
       role?: string;
+      avatar?: string;
+      is_mentor?: boolean;
     },
   ) {
     const updateData: any = {};
@@ -365,8 +367,30 @@ export class DeveloperController {
     if (data.first_name) updateData.firstName = data.first_name;
     if (data.last_name) updateData.lastName = data.last_name;
     if (data.role) updateData.role = data.role;
+    if (typeof data.is_mentor === 'boolean') {
+      updateData.isMentor = data.is_mentor;
+    }
+    if (typeof data.avatar === 'string') {
+      updateData.avatar = data.avatar.trim() || null;
+    }
 
     const updated = await this.developerService.update(data.userId, updateData);
+    return this.developerService.toUserDto(updated);
+  }
+
+  @MessagePattern('update_my_mentor_availability')
+  async handleUpdateMyMentorAvailability(
+    @Payload()
+    data: {
+      userId: string;
+      is_mentor: boolean;
+    },
+  ) {
+    const updated = await this.developerService.updateMentorAvailability(
+      data.userId,
+      !!data.is_mentor,
+    );
+
     return this.developerService.toUserDto(updated);
   }
 
@@ -398,6 +422,22 @@ export class DeveloperController {
       developers: developersCount,
       active_today,
     };
+  }
+
+  @MessagePattern('developer_get_available_mentors')
+  async handleGetAvailableMentors() {
+    const mentors = await this.developerService.findAvailableMentors();
+    return mentors.map((mentor) => ({
+      id: mentor.id,
+      email: mentor.email,
+      username: mentor.username,
+      first_name: mentor.firstName,
+      last_name: mentor.lastName,
+      role: mentor.role,
+      is_mentor: mentor.isMentor,
+      is_active: mentor.isActive,
+      last_login_at: mentor.lastLoginAt,
+    }));
   }
 
   @MessagePattern('check_refresh_token_revoked')

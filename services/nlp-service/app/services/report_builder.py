@@ -88,12 +88,18 @@ class ReportBuilder:
         findings_payload = [self._serialize_finding(finding) for finding in rule_findings]
         skills = self._build_skill_summary(rule_findings)
         quality_score = self._quality_score(rule_findings)
+        strengths = self._build_strengths(semantic_report)
+        skill_profile_inputs = self._build_skill_profile_inputs(
+            semantic_report,
+            rule_findings,
+        )
 
         return {
             "version": "2.0.0",
             "dominant_language": semantic_report.dominant_language,
             "commit_topics": semantic_report.commit_topics,
             "quality_score": quality_score,
+            "strengths": strengths,
             "summary": {
                 "finding_count": len(rule_findings),
                 "critical_count": sum(1 for item in rule_findings if item.severity == "critical"),
@@ -111,6 +117,7 @@ class ReportBuilder:
                 "rule_finding_count": len(rule_findings),
                 "files_analyzed": len(semantic_report.facts),
                 "changed_file_count": sum(1 for fact in semantic_report.facts if fact.changed),
+                "skill_profile_inputs": skill_profile_inputs,
             },
         }
 
@@ -174,6 +181,93 @@ class ReportBuilder:
                 seen.add(key)
                 resources.append({"skill": finding.skill, **resource})
         return resources
+
+    def _build_strengths(self, semantic_report: SemanticReport) -> list[str]:
+        strengths: list[str] = []
+        for fact in semantic_report.facts:
+            observations = fact.observations or {}
+            if fact.signals.get("checks_response_ok"):
+                strengths.append("Validates HTTP responses before consuming payloads")
+            if fact.signals.get("has_error_handling"):
+                strengths.append("Uses explicit error handling in changed code paths")
+            if fact.signals.get("has_cleanup"):
+                strengths.append("Adds cleanup paths for React side effects")
+            if fact.signals.get("typed_changed_symbols") or observations.get("typed_symbol_count", 0):
+                strengths.append("Keeps changed function boundaries explicitly typed")
+            if fact.signals.get("has_docstrings") or fact.signals.get("has_docs"):
+                strengths.append("Documents intent around changed service boundaries")
+            if fact.signals.get("has_tests"):
+                strengths.append("Includes executable test signals near the changed logic")
+            if fact.signals.get("has_raise"):
+                strengths.append("Preserves failure visibility with explicit raises")
+
+        deduped: list[str] = []
+        for strength in strengths:
+            if strength not in deduped:
+                deduped.append(strength)
+        return deduped[:6]
+
+    def _build_skill_profile_inputs(
+        self,
+        semantic_report: SemanticReport,
+        rule_findings: list[RuleFinding],
+    ) -> dict:
+        positive_signal_counts: dict[str, int] = defaultdict(int)
+        frameworks: set[str] = set()
+        roles_touched: set[str] = set()
+        changed_symbols: set[str] = set()
+        languages: set[str] = set()
+        findings_by_skill: dict[str, int] = defaultdict(int)
+
+        for finding in rule_findings:
+            findings_by_skill[finding.skill] += 1
+
+        for fact in semantic_report.facts:
+            languages.add(fact.language)
+            frameworks.update(fact.frameworks)
+            roles_touched.add(fact.file_role)
+            changed_symbols.update(symbol.name for symbol in fact.symbols if symbol.changed)
+            observations = fact.observations or {}
+
+            if fact.signals.get("checks_response_ok"):
+                positive_signal_counts["http_response_validation"] += int(
+                    observations.get("response_ok_count_in_changed_scope", 1) or 1
+                )
+            if fact.signals.get("has_error_handling"):
+                positive_signal_counts["explicit_error_handling"] += int(
+                    observations.get("error_handler_count_in_changed_scope", 1) or 1
+                )
+            if fact.signals.get("has_cleanup"):
+                positive_signal_counts["react_cleanup"] += int(
+                    observations.get("cleanup_count_in_changed_scope", 1) or 1
+                )
+            if fact.signals.get("typed_changed_symbols"):
+                positive_signal_counts["typed_boundaries"] += int(
+                    observations.get("typed_symbol_count", 1) or 1
+                )
+            if fact.signals.get("has_tests"):
+                positive_signal_counts["test_signals"] += int(
+                    observations.get("test_marker_count", 1) or 1
+                )
+            if fact.signals.get("has_docstrings") or fact.signals.get("has_docs"):
+                positive_signal_counts["documentation_signals"] += int(
+                    observations.get("docstring_count", 1)
+                    or observations.get("doc_block_count_in_changed_scope", 1)
+                    or 1
+                )
+            if fact.signals.get("has_raise"):
+                positive_signal_counts["explicit_raise_paths"] += int(
+                    len(observations.get("changed_raise_lines", []) or []) or 1
+                )
+
+        return {
+            "languages": sorted(language for language in languages if language),
+            "frameworks": sorted(framework for framework in frameworks if framework),
+            "roles_touched": sorted(role for role in roles_touched if role),
+            "changed_symbols": sorted(symbol for symbol in changed_symbols if symbol),
+            "positive_signal_counts": dict(sorted(positive_signal_counts.items())),
+            "negative_finding_counts": dict(sorted(findings_by_skill.items())),
+        }
 
     def _serialize_finding(self, finding: RuleFinding) -> dict:
         return {

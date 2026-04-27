@@ -13,13 +13,28 @@ export default function DashboardPage() {
       router.replace("/login");
       return;
     }
-    if (user.role === "admin") {
-      router.replace("/dashboard/admin");
-    } else if (user.role === "tech_lead") {
-      router.replace("/dashboard/tech_lead");
-    } else {
-      router.replace("/dashboard/developer");
+
+    const normalizedRole = String(user.role || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[-\s]+/g, "_");
+
+    if (normalizedRole === "admin") {
+      router.replace("/dashboard/admin/overview");
+      return;
     }
+
+    if (normalizedRole === "developer") {
+      router.replace("/dashboard/developer");
+      return;
+    }
+
+    if (normalizedRole === "tech_lead") {
+      router.replace("/dashboard/tech_lead/recommendations");
+      return;
+    }
+
+    router.replace("/login");
   }, [user, hasHydrated, router]);
 
   return (

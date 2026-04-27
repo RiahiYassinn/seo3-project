@@ -9,5 +9,6 @@ export class AnalysisRequestedEvent {
     public readonly repoUrl: string,
     public readonly githubUsername: string,
     public readonly githubToken: string,
+    public readonly requestedByUserId?: string,
   ) {}
 }

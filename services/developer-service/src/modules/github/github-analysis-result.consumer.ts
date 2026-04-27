@@ -4,6 +4,9 @@ import { GithubService } from './github.service';
 
 interface AnalysisCompletionPayload {
   repositoryId: string;
+  developerId?: string;
+  githubUsername?: string;
+  repoName?: string;
   summary?: Record<string, any>;
   metadata?: Record<string, any>;
   progress?: number;
@@ -21,26 +24,14 @@ export class GithubAnalysisResultConsumer {
     if (!message?.repositoryId) {
       return;
     }
-
-    const summary = (message.summary || null) as Record<string, any> | null;
-    const metadata = (message.metadata || null) as Record<string, any> | null;
-    const detectedSkills = Array.isArray(summary?.skills)
-      ? (summary?.skills as Record<string, any>[])
-      : null;
-    const mergedMetadata = {
-      ...(metadata || {}),
-      ...(summary?.analysis_metadata
-        ? { nlpAnalysisMetadata: summary.analysis_metadata }
-        : {}),
-    };
-
-    await this.githubService.updateRepositoryAnalysis(message.repositoryId, {
-      status: 'completed',
-      progress: 100,
-      stage: 'Weakness analysis completed',
-      summary,
-      detectedSkills,
-      metadata: mergedMetadata,
+    await this.githubService.handleContributorCompleted({
+      repositoryId: message.repositoryId,
+      developerId: message.developerId || '',
+      repoName: message.repoName,
+      githubUsername: message.githubUsername,
+      summary: message.summary,
+      metadata: message.metadata,
+      analyzedAt: (message as any).analyzedAt,
     });
   }
 
@@ -51,11 +42,12 @@ export class GithubAnalysisResultConsumer {
       return;
     }
 
-    await this.githubService.updateRepositoryAnalysis(message.repositoryId, {
-      status: 'failed',
+    await this.githubService.handleContributorFailed({
+      repositoryId: message.repositoryId,
+      githubUsername: message.githubUsername,
+      reason: message.reason,
       progress: message.progress ?? 100,
       stage: message.stage || 'Analysis failed',
-      failureReason: message.reason || 'Unknown analysis failure',
     });
   }
 
@@ -66,8 +58,9 @@ export class GithubAnalysisResultConsumer {
       return;
     }
 
-    await this.githubService.updateRepositoryAnalysis(message.repositoryId, {
-      status: 'in_progress',
+    await this.githubService.handleContributorProgress({
+      repositoryId: message.repositoryId,
+      githubUsername: message.githubUsername,
       progress: message.progress ?? 0,
       stage: message.stage || 'Analysis in progress',
     });

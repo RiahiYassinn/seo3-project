@@ -52,4 +52,36 @@ export class GithubController {
   async triggerAnalysis(@Payload() data: { userId: string; repositoryId: string }) {
     return this.githubService.triggerAnalysis(data.userId, data.repositoryId);
   }
+
+  @MessagePattern('github_get_repository_contributors')
+  async getRepositoryContributors(
+    @Payload() data: { userId: string; repositoryId: string },
+  ) {
+    return this.githubService.getRepositoryContributors(
+      data.userId,
+      data.repositoryId,
+    );
+  }
+
+  @MessagePattern('github_get_repository_contributor_profiles')
+  async getRepositoryContributorProfiles(
+    @Payload() data: { userId: string; repositoryId: string },
+  ) {
+    return this.githubService.getRepositoryContributorProfiles(
+      data.userId,
+      data.repositoryId,
+    );
+  }
+
+  @MessagePattern('github_trigger_contributor_analysis')
+  async triggerContributorAnalysis(
+    @Payload()
+    data: { userId: string; repositoryId: string; contributorLogins: string[] },
+  ) {
+    return this.githubService.triggerContributorAnalysis(
+      data.userId,
+      data.repositoryId,
+      data.contributorLogins,
+    );
+  }
 }
