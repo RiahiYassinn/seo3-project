@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 import { AdminShell } from "@/components/admin/admin-shell";
+import { AdminWorkflowBridge } from "@/components/admin/admin-workflow-bridge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -321,6 +322,24 @@ export default function AdminProfilesPage() {
     };
   }, [recommendationMap]);
 
+  const workflowStepStats = useMemo(
+    () => ({
+      analysis: {
+        value: `${repositories.length}`,
+        helper: "repositories feeding this workflow",
+      },
+      profiles: {
+        value: `${contributorProfiles.length}`,
+        helper: "contributors grouped into reviewable profiles",
+      },
+      recommendations: {
+        value: `${recommendationStats.total}`,
+        helper: "recommendations linked to analyzed contributors",
+      },
+    }),
+    [contributorProfiles.length, recommendationStats.total, repositories.length],
+  );
+
   return (
     <AdminShell
       title="Developer Skill Profiles"
@@ -343,6 +362,12 @@ export default function AdminProfilesPage() {
           </AlertDescription>
         </Alert>
       )}
+
+      <AdminWorkflowBridge
+        currentStep="profiles"
+        contextMessage="Profiles are the evidence-review stage of the admin workflow. Analysis creates the profile data upstream, and recommendations downstream turn the weaknesses you confirm here into concrete interventions."
+        stepStats={workflowStepStats}
+      />
 
       <section className="mb-6 grid gap-4 md:grid-cols-4">
         <Card className="border-border/60 bg-background/80 shadow-sm">

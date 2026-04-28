@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 import { AdminShell } from "@/components/admin/admin-shell";
+import { AdminWorkflowBridge } from "@/components/admin/admin-workflow-bridge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -99,6 +100,8 @@ export default function AdminRecommendationsPage() {
     return Object.fromEntries(entries) as Record<string, string>;
   }, [repositories]);
 
+  const profileCount = useMemo(() => Object.keys(profileIdMap).length, [profileIdMap]);
+
   const stats = useMemo(() => {
     return {
       total: recommendations.length,
@@ -110,6 +113,24 @@ export default function AdminRecommendationsPage() {
         .length,
     };
   }, [recommendations]);
+
+  const workflowStepStats = useMemo(
+    () => ({
+      analysis: {
+        value: `${repositories.length}`,
+        helper: "repositories available in the workflow",
+      },
+      profiles: {
+        value: `${profileCount}`,
+        helper: "analyzed contributor profiles available as evidence",
+      },
+      recommendations: {
+        value: `${stats.total}`,
+        helper: `${stats.open} still open for action`,
+      },
+    }),
+    [profileCount, repositories.length, stats.open, stats.total],
+  );
 
   const acknowledgeRecommendation = async (recommendationId: string) => {
     setAckLoadingId(recommendationId);
@@ -252,6 +273,12 @@ export default function AdminRecommendationsPage() {
         </Alert>
       ) : null}
 
+      <AdminWorkflowBridge
+        currentStep="recommendations"
+        contextMessage="Recommendations are the action layer of the admin workflow. The analysis and profile pages upstream provide the evidence, and this page turns that context into concrete follow-up decisions."
+        stepStats={workflowStepStats}
+      />
+
       <section className="mb-6 grid gap-4 md:grid-cols-4">
         <Card className="border-border/60 bg-background/80 shadow-sm">
           <CardContent className="p-5">
@@ -366,8 +393,7 @@ export default function AdminRecommendationsPage() {
             <div className="flex items-end">
               <Button
                 type="button"
-                variant="outline"
-                className="w-full"
+                className="gap-2"
                 onClick={() => {
                   setStatusFilter("all");
                   setTypeFilter("all");

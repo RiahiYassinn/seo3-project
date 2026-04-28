@@ -36,19 +36,19 @@ const navigation = [
   {
     href: "/dashboard/admin/github",
     label: "GitHub Analysis",
-    description: "Repos and contributor runs",
+    description: "Step 1: run contributor analysis",
     icon: Github,
   },
   {
     href: "/dashboard/admin/profiles",
     label: "Developer Profiles",
-    description: "Generated coaching profiles",
+    description: "Step 2: review generated profiles",
     icon: Sparkles,
   },
   {
     href: "/dashboard/admin/recommendations",
     label: "Recommendations",
-    description: "AI action plans",
+    description: "Step 3: decide next actions",
     icon: Bot,
   },
   {
