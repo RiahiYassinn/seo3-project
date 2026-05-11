@@ -5,58 +5,21 @@ import {
   Logger,
   OnModuleInit,
 } from '@nestjs/common';
-import { ClientProxy } from '@nestjs/microservices';
+import { ClientKafka, ClientProxy } from '@nestjs/microservices';
 import { InjectRepository } from '@nestjs/typeorm';
 import { firstValueFrom } from 'rxjs';
-import { In, IsNull, Not, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import {
   RecommendationCase,
   RecommendationType,
 } from './entities/recommendation-case.entity';
-
-interface AnalysisSummary {
-  quality_score?: number;
-  weakness_scores?: Record<string, number>;
-  summary?: {
-    finding_count?: number;
-    critical_count?: number;
-    high_count?: number;
-    medium_count?: number;
-    low_count?: number;
-  };
-  skills?: Array<{
-    skill: string;
-    issue_count: number;
-    highest_severity: 'low' | 'medium' | 'high' | 'critical';
-    average_confidence: number;
-    example_titles: string[];
-  }>;
-  findings?: Array<{
-    file_path: string;
-    line: number | null;
-    skill: string;
-    title: string;
-    message: string;
-    severity: 'low' | 'medium' | 'high' | 'critical';
-    confidence: number;
-  }>;
-  learning_resources?: Array<{
-    skill: string;
-    title: string;
-    type: string;
-    url: string;
-  }>;
-}
-
-interface AnalysisCompletedEvent {
-  repositoryId: string;
-  repoName?: string;
-  developerId?: string;
-  requestedByUserId?: string;
-  githubUsername?: string;
-  analyzedAt?: string;
-  summary?: AnalysisSummary;
-}
+import {
+  AnalysisCompletedEvent,
+  AnalysisSummary,
+  RecommendationGenerationResult,
+  RecommendationHistorySnapshot,
+} from './recommendation-rag.types';
+import { RagLearningPathService } from './rag-learning-path.service';
 
 interface MentorCandidate {
   id: string;
@@ -79,324 +42,29 @@ export class RecommendationService implements OnModuleInit {
     private readonly recommendationRepo: Repository<RecommendationCase>,
     @Inject('DEVELOPER_SERVICE')
     private readonly developerService: ClientProxy,
+    @Inject('RECOMMENDATION_EVENTS_CLIENT')
+    private readonly eventClient: ClientKafka,
+    private readonly ragLearningPathService: RagLearningPathService,
   ) {}
 
   async onModuleInit() {
     await this.developerService.connect();
-  }
-
-  private isUuid(value: string | undefined | null) {
-    if (!value) {
-      return false;
-    }
-
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      value,
-    );
-  }
-
-  private normalizeContributorLogin(login: string | undefined | null) {
-    return String(login || '').trim().toLowerCase();
-  }
-
-  private resolveTargetDeveloperId(payload: AnalysisCompletedEvent): string | null {
-    if (this.isUuid(payload.requestedByUserId)) {
-      return payload.requestedByUserId as string;
-    }
-
-    if (this.isUuid(payload.developerId)) {
-      return payload.developerId as string;
-    }
-
-    return null;
-  }
-
-  private computeRiskProfile(summary: AnalysisSummary | undefined) {
-    const qualityScore =
-      typeof summary?.quality_score === 'number' ? summary.quality_score : 0;
-    const findingCount = summary?.summary?.finding_count || 0;
-    const criticalCount = summary?.summary?.critical_count || 0;
-    const highCount = summary?.summary?.high_count || 0;
-    const weaknessCount = Object.keys(summary?.weakness_scores || {}).length;
-
-    const criticalRatio = findingCount > 0 ? criticalCount / findingCount : 0;
-    const highRatio = findingCount > 0 ? highCount / findingCount : 0;
-
-    const risk =
-      0.45 * (1 - Math.max(0, Math.min(10, qualityScore)) / 10) +
-      0.35 * criticalRatio +
-      0.2 * highRatio;
-
-    return {
-      qualityScore,
-      findingCount,
-      criticalCount,
-      highCount,
-      weaknessCount,
-      riskScore: Number((risk * 100).toFixed(2)),
-    };
-  }
-
-  private async fetchMentorCandidates(): Promise<MentorCandidate[]> {
-    try {
-      const response = await firstValueFrom(
-        this.developerService.send('developer_get_available_mentors', {}),
-      );
-
-      if (!Array.isArray(response)) {
-        return [];
-      }
-
-      return response.filter(
-        (mentor) =>
-          mentor?.is_active &&
-          mentor?.role === 'tech_lead' &&
-          mentor?.is_mentor === true,
-      );
-    } catch (error) {
-      this.logger.warn('Could not fetch mentor candidates from developer-service');
-      return [];
-    }
-  }
-
-  private async getMentorLoadMap() {
-    const rows = await this.recommendationRepo
-      .createQueryBuilder('recommendation')
-      .select('recommendation.mentor_id', 'mentorId')
-      .addSelect('COUNT(*)::int', 'activeCount')
-      .where('recommendation.recommendation_type = :type', {
-        type: 'mentorship',
-      })
-      .andWhere('recommendation.status IN (:...statuses)', {
-        statuses: ['open', 'assigned'],
-      })
-      .andWhere('recommendation.mentor_id IS NOT NULL')
-      .groupBy('recommendation.mentor_id')
-      .getRawMany<{ mentorId: string; activeCount: string }>();
-
-    const loadMap = new Map<string, number>();
-    for (const row of rows) {
-      loadMap.set(row.mentorId, Number(row.activeCount || 0));
-    }
-
-    return loadMap;
-  }
-
-  private async pickMentor(candidates: MentorCandidate[]) {
-    if (candidates.length === 0) {
-      return null;
-    }
-
-    const loadMap = await this.getMentorLoadMap();
-
-    const sortedCandidates = [...candidates].sort((left, right) => {
-      const leftLoad = loadMap.get(left.id) || 0;
-      const rightLoad = loadMap.get(right.id) || 0;
-      if (leftLoad !== rightLoad) {
-        return leftLoad - rightLoad;
-      }
-
-      const leftLastLogin = left.last_login_at
-        ? new Date(left.last_login_at).getTime()
-        : 0;
-      const rightLastLogin = right.last_login_at
-        ? new Date(right.last_login_at).getTime()
-        : 0;
-
-      return rightLastLogin - leftLastLogin;
-    });
-
-    return sortedCandidates[0];
-  }
-
-  private buildTopWeaknesses(summary: AnalysisSummary | undefined) {
-    return Object.entries(summary?.weakness_scores || {})
-      .map(([skill, score]) => ({ skill, score }))
-      .sort((left, right) => right.score - left.score)
-      .slice(0, 3);
-  }
-
-  private buildLearningPath(summary: AnalysisSummary | undefined) {
-    const topWeaknesses = this.buildTopWeaknesses(summary);
-    const resources = Array.isArray(summary?.learning_resources)
-      ? summary?.learning_resources
-      : [];
-
-    const steps = topWeaknesses.map((weakness, index) => {
-      const relatedResources = resources
-        .filter((resource) => resource.skill === weakness.skill)
-        .slice(0, 2);
-
-      return {
-        order: index + 1,
-        skill: weakness.skill,
-        goal: `Reduce ${weakness.skill.replace(/_/g, ' ')} issues by 30%`,
-        resources: relatedResources,
-      };
-    });
-
-    return {
-      durationWeeks: Math.max(2, steps.length * 2),
-      steps,
-    };
-  }
-
-  private buildDocsReview(summary: AnalysisSummary | undefined) {
-    const findings = Array.isArray(summary?.findings) ? summary.findings : [];
-    const priorities = { critical: 4, high: 3, medium: 2, low: 1 };
-
-    const checklist = findings
-      .sort(
-        (left, right) =>
-          priorities[right.severity] - priorities[left.severity] ||
-          right.confidence - left.confidence,
-      )
-      .slice(0, 5)
-      .map((finding) => ({
-        title: finding.title,
-        skill: finding.skill,
-        file: finding.file_path,
-        note: finding.message,
-      }));
-
-    return {
-      checklist,
-      resources: (summary?.learning_resources || []).slice(0, 4),
-    };
-  }
-
-  private chooseRecommendationType(
-    risk: ReturnType<typeof this.computeRiskProfile>,
-    mentorAvailable: boolean,
-  ): RecommendationType {
-    const mentorshipNeeded =
-      risk.qualityScore < 4.5 ||
-      risk.criticalCount >= 2 ||
-      (risk.riskScore >= 70 && risk.weaknessCount >= 3);
-
-    if (mentorshipNeeded && mentorAvailable) {
-      return 'mentorship';
-    }
-
-    if (risk.qualityScore > 7.5 && risk.criticalCount === 0 && risk.highCount <= 1) {
-      return 'docs_review';
-    }
-
-    return 'learning_path';
-  }
-
-  private buildTitle(type: RecommendationType, contributorLogin: string) {
-    if (type === 'mentorship') {
-      return `Mentorship recommended for @${contributorLogin}`;
-    }
-
-    if (type === 'learning_path') {
-      return `Learning path recommended for @${contributorLogin}`;
-    }
-
-    return `Docs-focused review recommended for @${contributorLogin}`;
-  }
-
-  private buildDescription(type: RecommendationType, riskScore: number) {
-    if (type === 'mentorship') {
-      return `High risk score (${riskScore}) indicates that guided mentorship will provide the fastest quality improvement.`;
-    }
-
-    if (type === 'learning_path') {
-      return `A focused learning path is recommended based on weakness areas and current analysis findings.`;
-    }
-
-    return `A lightweight documentation and best-practice review should address the current issues effectively.`;
-  }
-
-  private mapCase(record: RecommendationCase) {
-    return {
-      id: record.id,
-      target_developer_id: record.targetDeveloperId,
-      repository_id: record.repositoryId,
-      contributor_login: record.contributorLogin,
-      recommendation_type: record.recommendationType,
-      status: record.status,
-      priority_score: record.priorityScore,
-      quality_score: record.qualityScore,
-      title: record.title,
-      description: record.description,
-      mentor_id: record.mentorId,
-      mentor_snapshot: record.mentorSnapshot,
-      learning_path: record.learningPath,
-      docs_review: record.docsReview,
-      weakness_snapshot: record.weaknessSnapshot,
-      decision_reasons: record.decisionReasons,
-      analysis_summary: record.analysisSummary,
-      created_at: record.createdAt,
-      updated_at: record.updatedAt,
-    };
-  }
-
-  private async fetchLatestAnalysisSummary(
-    targetDeveloperId: string,
-    repositoryId: string,
-    contributorLogin: string,
-    fallbackSummary: AnalysisSummary | null | undefined,
-  ): Promise<AnalysisSummary> {
-    try {
-      const repository = await firstValueFrom(
-        this.developerService.send('github_get_repository', {
-          userId: targetDeveloperId,
-          repositoryId,
-        }),
-      );
-
-      const normalizedLogin = this.normalizeContributorLogin(contributorLogin);
-      const contributorProfiles =
-        repository?.analysis_metadata?.contributorProfiles || {};
-      const profile = contributorProfiles[normalizedLogin] || null;
-
-      const profileSummary =
-        profile?.analysisSummary ||
-        profile?.analysis_summary ||
-        repository?.analysis_summary ||
-        null;
-
-      if (profileSummary && typeof profileSummary === 'object') {
-        return profileSummary as AnalysisSummary;
-      }
-    } catch (error) {
-      this.logger.warn(
-        `Failed to fetch latest analysis snapshot for recommendation regeneration: ${error?.message || error}`,
-      );
-    }
-
-    if (fallbackSummary && typeof fallbackSummary === 'object') {
-      return fallbackSummary;
-    }
-
-    throw new BadRequestException(
-      'No analysis summary available to regenerate this recommendation',
-    );
+    await this.eventClient.connect();
   }
 
   async processAnalysisCompleted(payload: AnalysisCompletedEvent) {
     const targetDeveloperId = this.resolveTargetDeveloperId(payload);
-    const contributorLogin = this.normalizeContributorLogin(payload.githubUsername);
-
-    if (!targetDeveloperId || !payload.repositoryId || !contributorLogin) {
+    if (!targetDeveloperId || !payload.repositoryId) {
       return null;
     }
 
-    const summary = payload.summary || {};
-    const risk = this.computeRiskProfile(summary);
-    const mentors = await this.fetchMentorCandidates();
-    const mentor = await this.pickMentor(mentors);
-
-    const recommendationType = this.chooseRecommendationType(risk, !!mentor);
-    const learningPath =
-      recommendationType === 'learning_path' ? this.buildLearningPath(summary) : null;
-    const docsReview =
-      recommendationType === 'docs_review' ? this.buildDocsReview(summary) : null;
-
-    const shouldAssignMentor = recommendationType === 'mentorship' && !!mentor;
-
+    const summary = (payload.summary || {}) as AnalysisSummary;
+    const contributorLogin = this.resolveContributorLogin(payload, targetDeveloperId);
+    const history = await this.getRecommendationHistory(
+      targetDeveloperId,
+      contributorLogin,
+      payload.repositoryId,
+    );
     const existing = await this.recommendationRepo.findOne({
       where: {
         targetDeveloperId,
@@ -407,44 +75,109 @@ export class RecommendationService implements OnModuleInit {
       order: { updatedAt: 'DESC' },
     });
 
-    const recommendation = existing || this.recommendationRepo.create();
-    recommendation.targetDeveloperId = targetDeveloperId;
-    recommendation.repositoryId = payload.repositoryId;
-    recommendation.contributorLogin = contributorLogin;
-    recommendation.recommendationType = recommendationType;
-    recommendation.status = shouldAssignMentor ? 'assigned' : 'open';
-    recommendation.priorityScore = Math.max(1, Math.min(100, Math.round(risk.riskScore)));
-    recommendation.qualityScore = risk.qualityScore;
-    recommendation.title = this.buildTitle(recommendationType, contributorLogin);
-    recommendation.description = this.buildDescription(
-      recommendationType,
-      recommendation.priorityScore,
+    const generated = await this.ragLearningPathService.generateRecommendation(
+      payload,
+      summary,
     );
-    recommendation.mentorId = shouldAssignMentor ? mentor?.id || null : null;
-    recommendation.mentorSnapshot = shouldAssignMentor
-      ? {
-          id: mentor?.id,
-          name: `${mentor?.first_name || ''} ${mentor?.last_name || ''}`.trim(),
-          username: mentor?.username || null,
-          email: mentor?.email || null,
-          role: mentor?.role,
-        }
-      : null;
-    recommendation.learningPath = learningPath;
-    recommendation.docsReview = docsReview;
-    recommendation.weaknessSnapshot = {
-      topWeaknesses: this.buildTopWeaknesses(summary),
-      weaknessScores: summary.weakness_scores || {},
-    };
-    recommendation.decisionReasons = {
-      risk,
-      mentorAvailable: !!mentor,
-      recommendationType,
-      generatedAt: new Date().toISOString(),
-    };
-    recommendation.analysisSummary = summary as Record<string, any>;
 
-    const saved = await this.recommendationRepo.save(recommendation);
+    const saved = await this.saveRecommendation({
+      existing,
+      targetDeveloperId,
+      contributorLogin,
+      repositoryId: payload.repositoryId,
+      repoName: payload.repoName || 'Repository',
+      summary,
+      history,
+      generated,
+      analyzedAt: payload.analyzedAt,
+    });
+
+    this.emitNotificationEvent(saved, generated);
+    return this.mapCase(saved);
+  }
+
+  async generateRecommendationForContributor(
+    developerId: string,
+    repositoryId: string,
+    contributorLogin: string,
+  ) {
+    const normalizedLogin = this.normalizeContributorLogin(contributorLogin);
+    if (!developerId || !repositoryId || !normalizedLogin) {
+      throw new BadRequestException('Developer, repository, and contributor are required');
+    }
+
+    const repository = await firstValueFrom(
+      this.developerService.send('github_get_repository', {
+        userId: developerId,
+        repositoryId,
+      }),
+    );
+
+    if (!repository) {
+      throw new BadRequestException('Repository not found');
+    }
+
+    const contributorProfiles =
+      repository?.analysis_metadata?.contributorProfiles || {};
+    const profile = contributorProfiles[normalizedLogin] || null;
+    const latestSummary =
+      profile?.analysisSummary ||
+      profile?.analysis_summary ||
+      repository?.analysis_summary ||
+      null;
+
+    if (!latestSummary || typeof latestSummary !== 'object') {
+      throw new BadRequestException(
+        'No analysis summary found for this contributor profile',
+      );
+    }
+
+    const history = await this.getRecommendationHistory(
+      developerId,
+      normalizedLogin,
+      repositoryId,
+    );
+    const existing = await this.recommendationRepo.findOne({
+      where: {
+        targetDeveloperId: developerId,
+        repositoryId,
+        contributorLogin: normalizedLogin,
+        status: In(['open', 'assigned']),
+      },
+      order: { updatedAt: 'DESC' },
+    });
+    const payload: AnalysisCompletedEvent = {
+      repositoryId,
+      repoName:
+        repository?.repo_name ||
+        repository?.repoName ||
+        profile?.repositoryName ||
+        'Repository',
+      developerId,
+      requestedByUserId: developerId,
+      githubUsername: normalizedLogin,
+      analyzedAt: new Date().toISOString(),
+      summary: latestSummary as AnalysisSummary,
+    };
+
+    const generated = await this.ragLearningPathService.generateRecommendation(
+      payload,
+      latestSummary as AnalysisSummary,
+    );
+
+    const saved = await this.saveRecommendation({
+      existing,
+      targetDeveloperId: developerId,
+      contributorLogin: normalizedLogin,
+      repositoryId,
+      repoName: payload.repoName || 'Repository',
+      summary: latestSummary as AnalysisSummary,
+      history,
+      generated,
+      analyzedAt: payload.analyzedAt,
+    });
+
+    this.emitNotificationEvent(saved, generated);
     return this.mapCase(saved);
   }
 
@@ -463,61 +196,42 @@ export class RecommendationService implements OnModuleInit {
       recommendation.contributorLogin,
       recommendation.analysisSummary as AnalysisSummary | null,
     );
-
-    const risk = this.computeRiskProfile(latestSummary);
-    const mentors = await this.fetchMentorCandidates();
-    const mentor = await this.pickMentor(mentors);
-
-    const recommendationType = this.chooseRecommendationType(risk, !!mentor);
-    const learningPath =
-      recommendationType === 'learning_path'
-        ? this.buildLearningPath(latestSummary)
-        : null;
-    const docsReview =
-      recommendationType === 'docs_review' ? this.buildDocsReview(latestSummary) : null;
-    const shouldAssignMentor = recommendationType === 'mentorship' && !!mentor;
-
-    recommendation.recommendationType = recommendationType;
-    recommendation.status = shouldAssignMentor ? 'assigned' : 'open';
-    recommendation.priorityScore = Math.max(
-      1,
-      Math.min(100, Math.round(risk.riskScore)),
-    );
-    recommendation.qualityScore = risk.qualityScore;
-    recommendation.title = this.buildTitle(
-      recommendationType,
+    const history = await this.getRecommendationHistory(
+      recommendation.targetDeveloperId,
       recommendation.contributorLogin,
+      recommendation.repositoryId,
     );
-    recommendation.description = this.buildDescription(
-      recommendationType,
-      recommendation.priorityScore,
-    );
-    recommendation.mentorId = shouldAssignMentor ? mentor?.id || null : null;
-    recommendation.mentorSnapshot = shouldAssignMentor
-      ? {
-          id: mentor?.id,
-          name: `${mentor?.first_name || ''} ${mentor?.last_name || ''}`.trim(),
-          username: mentor?.username || null,
-          email: mentor?.email || null,
-          role: mentor?.role,
-        }
-      : null;
-    recommendation.learningPath = learningPath;
-    recommendation.docsReview = docsReview;
-    recommendation.weaknessSnapshot = {
-      topWeaknesses: this.buildTopWeaknesses(latestSummary),
-      weaknessScores: latestSummary.weakness_scores || {},
+    const payload: AnalysisCompletedEvent = {
+      repositoryId: recommendation.repositoryId,
+      repoName: recommendation.contextSnapshot?.repoName || 'Repository',
+      developerId: recommendation.targetDeveloperId,
+      requestedByUserId: recommendation.targetDeveloperId,
+      githubUsername: recommendation.contributorLogin,
+      analyzedAt: new Date().toISOString(),
+      summary: latestSummary,
+      detectedGaps: Array.isArray(recommendation.contextSnapshot?.detectedGaps)
+        ? recommendation.contextSnapshot?.detectedGaps.map((item: any) => item.label || item)
+        : undefined,
     };
-    recommendation.decisionReasons = {
-      risk,
-      mentorAvailable: !!mentor,
-      recommendationType,
-      regeneratedAt: new Date().toISOString(),
-      generatedBy: 'admin_manual_regeneration',
-    };
-    recommendation.analysisSummary = latestSummary as Record<string, any>;
 
-    const saved = await this.recommendationRepo.save(recommendation);
+    const generated = await this.ragLearningPathService.generateRecommendation(
+      payload,
+      latestSummary,
+    );
+
+    const saved = await this.saveRecommendation({
+      existing: recommendation,
+      targetDeveloperId: recommendation.targetDeveloperId,
+      contributorLogin: recommendation.contributorLogin,
+      repositoryId: recommendation.repositoryId,
+      repoName: recommendation.contextSnapshot?.repoName || 'Repository',
+      summary: latestSummary,
+      history: history.filter((item) => item.id !== recommendation.id),
+      generated,
+      analyzedAt: payload.analyzedAt,
+    });
+
+    this.emitNotificationEvent(saved, generated, true);
     return this.mapCase(saved);
   }
 
@@ -617,6 +331,7 @@ export class RecommendationService implements OnModuleInit {
       role: mentor.role,
     };
     recommendation.status = 'assigned';
+    recommendation.recommendationType = 'mentorship';
 
     const saved = await this.recommendationRepo.save(recommendation);
     return this.mapCase(saved);
@@ -627,16 +342,379 @@ export class RecommendationService implements OnModuleInit {
       where: {
         id: recommendationId,
         targetDeveloperId: developerId,
-        status: Not('dismissed'),
       },
     });
 
     if (!recommendation) {
-      return null;
+      throw new BadRequestException('Recommendation not found');
     }
 
     recommendation.status = 'completed';
+    recommendation.outcomeStatus = 'resolved';
+    recommendation.outcomeMetrics = {
+      ...(recommendation.outcomeMetrics || {}),
+      completedAt: new Date().toISOString(),
+    };
+
     const saved = await this.recommendationRepo.save(recommendation);
     return this.mapCase(saved);
+  }
+
+  private async saveRecommendation(params: {
+    existing: RecommendationCase | null;
+    targetDeveloperId: string;
+    contributorLogin: string;
+    repositoryId: string;
+    repoName: string;
+    summary: AnalysisSummary;
+    history: RecommendationHistorySnapshot[];
+    generated: RecommendationGenerationResult;
+    analyzedAt?: string;
+  }) {
+    const recommendation =
+      params.existing || this.recommendationRepo.create();
+    const generatedAt = params.analyzedAt || new Date().toISOString();
+    const priorityScore = this.computePriorityScore(
+      params.summary,
+      params.generated,
+    );
+    const qualityScore =
+      typeof params.summary.quality_score === 'number'
+        ? params.summary.quality_score
+        : null;
+
+    recommendation.targetDeveloperId = params.targetDeveloperId;
+    recommendation.repositoryId = params.repositoryId;
+    recommendation.contributorLogin = params.contributorLogin;
+    recommendation.recommendationType = 'learning_path';
+    recommendation.status = 'open';
+    recommendation.priorityScore = priorityScore;
+    recommendation.qualityScore = qualityScore;
+    recommendation.title = params.generated.generatedPath.title;
+    recommendation.description = params.generated.generatedPath.summary;
+    recommendation.mentorId = null;
+    recommendation.mentorSnapshot = null;
+    recommendation.contextSnapshot = this.buildContextSnapshot(
+      params,
+      generatedAt,
+    );
+    recommendation.evidenceSnapshot = this.buildEvidenceSnapshot(
+      params.generated,
+      params.summary,
+    );
+    recommendation.targetSkills = params.generated.detectedGaps.map(
+      (gap) => gap.label,
+    );
+    recommendation.effortLevel =
+      (params.summary.summary?.critical_count || 0) > 0 ? 'intensive' : 'moderate';
+    recommendation.dueInDays =
+      (params.summary.summary?.critical_count || 0) > 0 ? 10 : 21;
+    recommendation.confidenceScore = this.computeConfidenceScore(params.generated);
+    recommendation.learningPath = {
+      overview: params.generated.generatedPath.summary,
+      tone: params.generated.generatedPath.tone,
+      estimatedTotalHours: params.generated.generatedPath.estimated_total_hours,
+      steps: params.generated.generatedPath.steps,
+    };
+    recommendation.docsReview = null;
+    recommendation.weaknessSnapshot = {
+      topWeaknesses: params.generated.detectedGaps.map((gap) => ({
+        skill: gap.label,
+        score: gap.score,
+      })),
+      weaknessScores: params.summary.weakness_scores || {},
+    };
+    recommendation.decisionReasons = {
+      pipeline: 'atlas_vector_rag',
+      llm: {
+        provider: params.generated.provider,
+        model: params.generated.model,
+      },
+      generatedAt,
+      gaps: params.generated.detectedGaps,
+      courseMatches: params.generated.gapMatches.map((match) => ({
+        gap: match.gap.label,
+        courseCount: match.courses.length,
+        courseIds: match.courses.map((course) => course.courseId),
+      })),
+    };
+    recommendation.analysisSummary = params.summary as Record<string, any>;
+    recommendation.previousRecommendationId =
+      params.history.find((item) => item.id !== recommendation.id)?.id || null;
+    recommendation.outcomeStatus = 'pending';
+    recommendation.outcomeMetrics = {
+      lastGeneratedAt: generatedAt,
+      previousRecommendationCount: params.history.length,
+      detectedGapCount: params.generated.detectedGaps.length,
+      llmProvider: params.generated.provider,
+      llmModel: params.generated.model,
+    };
+
+    return this.recommendationRepo.save(recommendation);
+  }
+
+  private buildContextSnapshot(
+    params: {
+      repoName: string;
+      contributorLogin: string;
+      summary: AnalysisSummary;
+      generated: RecommendationGenerationResult;
+    },
+    generatedAt: string,
+  ) {
+    return {
+      repoName: params.repoName,
+      contributorLogin: params.contributorLogin,
+      dominantLanguage: params.summary.dominant_language || null,
+      commitTopics: Array.isArray(params.summary.commit_topics)
+        ? params.summary.commit_topics
+        : [],
+      strengths: Array.isArray(params.summary.strengths)
+        ? params.summary.strengths
+        : [],
+      detectedGaps: params.generated.detectedGaps,
+      llmProvider: params.generated.provider,
+      llmModel: params.generated.model,
+      generatedAt,
+      profileSignals: params.summary.analysis_metadata?.skill_profile_inputs || {},
+    };
+  }
+
+  private buildEvidenceSnapshot(
+    generated: RecommendationGenerationResult,
+    summary: AnalysisSummary,
+  ) {
+    return {
+      recommendationType: 'learning_path',
+      topWeaknesses: generated.detectedGaps.map((gap) => ({
+        skill: gap.label,
+        score: gap.score,
+      })),
+      keyFindings: (summary.findings || []).slice(0, 6).map((finding) => ({
+        title: finding.title,
+        skill: finding.skill,
+        severity: finding.severity,
+        confidence: finding.confidence,
+        file: finding.file_path,
+      })),
+      strengths: Array.isArray(summary.strengths) ? summary.strengths.slice(0, 5) : [],
+      successCriteria: generated.generatedPath.steps.map(
+        (step) => step.success_signal,
+      ),
+      retrievedCoursesByGap: generated.gapMatches.map((match) => ({
+        gapKey: match.gap.key,
+        gapLabel: match.gap.label,
+        courses: match.courses,
+      })),
+    };
+  }
+
+  private computePriorityScore(
+    summary: AnalysisSummary,
+    generated: RecommendationGenerationResult,
+  ) {
+    const counts = summary.summary || {};
+    const critical = counts.critical_count || 0;
+    const high = counts.high_count || 0;
+    const gapWeight = generated.detectedGaps.reduce(
+      (total, gap) => total + Math.min(12, gap.score * 1.6),
+      0,
+    );
+
+    return Math.max(
+      10,
+      Math.min(100, Math.round(28 + critical * 18 + high * 10 + gapWeight)),
+    );
+  }
+
+  private computeConfidenceScore(generated: RecommendationGenerationResult) {
+    const matchCoverage =
+      generated.gapMatches.length === 0
+        ? 0
+        : generated.gapMatches.filter((match) => match.courses.length > 0).length /
+          generated.gapMatches.length;
+    const providerPenalty = generated.provider === 'fallback' ? 0.08 : 0;
+    return Number(
+      Math.max(0.5, Math.min(0.94, 0.58 + matchCoverage * 0.24 - providerPenalty)).toFixed(2),
+    );
+  }
+
+  private emitNotificationEvent(
+    recommendation: RecommendationCase,
+    generated: RecommendationGenerationResult,
+    regenerated = false,
+  ) {
+    this.eventClient.emit('notification.sent', {
+      type: 'learning_path_ready',
+      recommendationId: recommendation.id,
+      developerId: recommendation.targetDeveloperId,
+      repositoryId: recommendation.repositoryId,
+      contributorLogin: recommendation.contributorLogin,
+      title: recommendation.title,
+      summary: generated.notificationSummary,
+      regenerated,
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  private async fetchLatestAnalysisSummary(
+    targetDeveloperId: string,
+    repositoryId: string,
+    contributorLogin: string,
+    fallbackSummary: AnalysisSummary | null | undefined,
+  ): Promise<AnalysisSummary> {
+    try {
+      const repository = await firstValueFrom(
+        this.developerService.send('github_get_repository', {
+          userId: targetDeveloperId,
+          repositoryId,
+        }),
+      );
+
+      const normalizedLogin = this.normalizeContributorLogin(contributorLogin);
+      const contributorProfiles =
+        repository?.analysis_metadata?.contributorProfiles || {};
+      const profile = contributorProfiles[normalizedLogin] || null;
+
+      const profileSummary =
+        profile?.analysisSummary ||
+        profile?.analysis_summary ||
+        repository?.analysis_summary ||
+        null;
+
+      if (profileSummary && typeof profileSummary === 'object') {
+        return profileSummary as AnalysisSummary;
+      }
+    } catch (error: any) {
+      this.logger.warn(
+        `Failed to fetch latest analysis snapshot for regeneration: ${error?.message || error}`,
+      );
+    }
+
+    if (fallbackSummary && typeof fallbackSummary === 'object') {
+      return fallbackSummary;
+    }
+
+    throw new BadRequestException(
+      'No analysis summary available to regenerate this recommendation',
+    );
+  }
+
+  private async getRecommendationHistory(
+    targetDeveloperId: string,
+    contributorLogin: string,
+    repositoryId: string,
+  ): Promise<RecommendationHistorySnapshot[]> {
+    const rows = await this.recommendationRepo.find({
+      where: {
+        targetDeveloperId,
+        contributorLogin,
+        repositoryId,
+      },
+      order: { createdAt: 'DESC' },
+      take: 8,
+    });
+
+    return rows.map((row) => ({
+      id: row.id,
+      recommendationType: row.recommendationType,
+      status: row.status,
+      qualityScore: row.qualityScore,
+      createdAt: row.createdAt.toISOString(),
+    }));
+  }
+
+  private async fetchMentorCandidates(): Promise<MentorCandidate[]> {
+    try {
+      const response = await firstValueFrom(
+        this.developerService.send('developer_get_available_mentors', {}),
+      );
+
+      if (!Array.isArray(response)) {
+        return [];
+      }
+
+      return response.filter(
+        (mentor) =>
+          mentor?.is_active &&
+          mentor?.role === 'tech_lead' &&
+          mentor?.is_mentor === true,
+      );
+    } catch (error) {
+      this.logger.warn('Could not fetch mentor candidates from developer-service');
+      return [];
+    }
+  }
+
+  private mapCase(record: RecommendationCase) {
+    return {
+      id: record.id,
+      target_developer_id: record.targetDeveloperId,
+      repository_id: record.repositoryId,
+      contributor_login: record.contributorLogin,
+      recommendation_type: record.recommendationType,
+      status: record.status,
+      priority_score: record.priorityScore,
+      quality_score: record.qualityScore,
+      title: record.title,
+      description: record.description,
+      mentor_id: record.mentorId,
+      mentor_snapshot: record.mentorSnapshot,
+      context_snapshot: record.contextSnapshot,
+      evidence_snapshot: record.evidenceSnapshot,
+      target_skills: record.targetSkills,
+      effort_level: record.effortLevel,
+      due_in_days: record.dueInDays,
+      confidence_score: record.confidenceScore,
+      learning_path: record.learningPath,
+      docs_review: record.docsReview,
+      weakness_snapshot: record.weaknessSnapshot,
+      decision_reasons: record.decisionReasons,
+      analysis_summary: record.analysisSummary,
+      previous_recommendation_id: record.previousRecommendationId,
+      outcome_status: record.outcomeStatus,
+      outcome_metrics: record.outcomeMetrics,
+      feedback: record.feedback,
+      created_at: record.createdAt,
+      updated_at: record.updatedAt,
+    };
+  }
+
+  private resolveTargetDeveloperId(payload: AnalysisCompletedEvent): string | null {
+    if (this.isUuid(payload.requestedByUserId)) {
+      return payload.requestedByUserId as string;
+    }
+
+    if (this.isUuid(payload.developerId)) {
+      return payload.developerId as string;
+    }
+
+    return null;
+  }
+
+  private resolveContributorLogin(
+    payload: AnalysisCompletedEvent,
+    developerId: string,
+  ) {
+    const normalized = this.normalizeContributorLogin(payload.githubUsername);
+    if (normalized) {
+      return normalized;
+    }
+
+    return `developer-${developerId.slice(0, 8)}`;
+  }
+
+  private normalizeContributorLogin(login: string | undefined | null) {
+    return String(login || '').trim().toLowerCase();
+  }
+
+  private isUuid(value: string | undefined | null) {
+    if (!value) {
+      return false;
+    }
+
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value,
+    );
   }
 }

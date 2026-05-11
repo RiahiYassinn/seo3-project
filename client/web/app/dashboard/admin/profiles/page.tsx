@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { AdminWorkflowBridge } from "@/components/admin/admin-workflow-bridge";
@@ -12,10 +12,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
+  buildAdminWorkflowHref,
+  readAdminWorkflowContext,
+} from "@/lib/admin-workflow";
+import {
   ArrowUpRight,
   Bot,
   CircleAlert,
-  FolderGit2,
+  Loader2,
   Search,
   Sparkles,
   Users,
@@ -33,20 +37,6 @@ import {
   statusTone,
 } from "./profile-types";
 
-type ContributorGlobalProfile = {
-  contributorLogin: string;
-  contributorName?: string;
-  contributorEmail?: string;
-  avatarUrl?: string | null;
-  profileUrl?: string | null;
-  analyses: ContributorProfile[];
-  repositoriesCovered: number;
-  completedAnalyses: number;
-  averageQualityScore: number | null;
-  latestAnalyzedAt: string | null;
-  topWeaknesses: Array<{ category: string; occurrences: number }>;
-};
-
 const toTimestamp = (value: string | null | undefined) => {
   if (!value) return 0;
   const parsed = new Date(value).getTime();
@@ -56,14 +46,12 @@ const toTimestamp = (value: string | null | undefined) => {
 const formatAnalysisDate = (value: string | null) =>
   value ? new Date(value).toLocaleString() : "Not analyzed yet";
 
-const summaryBadgeTone =
-  "border-slate-400/35 bg-slate-500/10 text-slate-700 hover:bg-slate-500/15 dark:border-slate-300/30 dark:text-slate-200";
-
 const weaknessBadgeTone =
   "border-slate-400/35 bg-slate-500/10 text-slate-700 hover:bg-slate-500/15 dark:border-slate-300/30 dark:text-slate-200";
 
 export default function AdminProfilesPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [repositories, setRepositories] = useState<RepositoryRecord[]>([]);
   const [recommendationMap, setRecommendationMap] = useState<
     Record<string, RecommendationCase>
@@ -71,6 +59,14 @@ export default function AdminProfilesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [hasClearedSearchFocus, setHasClearedSearchFocus] = useState(false);
+  const [generatingRecommendationKey, setGeneratingRecommendationKey] = useState<
+    string | null
+  >(null);
+  const navigationContext = useMemo(
+    () => readAdminWorkflowContext(searchParams),
+    [searchParams],
+  );
 
   useEffect(() => {
     const loadRecommendations = async (repoRecords: RepositoryRecord[]) => {
@@ -138,178 +134,15 @@ export default function AdminProfilesPage() {
       });
   }, [repositories]);
 
-  const contributorProfiles = useMemo<ContributorGlobalProfile[]>(() => {
-    const grouped = new Map<string, ContributorGlobalProfile>();
-
-    profiles.forEach((profile) => {
-      const normalizedLogin = String(profile.contributorLogin || "")
-        .trim()
-        .toLowerCase();
-
-      if (!normalizedLogin) {
-        return;
-      }
-
-      const existingGroup = grouped.get(normalizedLogin);
-      if (!existingGroup) {
-        grouped.set(normalizedLogin, {
-          contributorLogin: profile.contributorLogin,
-          contributorName: profile.contributorName,
-          contributorEmail: profile.contributorEmail,
-          avatarUrl: profile.avatarUrl,
-          profileUrl: profile.profileUrl,
-          analyses: [profile],
-          repositoriesCovered: 0,
-          completedAnalyses: 0,
-          averageQualityScore: null,
-          latestAnalyzedAt: null,
-          topWeaknesses: [],
-        });
-        return;
-      }
-
-      existingGroup.analyses.push(profile);
-      if (!existingGroup.contributorName && profile.contributorName) {
-        existingGroup.contributorName = profile.contributorName;
-      }
-      if (!existingGroup.contributorEmail && profile.contributorEmail) {
-        existingGroup.contributorEmail = profile.contributorEmail;
-      }
-      if (!existingGroup.avatarUrl && profile.avatarUrl) {
-        existingGroup.avatarUrl = profile.avatarUrl;
-      }
-      if (!existingGroup.profileUrl && profile.profileUrl) {
-        existingGroup.profileUrl = profile.profileUrl;
-      }
-    });
-
-    return Array.from(grouped.values())
-      .map((group) => {
-        const analyses = [...group.analyses].sort(
-          (left, right) =>
-            toTimestamp(right.analyzedAt) - toTimestamp(left.analyzedAt),
-        );
-        const repositories = new Set(
-          analyses.map(
-            (analysis) => analysis.repositoryId || analysis.repositoryName,
-          ),
-        );
-        const qualityScores = analyses
-          .map((analysis) => analysis.qualityScore)
-          .filter((score): score is number => typeof score === "number");
-        const weaknessCountMap = new Map<
-          string,
-          { category: string; count: number }
-        >();
-
-        analyses.forEach((analysis) => {
-          (analysis.topWeaknesses || []).forEach((weakness) => {
-            const category = String(weakness.category || "").trim();
-            if (!category) return;
-            const weaknessKey = category.toLowerCase();
-            const existingWeakness = weaknessCountMap.get(weaknessKey);
-            if (!existingWeakness) {
-              weaknessCountMap.set(weaknessKey, { category, count: 1 });
-              return;
-            }
-            existingWeakness.count += 1;
-          });
-        });
-
-        const topWeaknesses = Array.from(weaknessCountMap.values())
-          .sort((left, right) => right.count - left.count)
-          .slice(0, 4)
-          .map((weakness) => ({
-            category: weakness.category,
-            occurrences: weakness.count,
-          }));
-
-        return {
-          ...group,
-          analyses,
-          repositoriesCovered: repositories.size,
-          completedAnalyses: analyses.filter(
-            (analysis) => analysis.status === "completed",
-          ).length,
-          averageQualityScore: qualityScores.length
-            ? qualityScores.reduce((sum, score) => sum + score, 0) /
-              qualityScores.length
-            : null,
-          latestAnalyzedAt: analyses[0]?.analyzedAt || null,
-          topWeaknesses,
-        };
-      })
-      .sort((left, right) => {
-        const byRecentActivity =
-          toTimestamp(right.latestAnalyzedAt) -
-          toTimestamp(left.latestAnalyzedAt);
-        if (byRecentActivity !== 0) {
-          return byRecentActivity;
-        }
-        return left.contributorLogin.localeCompare(right.contributorLogin);
-      });
-  }, [profiles]);
-
-  const filteredContributorProfiles = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return contributorProfiles;
-
-    return contributorProfiles.filter((contributorProfile) => {
-      if (
-        contributorProfile.contributorLogin.toLowerCase().includes(query) ||
-        String(contributorProfile.contributorName || "")
-          .toLowerCase()
-          .includes(query) ||
-        String(contributorProfile.contributorEmail || "")
-          .toLowerCase()
-          .includes(query)
-      ) {
-        return true;
-      }
-
-      if (
-        contributorProfile.topWeaknesses.some((weakness) =>
-          weakness.category.toLowerCase().includes(query),
-        )
-      ) {
-        return true;
-      }
-
-      return contributorProfile.analyses.some((analysis) => {
-        const recommendation =
-          recommendationMap[
-            recommendationKey(
-              analysis.repositoryId || "",
-              analysis.contributorLogin,
-            )
-          ];
-
-        return (
-          analysis.repositoryName.toLowerCase().includes(query) ||
-          String(analysis.skillLevel || "")
-            .toLowerCase()
-            .includes(query) ||
-          analysis.status.toLowerCase().includes(query) ||
-          (analysis.topWeaknesses || []).some((weakness) =>
-            String(weakness.category || "")
-              .toLowerCase()
-              .includes(query),
-          ) ||
-          (analysis.recommendations || []).some((recommendationItem) =>
-            `${recommendationItem.action || ""} ${recommendationItem.weakness || ""}`
-              .toLowerCase()
-              .includes(query),
-          ) ||
-          String(recommendation?.title || "")
-            .toLowerCase()
-            .includes(query) ||
-          String(recommendation?.recommendation_type || "")
-            .toLowerCase()
-            .includes(query)
-        );
-      });
-    });
-  }, [contributorProfiles, recommendationMap, searchQuery]);
+  const uniqueContributorCount = useMemo(
+    () =>
+      new Set(
+        profiles
+          .map((profile) => String(profile.contributorLogin || "").trim())
+          .filter(Boolean),
+      ).size,
+    [profiles],
+  );
 
   const recommendationStats = useMemo(() => {
     const records = Object.values(recommendationMap);
@@ -322,31 +155,160 @@ export default function AdminProfilesPage() {
     };
   }, [recommendationMap]);
 
+  const repositoryNameMap = useMemo(
+    () =>
+      Object.fromEntries(
+        repositories.map((repository) => [repository.id, repository.repo_name]),
+      ) as Record<string, string>,
+    [repositories],
+  );
+
+  useEffect(() => {
+    if (hasClearedSearchFocus || searchQuery) {
+      return;
+    }
+
+    if (navigationContext.contributorLogin) {
+      setSearchQuery(navigationContext.contributorLogin);
+      return;
+    }
+
+    if (
+      navigationContext.repoId &&
+      repositoryNameMap[navigationContext.repoId]
+    ) {
+      setSearchQuery(repositoryNameMap[navigationContext.repoId]);
+    }
+  }, [
+    hasClearedSearchFocus,
+    navigationContext.contributorLogin,
+    navigationContext.repoId,
+    repositoryNameMap,
+    searchQuery,
+  ]);
+
+  const filteredProfiles = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return profiles;
+
+    return profiles.filter((profile) => {
+      const recommendation =
+        recommendationMap[
+          recommendationKey(
+            profile.repositoryId || "",
+            profile.contributorLogin,
+          )
+        ];
+
+      return (
+        profile.contributorLogin.toLowerCase().includes(query) ||
+        String(profile.contributorName || "")
+          .toLowerCase()
+          .includes(query) ||
+        String(profile.contributorEmail || "")
+          .toLowerCase()
+          .includes(query) ||
+        profile.repositoryName.toLowerCase().includes(query) ||
+        String(profile.skillLevel || "")
+          .toLowerCase()
+          .includes(query) ||
+        profile.status.toLowerCase().includes(query) ||
+        (profile.topWeaknesses || []).some((weakness) =>
+          String(weakness.category || "")
+            .toLowerCase()
+            .includes(query),
+        ) ||
+        (profile.recommendations || []).some((recommendationItem) =>
+          `${recommendationItem.action || ""} ${recommendationItem.weakness || ""}`
+            .toLowerCase()
+            .includes(query),
+        ) ||
+        String(recommendation?.title || "")
+          .toLowerCase()
+          .includes(query) ||
+        String(recommendation?.recommendation_type || "")
+          .toLowerCase()
+          .includes(query)
+      );
+    });
+  }, [profiles, recommendationMap, searchQuery]);
+
+  const focusedProfile =
+    filteredProfiles.length === 1 ? filteredProfiles[0] : null;
+
+  const workflowContext = useMemo(
+    () => ({
+      repoId: focusedProfile?.repositoryId || navigationContext.repoId,
+      repoName:
+        (focusedProfile?.repositoryId &&
+          repositoryNameMap[focusedProfile.repositoryId]) ||
+        focusedProfile?.repositoryName ||
+        (navigationContext.repoId
+          ? repositoryNameMap[navigationContext.repoId]
+          : undefined),
+      contributorLogin: focusedProfile?.contributorLogin,
+      profileId: focusedProfile?.profileId,
+    }),
+    [focusedProfile, navigationContext.repoId, repositoryNameMap],
+  );
+
   const workflowStepStats = useMemo(
     () => ({
-      analysis: {
-        value: `${repositories.length}`,
-        helper: "repositories feeding this workflow",
-      },
-      profiles: {
-        value: `${contributorProfiles.length}`,
-        helper: "contributors grouped into reviewable profiles",
-      },
-      recommendations: {
-        value: `${recommendationStats.total}`,
-        helper: "recommendations linked to analyzed contributors",
-      },
+      analysis: `${repositories.length}`,
+      profiles: `${profiles.length}`,
+      recommendations: `${recommendationStats.total}`,
     }),
-    [contributorProfiles.length, recommendationStats.total, repositories.length],
+    [profiles.length, recommendationStats.total, repositories.length],
   );
+
+  const generateRecommendation = async (profile: ContributorProfile) => {
+    if (!profile.repositoryId || !profile.contributorLogin) {
+      setError("This profile is missing repository or contributor information.");
+      return;
+    }
+
+    const key = recommendationKey(profile.repositoryId, profile.contributorLogin);
+    setGeneratingRecommendationKey(key);
+    setError("");
+
+    try {
+      const { data } = await api.post<RecommendationCase>(
+        `/recommendations/repository/${profile.repositoryId}/contributor/${encodeURIComponent(
+          profile.contributorLogin,
+        )}/generate`,
+      );
+
+      if (data) {
+        setRecommendationMap((current) => ({
+          ...current,
+          [key]: data,
+        }));
+      }
+    } catch (requestError: any) {
+      setError(
+        requestError?.response?.data?.message ||
+          requestError?.message ||
+          "Failed to generate recommendation",
+      );
+    } finally {
+      setGeneratingRecommendationKey(null);
+    }
+  };
 
   return (
     <AdminShell
       title="Developer Skill Profiles"
-      subtitle="Browse the generated contributor profiles separately from the GitHub analysis flow so reviewing weaknesses and recommendations stays focused."
+      subtitle="Review each contributor analysis as a separate profile so repo-wide batches stay visible from one step to the next."
       actions={
         <Button
-          onClick={() => router.push("/dashboard/admin/github")}
+          onClick={() =>
+            router.push(
+              buildAdminWorkflowHref(
+                "/dashboard/admin/github",
+                workflowContext,
+              ),
+            )
+          }
           className="gap-2"
         >
           <Users className="h-4 w-4" />
@@ -365,7 +327,7 @@ export default function AdminProfilesPage() {
 
       <AdminWorkflowBridge
         currentStep="profiles"
-        contextMessage="Profiles are the evidence-review stage of the admin workflow. Analysis creates the profile data upstream, and recommendations downstream turn the weaknesses you confirm here into concrete interventions."
+        context={workflowContext}
         stepStats={workflowStepStats}
       />
 
@@ -374,13 +336,13 @@ export default function AdminProfilesPage() {
           <CardContent className="p-5">
             <p className="text-sm text-muted-foreground">Contributors</p>
             <p className="mt-2 text-2xl font-semibold">
-              {loading ? "--" : contributorProfiles.length}
+              {loading ? "--" : uniqueContributorCount}
             </p>
           </CardContent>
         </Card>
         <Card className="border-border/60 bg-background/80 shadow-sm">
           <CardContent className="p-5">
-            <p className="text-sm text-muted-foreground">Repository analyses</p>
+            <p className="text-sm text-muted-foreground">Profile runs</p>
             <p className="mt-2 text-2xl font-semibold">
               {loading ? "--" : profiles.length}
             </p>
@@ -422,267 +384,246 @@ export default function AdminProfilesPage() {
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <CardTitle className="flex items-center gap-2">
-                Global contributor profiles
+                Contributor analysis profiles
               </CardTitle>
               <p className="mt-1 text-sm text-muted-foreground">
-                Each contributor groups all repository analyses in one place.
+                Each card is one contributor profile in one repository.
               </p>
             </div>
-            <div className="relative w-full max-w-sm">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Search contributors or repositories"
-                className="pl-10"
-              />
+            <div className="flex w-full flex-col gap-3 lg:w-auto lg:flex-row lg:items-center">
+              <div className="relative w-full lg:w-[22rem]">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={searchQuery}
+                  onChange={(event) => {
+                    setHasClearedSearchFocus(false);
+                    setSearchQuery(event.target.value);
+                  }}
+                  placeholder="Search profiles, contributors, or repositories"
+                  className="pl-10"
+                />
+              </div>
+              {searchQuery ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setHasClearedSearchFocus(true);
+                    setSearchQuery("");
+                  }}
+                >
+                  Show all profiles
+                </Button>
+              ) : null}
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          {filteredContributorProfiles.length > 0 ? (
-            <div className="space-y-5">
-              {filteredContributorProfiles.map((contributorProfile) => (
-                <div
-                  key={contributorProfile.contributorLogin}
-                  className="rounded-[1.75rem] border border-border/60 bg-muted/15 p-5 shadow-sm"
-                >
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="flex min-w-0 items-start gap-3">
-                      <Avatar className="h-12 w-12 border border-border/60">
-                        <AvatarImage
-                          src={getContributorAvatarUrl(
-                            contributorProfile.contributorLogin,
-                            contributorProfile.avatarUrl,
-                          )}
-                          alt={`${contributorProfile.contributorLogin} GitHub avatar`}
-                        />
-                        <AvatarFallback className="bg-primary/10 text-primary">
-                          {getInitials(contributorProfile.contributorLogin)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0">
-                        <p className="text-lg font-semibold">
-                          @{contributorProfile.contributorLogin}
-                        </p>
-                        {contributorProfile.contributorName ? (
-                          <p className="text-sm text-muted-foreground">
-                            {contributorProfile.contributorName}
-                          </p>
-                        ) : null}
-                        {contributorProfile.contributorEmail ? (
-                          <p className="text-xs text-muted-foreground">
-                            {contributorProfile.contributorEmail}
-                          </p>
-                        ) : null}
-                      </div>
-                    </div>
+          {filteredProfiles.length > 0 ? (
+            <div className="grid gap-4 xl:grid-cols-2">
+              {filteredProfiles.map((profile) => {
+                const generatedRecommendation =
+                  recommendationMap[
+                    recommendationKey(
+                      profile.repositoryId || "",
+                      profile.contributorLogin,
+                    )
+                  ];
 
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="outline" className={summaryBadgeTone}>
-                        {contributorProfile.analyses.length} analyses
-                      </Badge>
-                      <Badge variant="outline" className={summaryBadgeTone}>
-                        {contributorProfile.repositoriesCovered} repositories
-                      </Badge>
-                      <Badge variant="outline" className={summaryBadgeTone}>
-                        {contributorProfile.completedAnalyses}/
-                        {contributorProfile.analyses.length} completed
-                      </Badge>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                    <div className="rounded-3xl border border-border/60 bg-background p-4">
-                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                        Last analyzed
-                      </p>
-                      <p className="mt-2 text-sm font-medium">
-                        {formatAnalysisDate(
-                          contributorProfile.latestAnalyzedAt,
-                        )}
-                      </p>
-                    </div>
-                    <div className="rounded-3xl border border-border/60 bg-background p-4">
-                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                        Avg quality score
-                      </p>
-                      <p className="mt-2 text-2xl font-semibold">
-                        {contributorProfile.averageQualityScore !== null
-                          ? `${contributorProfile.averageQualityScore.toFixed(1)}/10`
-                          : "--"}
-                      </p>
-                    </div>
-                    <div className="rounded-3xl border border-border/60 bg-background p-4">
-                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                        Top weakness themes
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {contributorProfile.topWeaknesses.length ? (
-                          contributorProfile.topWeaknesses.map((weakness) => (
-                            <Badge
-                              key={`${contributorProfile.contributorLogin}-${weakness.category}`}
-                              variant="outline"
-                            >
-                              {weakness.category} ({weakness.occurrences})
-                            </Badge>
-                          ))
-                        ) : (
-                          <span className="text-sm text-muted-foreground">
-                            No recurring weaknesses yet.
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 grid gap-4 xl:grid-cols-2">
-                    {contributorProfile.analyses.map((analysis) => {
-                      const generatedRecommendation =
-                        recommendationMap[
-                          recommendationKey(
-                            analysis.repositoryId || "",
-                            analysis.contributorLogin,
-                          )
-                        ];
-
-                      return (
-                        <div
-                          key={analysis.profileId}
-                          className="group rounded-3xl border border-border/60 bg-background p-4"
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="inline-flex items-center gap-2 text-base font-semibold">
-                                <FolderGit2 className="h-4 w-4" />
-                                {analysis.repositoryName}
-                              </p>
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                Profile ID: {analysis.profileId}
-                              </p>
-                            </div>
-                            <Badge
-                              variant="outline"
-                              className={statusTone(analysis.status)}
-                            >
-                              {analysis.status}
-                            </Badge>
-                          </div>
-
-                          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                            <div className="rounded-2xl border border-border/60 bg-muted/15 p-3">
-                              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                                Quality
-                              </p>
-                              <p className="mt-2 text-xl font-semibold">
-                                {analysis.qualityScore !== null
-                                  ? `${analysis.qualityScore}/10`
-                                  : "--"}
-                              </p>
-                            </div>
-                            <div className="rounded-2xl border border-border/60 bg-muted/15 p-3">
-                              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                                Skill level
-                              </p>
-                              <p className="mt-2 text-xl font-semibold">
-                                {analysis.skillLevel || "--"}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="mt-4 rounded-2xl border border-border/60 bg-muted/15 p-3">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <p className="inline-flex items-center gap-2 text-sm font-semibold">
-                                <Bot className="h-4 w-4" />
-                                Recommendation
-                              </p>
-                              {generatedRecommendation ? (
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <Badge
-                                    variant="outline"
-                                    className={
-                                      recommendationTypeTone[
-                                        generatedRecommendation
-                                          .recommendation_type
-                                      ]
-                                    }
-                                  >
-                                    {formatLabel(
-                                      generatedRecommendation.recommendation_type,
-                                    )}
-                                  </Badge>
-                                  <Badge
-                                    variant="outline"
-                                    className={recommendationStatusTone(
-                                      generatedRecommendation.status,
-                                    )}
-                                  >
-                                    {formatLabel(
-                                      generatedRecommendation.status,
-                                    )}
-                                  </Badge>
-                                </div>
-                              ) : null}
-                            </div>
-                            <p className="mt-2 text-sm text-muted-foreground">
-                              {generatedRecommendation
-                                ? generatedRecommendation.title
-                                : "Pending generation. Recommendation appears automatically after analysis completion."}
-                            </p>
-                          </div>
-
-                          <div className="mt-4 flex flex-wrap gap-2">
-                            {analysis.topWeaknesses?.length ? (
-                              analysis.topWeaknesses
-                                .slice(0, 3)
-                                .map((weakness) => (
-                                  <Badge
-                                    key={`${analysis.profileId}-${weakness.category}`}
-                                    variant="outline"
-                                    className={weaknessBadgeTone}
-                                  >
-                                    {weakness.category || "Unknown weakness"}
-                                  </Badge>
-                                ))
-                            ) : (
-                              <span className="text-sm text-muted-foreground">
-                                Weakness insights will appear when analysis
-                                completes.
-                              </span>
+                return (
+                  <div
+                    key={profile.profileId}
+                    className="rounded-[1.75rem] border border-border/60 bg-muted/15 p-5 shadow-sm"
+                  >
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <Avatar className="h-12 w-12 border border-border/60">
+                          <AvatarImage
+                            src={getContributorAvatarUrl(
+                              profile.contributorLogin,
+                              profile.avatarUrl,
                             )}
-                          </div>
+                            alt={`${profile.contributorLogin} GitHub avatar`}
+                          />
+                          <AvatarFallback className="bg-primary/10 text-primary">
+                            {getInitials(profile.contributorLogin)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <p className="text-lg font-semibold">
+                            @{profile.contributorLogin}
+                          </p>
+                          {profile.contributorName ? (
+                            <p className="text-sm text-muted-foreground">
+                              {profile.contributorName}
+                            </p>
+                          ) : null}
+                          {profile.contributorEmail ? (
+                            <p className="text-xs text-muted-foreground">
+                              {profile.contributorEmail}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
 
-                          <div className="mt-4 flex flex-wrap items-center gap-3">
-                            <Button
-                              size="sm"
-                              className="gap-2"
-                              onClick={() =>
-                                router.push(
-                                  `/dashboard/admin/profiles/${encodeURIComponent(analysis.profileId)}`,
-                                )
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge
+                          variant="outline"
+                          className={statusTone(profile.status)}
+                        >
+                          {profile.status}
+                        </Badge>
+                        <Badge variant="outline" className={weaknessBadgeTone}>
+                          {profile.repositoryName}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                      <div className="rounded-3xl border border-border/60 bg-background p-4">
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                          Last analyzed
+                        </p>
+                        <p className="mt-2 text-sm font-medium">
+                          {formatAnalysisDate(profile.analyzedAt)}
+                        </p>
+                      </div>
+                      <div className="rounded-3xl border border-border/60 bg-background p-4">
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                          Quality score
+                        </p>
+                        <p className="mt-2 text-2xl font-semibold">
+                          {profile.qualityScore !== null
+                            ? `${profile.qualityScore}/10`
+                            : "--"}
+                        </p>
+                      </div>
+                      <div className="rounded-3xl border border-border/60 bg-background p-4">
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                          Skill level
+                        </p>
+                        <p className="mt-2 text-2xl font-semibold">
+                          {profile.skillLevel || "--"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 rounded-2xl border border-border/60 bg-background p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="inline-flex items-center gap-2 text-sm font-semibold">
+                          <Bot className="h-4 w-4" />
+                          Recommendation
+                        </p>
+                        {generatedRecommendation ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge
+                              variant="outline"
+                              className={
+                                recommendationTypeTone[
+                                  generatedRecommendation.recommendation_type
+                                ]
                               }
                             >
-                              Open detailed analysis
-                              <ArrowUpRight className="h-4 w-4" />
-                            </Button>
-
-                            {analysis.profileUrl ? (
-                              <a
-                                href={analysis.profileUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
-                              >
-                                View GitHub profile
-                              </a>
-                            ) : null}
+                              {formatLabel(
+                                generatedRecommendation.recommendation_type,
+                              )}
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className={recommendationStatusTone(
+                                generatedRecommendation.status,
+                              )}
+                            >
+                              {formatLabel(generatedRecommendation.status)}
+                            </Badge>
                           </div>
-                        </div>
-                      );
-                    })}
+                        ) : null}
+                      </div>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        {generatedRecommendation
+                          ? generatedRecommendation.title
+                          : "No recommendation generated yet. Use the button below to create one for this profile."}
+                      </p>
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {profile.topWeaknesses?.length ? (
+                        profile.topWeaknesses.slice(0, 4).map((weakness) => (
+                          <Badge
+                            key={`${profile.profileId}-${weakness.category}`}
+                            variant="outline"
+                            className={weaknessBadgeTone}
+                          >
+                            {weakness.category || "Unknown weakness"}
+                          </Badge>
+                        ))
+                      ) : (
+                        <span className="text-sm text-muted-foreground">
+                          Weakness insights will appear when analysis completes.
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap items-center gap-3">
+                      <Button
+                        size="sm"
+                        className="gap-2"
+                        onClick={() =>
+                          router.push(
+                            buildAdminWorkflowHref(
+                              `/dashboard/admin/profiles/${encodeURIComponent(profile.profileId)}`,
+                              {
+                                repoId: profile.repositoryId,
+                                repoName: profile.repositoryName,
+                                contributorLogin: profile.contributorLogin,
+                                profileId: profile.profileId,
+                              },
+                            ),
+                          )
+                        }
+                      >
+                        Open detailed analysis
+                        <ArrowUpRight className="h-4 w-4" />
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant={generatedRecommendation ? "outline" : "default"}
+                        className="gap-2"
+                        disabled={generatingRecommendationKey === recommendationKey(
+                          profile.repositoryId || "",
+                          profile.contributorLogin,
+                        )}
+                        onClick={() => generateRecommendation(profile)}
+                      >
+                        {generatingRecommendationKey ===
+                        recommendationKey(
+                          profile.repositoryId || "",
+                          profile.contributorLogin,
+                        ) ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Bot className="h-4 w-4" />
+                        )}
+                        {generatedRecommendation
+                          ? "Regenerate recommendation"
+                          : "Generate recommendation"}
+                      </Button>
+
+                      {profile.profileUrl ? (
+                        <a
+                          href={profile.profileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
+                        >
+                          View GitHub profile
+                        </a>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className="rounded-[1.75rem] border border-dashed border-border/60 p-10 text-center">

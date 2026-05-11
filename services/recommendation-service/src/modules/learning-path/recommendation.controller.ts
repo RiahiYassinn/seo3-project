@@ -1,9 +1,18 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { RecommendationService } from './recommendation.service';
+import { CourseCatalogService } from './course-catalog.service';
 
 @Controller('recommendations')
 export class RecommendationController {
-  constructor(private readonly recommendationService: RecommendationService) {}
+  constructor(
+    private readonly recommendationService: RecommendationService,
+    private readonly courseCatalogService: CourseCatalogService,
+  ) {}
+
+  @Post('catalog/ingest')
+  async ingestCatalog(@Body() body: { path?: string }) {
+    return this.courseCatalogService.ingestFromFile(body?.path);
+  }
 
   @Get('developer/:developerId')
   async getRecommendations(@Param('developerId') developerId: string) {
@@ -37,6 +46,19 @@ export class RecommendationController {
     @Param('contributorLogin') contributorLogin: string,
   ) {
     return this.recommendationService.getRecommendationForContributor(
+      developerId,
+      repositoryId,
+      contributorLogin,
+    );
+  }
+
+  @Post('developer/:developerId/repository/:repositoryId/contributor/:contributorLogin/generate')
+  async generateContributorRecommendation(
+    @Param('developerId') developerId: string,
+    @Param('repositoryId') repositoryId: string,
+    @Param('contributorLogin') contributorLogin: string,
+  ) {
+    return this.recommendationService.generateRecommendationForContributor(
       developerId,
       repositoryId,
       contributorLogin,

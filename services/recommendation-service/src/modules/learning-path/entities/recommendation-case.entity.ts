@@ -9,6 +9,8 @@ import {
 
 export type RecommendationType = 'mentorship' | 'learning_path' | 'docs_review';
 export type RecommendationStatus = 'open' | 'assigned' | 'completed' | 'dismissed';
+export type RecommendationEffort = 'light' | 'moderate' | 'intensive';
+export type RecommendationOutcomeStatus = 'pending' | 'improving' | 'stalled' | 'resolved';
 
 @Entity('recommendation_cases')
 @Index('idx_recommendation_cases_target_repo', ['targetDeveloperId', 'repositoryId'])
@@ -50,6 +52,24 @@ export class RecommendationCase {
   @Column({ name: 'mentor_snapshot', type: 'jsonb', nullable: true })
   mentorSnapshot: Record<string, any> | null;
 
+  @Column({ name: 'context_snapshot', type: 'jsonb', nullable: true })
+  contextSnapshot: Record<string, any> | null;
+
+  @Column({ name: 'evidence_snapshot', type: 'jsonb', nullable: true })
+  evidenceSnapshot: Record<string, any> | null;
+
+  @Column({ name: 'target_skills', type: 'jsonb', nullable: true })
+  targetSkills: string[] | null;
+
+  @Column({ name: 'effort_level', type: 'varchar', nullable: true })
+  effortLevel: RecommendationEffort | null;
+
+  @Column({ name: 'due_in_days', type: 'int', nullable: true })
+  dueInDays: number | null;
+
+  @Column({ name: 'confidence_score', type: 'float', nullable: true })
+  confidenceScore: number | null;
+
   @Column({ name: 'learning_path', type: 'jsonb', nullable: true })
   learningPath: Record<string, any> | null;
 
@@ -64,6 +84,18 @@ export class RecommendationCase {
 
   @Column({ name: 'analysis_summary', type: 'jsonb', nullable: true })
   analysisSummary: Record<string, any> | null;
+
+  @Column({ name: 'previous_recommendation_id', type: 'uuid', nullable: true })
+  previousRecommendationId: string | null;
+
+  @Column({ name: 'outcome_status', type: 'varchar', nullable: true })
+  outcomeStatus: RecommendationOutcomeStatus | null;
+
+  @Column({ name: 'outcome_metrics', type: 'jsonb', nullable: true })
+  outcomeMetrics: Record<string, any> | null;
+
+  @Column({ name: 'feedback', type: 'jsonb', nullable: true })
+  feedback: Record<string, any> | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

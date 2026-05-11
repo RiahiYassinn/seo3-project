@@ -67,6 +67,23 @@ export class RecommendationService {
     }
   }
 
+  async generateContributorRecommendation(
+    userId: string,
+    repositoryId: string,
+    contributorLogin: string,
+  ) {
+    try {
+      const response = await axios.post(
+        `${this.baseUrl}/recommendations/developer/${userId}/repository/${repositoryId}/contributor/${encodeURIComponent(
+          contributorLogin,
+        )}/generate`,
+      );
+      return response.data;
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
   async getMentorQueue(userId: string) {
     try {
       const response = await axios.get(`${this.baseUrl}/recommendations/mentor/${userId}/queue`);

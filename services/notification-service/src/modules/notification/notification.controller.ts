@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Body, Param } from '@nestjs/common';
-import { MessagePattern, Payload } from '@nestjs/microservices';
+import { EventPattern, Payload } from '@nestjs/microservices';
 
 @Controller('notifications')
 export class NotificationController {
@@ -15,7 +15,7 @@ export class NotificationController {
     return { status: 'sent' };
   }
 
-  @MessagePattern('notification.sent')
+  @EventPattern('notification.sent')
   async handleNotificationSent(@Payload() message: any) {
     console.log('Notification sent event:', message);
   }

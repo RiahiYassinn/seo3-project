@@ -1,15 +1,32 @@
 import { Controller } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { EventPattern, Payload } from '@nestjs/microservices';
 import { RecommendationService } from './recommendation.service';
 
 @Controller()
 export class RecommendationConsumer {
-  constructor(private readonly recommendationService: RecommendationService) {}
+  constructor(
+    private readonly recommendationService: RecommendationService,
+    private readonly configService: ConfigService,
+  ) {}
 
   @EventPattern('analysis.completed')
   async handleAnalysisCompleted(@Payload() payload: any) {
+    const autoGenerateEnabled =
+      String(
+        this.configService.get<string>('AUTO_GENERATE_RECOMMENDATIONS') ||
+          'false',
+      ).toLowerCase() === 'true';
+
+    if (!autoGenerateEnabled) {
+      return;
+    }
+
     const message = this.unwrapPayload(payload);
-    if (!message?.repositoryId || !message?.summary) {
+    if (
+      !message?.repositoryId ||
+      (!message?.summary && !Array.isArray(message?.detectedGaps))
+    ) {
       return;
     }
 

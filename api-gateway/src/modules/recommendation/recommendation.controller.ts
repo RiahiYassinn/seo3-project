@@ -80,6 +80,29 @@ export class RecommendationController {
     );
   }
 
+  @Post('repository/:repositoryId/contributor/:contributorLogin/generate')
+  @ApiOperation({ summary: 'Generate recommendation manually for a contributor profile' })
+  generateContributorRecommendation(
+    @Req() req: any,
+    @Param('repositoryId') repositoryId: string,
+    @Param('contributorLogin') contributorLogin: string,
+  ) {
+    const normalizedRole = String(req?.user?.role || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[-\s]+/g, '_');
+
+    if (normalizedRole !== 'admin') {
+      throw new ForbiddenException('Only admins can generate recommendations manually');
+    }
+
+    return this.recommendationService.generateContributorRecommendation(
+      req.user.id,
+      repositoryId,
+      contributorLogin,
+    );
+  }
+
   @Get('mentor-queue')
   @ApiOperation({ summary: 'Get mentor recommendation queue for current tech lead' })
   getMentorQueue(@Req() req: any) {

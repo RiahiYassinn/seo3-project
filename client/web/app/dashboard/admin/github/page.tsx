@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import api from "@/lib/api";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { AdminWorkflowBridge } from "@/components/admin/admin-workflow-bridge";
@@ -14,6 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { readAdminWorkflowContext } from "@/lib/admin-workflow";
 import { cn } from "@/lib/utils";
 import {
   ArrowUpRight,
@@ -67,6 +68,7 @@ interface RepositoryRecord {
   analysis_progress: number;
   analysis_current_stage: string | null;
   last_analyzed_at?: string | null;
+  last_synced?: string | null;
   analysis_metadata: {
     contributorProfiles?: Record<string, ContributorProfile>;
     contributorAnalysis?: ContributorAnalysisState;
@@ -153,8 +155,41 @@ const getProfileFailureReason = (profile: ContributorProfile | null) => {
     : "Failure reason not provided.";
 };
 
+const repositoryStatusPriority: Record<string, number> = {
+  completed: 0,
+  failed: 1,
+  in_progress: 2,
+  pending: 3,
+};
+
+const sortRepositoriesForExplorer = (repositories: RepositoryRecord[]) =>
+  [...repositories].sort((left, right) => {
+    const leftPriority =
+      repositoryStatusPriority[left.analysis_status ?? ""] ?? 4;
+    const rightPriority =
+      repositoryStatusPriority[right.analysis_status ?? ""] ?? 4;
+
+    if (leftPriority !== rightPriority) {
+      return leftPriority - rightPriority;
+    }
+
+    const byRecentAnalysis =
+      toTimestamp(right.last_analyzed_at) - toTimestamp(left.last_analyzed_at);
+    if (byRecentAnalysis !== 0) {
+      return byRecentAnalysis;
+    }
+
+    const byRecentSync =
+      toTimestamp(right.last_synced) - toTimestamp(left.last_synced);
+    if (byRecentSync !== 0) {
+      return byRecentSync;
+    }
+
+    return left.repo_name.localeCompare(right.repo_name);
+  });
+
 export default function AdminGithubPage() {
-  const router = useRouter();
+  const searchParams = useSearchParams();
   const [integration, setIntegration] = useState<GitHubIntegration | null>(
     null,
   );
@@ -169,7 +204,11 @@ export default function AdminGithubPage() {
   const [username, setUsername] = useState("");
   const [token, setToken] = useState("");
   const [repoSearchQuery, setRepoSearchQuery] = useState("");
-  const [contributorSearchQuery, setContributorSearchQuery] = useState("");
+  const [contributorSearchQuery, setContributorSearchQuery] = useState(
+    () => readAdminWorkflowContext(searchParams).contributorLogin || "",
+  );
+  const [hasClearedContributorFocus, setHasClearedContributorFocus] =
+    useState(false);
   const [loading, setLoading] = useState(true);
   const [repositoryContextLoading, setRepositoryContextLoading] =
     useState(false);
@@ -179,6 +218,10 @@ export default function AdminGithubPage() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const navigationContext = useMemo(
+    () => readAdminWorkflowContext(searchParams),
+    [searchParams],
+  );
 
   const selectedRepository = useMemo(
     () =>
@@ -187,11 +230,16 @@ export default function AdminGithubPage() {
     [repositories, selectedRepoId],
   );
 
+  const sortedRepositories = useMemo(
+    () => sortRepositoriesForExplorer(repositories),
+    [repositories],
+  );
+
   const filteredRepositories = useMemo(() => {
     const query = repoSearchQuery.trim().toLowerCase();
-    if (!query) return repositories;
+    if (!query) return sortedRepositories;
 
-    return repositories.filter((repository) =>
+    return sortedRepositories.filter((repository) =>
       [
         repository.repo_name,
         repository.repo_description,
@@ -203,7 +251,7 @@ export default function AdminGithubPage() {
         .toLowerCase()
         .includes(query),
     );
-  }, [repoSearchQuery, repositories]);
+  }, [repoSearchQuery, sortedRepositories]);
 
   const profilesWithContributorData = useMemo(() => {
     const contributorMap = new Map(
@@ -290,23 +338,62 @@ export default function AdminGithubPage() {
   const failedProfileCount = profilesWithContributorData.filter(
     (profile) => profile.status === "failed",
   ).length;
+  const focusedContributorLogin = useMemo(() => {
+    if (filteredContributors.length === 1) {
+      return filteredContributors[0]?.login || undefined;
+    }
+
+    if (selectedContributors.length === 1) {
+      return selectedContributors[0];
+    }
+
+    return undefined;
+  }, [filteredContributors, selectedContributors]);
+  const workflowContext = useMemo(
+    () => ({
+      repoId: selectedRepository?.id || navigationContext.repoId,
+      repoName: selectedRepository?.repo_name,
+      contributorLogin: focusedContributorLogin,
+      profileId:
+        focusedContributorLogin &&
+        selectedProfile?.contributorLogin === focusedContributorLogin
+          ? selectedProfile.profileId
+          : undefined,
+    }),
+    [
+      focusedContributorLogin,
+      navigationContext.repoId,
+      selectedProfile,
+      selectedRepository,
+    ],
+  );
   const workflowStepStats = useMemo(
     () => ({
-      analysis: {
-        value: `${repositories.length}`,
-        helper: "repositories currently synced",
-      },
-      profiles: {
-        value: `${profilesWithContributorData.length}`,
-        helper: "profiles captured from repository runs",
-      },
-      recommendations: {
-        value: `${completedProfileCount}`,
-        helper: "completed profiles ready for action planning",
-      },
+      analysis: `${repositories.length}`,
+      profiles: `${profilesWithContributorData.length}`,
+      recommendations: `${completedProfileCount}`,
     }),
-    [completedProfileCount, profilesWithContributorData.length, repositories.length],
+    [
+      completedProfileCount,
+      profilesWithContributorData.length,
+      repositories.length,
+    ],
   );
+
+  useEffect(() => {
+    if (
+      hasClearedContributorFocus ||
+      !navigationContext.contributorLogin ||
+      contributorSearchQuery
+    ) {
+      return;
+    }
+    setContributorSearchQuery(navigationContext.contributorLogin);
+  }, [
+    contributorSearchQuery,
+    hasClearedContributorFocus,
+    navigationContext.contributorLogin,
+  ]);
 
   useEffect(() => {
     setSelectedProfileId((current) => {
@@ -322,13 +409,55 @@ export default function AdminGithubPage() {
     });
   }, [profilesWithContributorData]);
 
+  useEffect(() => {
+    if (!profilesWithContributorData.length) {
+      return;
+    }
+
+    if (navigationContext.profileId) {
+      const profileMatch = profilesWithContributorData.find(
+        (profile) => profile.profileId === navigationContext.profileId,
+      );
+      if (profileMatch && selectedProfileId !== profileMatch.profileId) {
+        setSelectedProfileId(profileMatch.profileId);
+        return;
+      }
+    }
+
+    if (!navigationContext.contributorLogin) {
+      return;
+    }
+
+    const contributorMatch = profilesWithContributorData.find(
+      (profile) =>
+        profile.contributorLogin === navigationContext.contributorLogin,
+    );
+    if (contributorMatch && selectedProfileId !== contributorMatch.profileId) {
+      setSelectedProfileId(contributorMatch.profileId);
+    }
+  }, [
+    navigationContext.contributorLogin,
+    navigationContext.profileId,
+    profilesWithContributorData,
+    selectedProfileId,
+  ]);
+
   const loadRepositories = async (preserveSelection = true) => {
     const { data } = await api.get<RepositoryRecord[]>("/github/repositories");
     const nextRepositories = data || [];
+    const sortedNextRepositories =
+      sortRepositoriesForExplorer(nextRepositories);
     setRepositories(nextRepositories);
+    const preferredRepository = navigationContext.repoId
+      ? nextRepositories.find(
+          (repository) => repository.id === navigationContext.repoId,
+        )
+      : null;
 
     if (!preserveSelection || !selectedRepoId) {
-      setSelectedRepoId(nextRepositories[0]?.id || "");
+      setSelectedRepoId(
+        preferredRepository?.id || sortedNextRepositories[0]?.id || "",
+      );
       return nextRepositories;
     }
 
@@ -336,7 +465,7 @@ export default function AdminGithubPage() {
       (repository) => repository.id === selectedRepoId,
     );
     if (!repoStillExists) {
-      setSelectedRepoId(nextRepositories[0]?.id || "");
+      setSelectedRepoId(sortedNextRepositories[0]?.id || "");
     }
 
     return nextRepositories;
@@ -697,7 +826,7 @@ export default function AdminGithubPage() {
         <>
           <AdminWorkflowBridge
             currentStep="analysis"
-            contextMessage="This is the starting point of the admin talent workflow: run repository analysis here, then move into Developer Profiles to inspect the generated evidence, and finish in Recommendations to assign the right intervention."
+            context={workflowContext}
             stepStats={workflowStepStats}
           />
 
@@ -757,10 +886,151 @@ export default function AdminGithubPage() {
           </section>
 
           <section className="space-y-4">
-            <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
-              <Card className="border-border/60 bg-background/80 shadow-sm">
+            <Card className="border-border/60 bg-background/80 shadow-sm">
+              <CardHeader>
+                <CardTitle>Selected repository</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {selectedRepository ? (
+                  <>
+                    <div className="rounded-[1.5rem] border border-border/60 bg-muted/15 p-5">
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="min-w-0">
+                          <p className="text-xl font-semibold">
+                            {selectedRepository.repo_name}
+                          </p>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            {selectedRepository.repo_description ||
+                              "No repository description provided."}
+                          </p>
+                          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            <Badge
+                              variant="outline"
+                              className={statusTone(
+                                selectedRepository.analysis_status,
+                              )}
+                            >
+                              {getRepositoryStatusLabel(
+                                selectedRepository.analysis_status,
+                              )}
+                            </Badge>
+                            <span>
+                              Last analyzed:{" "}
+                              {formatDateTime(
+                                selectedRepository.last_analyzed_at,
+                              )}
+                            </span>
+                          </div>
+                        </div>
+
+                        <Button asChild variant="outline" className="gap-2">
+                          <a
+                            href={selectedRepository.repo_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                            Open repository
+                          </a>
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-[1.5rem] border border-border/60 bg-background p-4">
+                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                          Batch progress
+                        </p>
+                        <p className="mt-2 text-3xl font-semibold">
+                          {selectedRepository.analysis_progress || 0}%
+                        </p>
+                        <Progress
+                          value={selectedRepository.analysis_progress || 0}
+                          className="mt-3 h-2.5"
+                        />
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          {selectedRepository.analysis_current_stage ||
+                            "Select contributors to start a new analysis batch."}
+                        </p>
+                      </div>
+
+                      <div className="rounded-[1.5rem] border border-border/60 bg-background p-4">
+                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                          Queue telemetry
+                        </p>
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                          <div>
+                            <p className="text-2xl font-semibold">
+                              {selectedBatchState?.total ??
+                                profilesWithContributorData.length}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Total in batch
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-2xl font-semibold">
+                              {selectedBatchState?.failed.length ??
+                                failedProfileCount}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Failed
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-2xl font-semibold">
+                              {selectedBatchState?.processed.length ??
+                                completedProfileCount}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Processed
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-2xl font-semibold">
+                              {selectedBatchState?.queue.length ?? 0}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Still queued
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {selectedBatchState?.activeContributor ? (
+                      <div className="rounded-[1.5rem] border border-cyan-500/30 bg-cyan-500/10 p-4 text-sm">
+                        <p className="font-semibold text-cyan-800">
+                          Active contributor
+                        </p>
+                        <p className="mt-1 text-cyan-700">
+                          @{selectedBatchState.activeContributor} is currently
+                          being analyzed.
+                        </p>
+                      </div>
+                    ) : null}
+
+                    {repositoryFailureReason ? (
+                      <Alert className="border-destructive/40 bg-destructive/10">
+                        <CircleAlert className="h-4 w-4" />
+                        <AlertDescription className="text-destructive">
+                          {repositoryFailureReason}
+                        </AlertDescription>
+                      </Alert>
+                    ) : null}
+                  </>
+                ) : (
+                  <div className="rounded-[1.5rem] border border-dashed border-border/60 p-6 text-sm text-muted-foreground">
+                    Sync repositories and select one to inspect its contributors
+                    and analysis history.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(22rem,0.8fr)] xl:items-start">
+              <Card className="min-w-0 border-border/60 bg-background/80 shadow-sm">
                 <CardHeader>
-                  <div className="flex items-start justify-between gap-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                       <CardTitle>Repository explorer</CardTitle>
                       <p className="mt-1 text-sm text-muted-foreground">
@@ -768,7 +1038,7 @@ export default function AdminGithubPage() {
                         of scrolling through a long dropdown.
                       </p>
                     </div>
-                    <Badge variant="outline">
+                    <Badge variant="outline" className="w-fit shrink-0">
                       {filteredRepositories.length}
                     </Badge>
                   </div>
@@ -785,9 +1055,13 @@ export default function AdminGithubPage() {
                       className="pl-10"
                     />
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    Completed and failed repositories stay pinned above queued
+                    work.
+                  </p>
 
-                  <ScrollArea className="h-[28rem] pr-3">
-                    <div className="space-y-3">
+                  <ScrollArea className="h-[28rem]">
+                    <div className="space-y-3 pr-4 sm:pr-5">
                       {filteredRepositories.map((repository) => {
                         const isSelected = repository.id === selectedRepoId;
 
@@ -803,42 +1077,81 @@ export default function AdminGithubPage() {
                                 : "border-border/60 bg-muted/15 hover:border-primary/30 hover:bg-muted/30",
                             )}
                           >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <p className="truncate text-base font-semibold">
-                                  {repository.repo_name}
-                                </p>
-                                <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-                                  {repository.repo_description ||
-                                    "No repository description provided."}
-                                </p>
+                            <div className="flex flex-col gap-4">
+                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border border-border/60 bg-background/80">
+                                      <Github className="h-4 w-4 text-muted-foreground" />
+                                    </span>
+                                    <div className="min-w-0">
+                                      <p className="text-base font-semibold break-words [overflow-wrap:anywhere]">
+                                        {repository.repo_name}
+                                      </p>
+                                      <p className="mt-0.5 text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                                        Repository
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <p className="mt-3 line-clamp-2 text-sm text-muted-foreground">
+                                    {repository.repo_description ||
+                                      "No repository description provided."}
+                                  </p>
+                                </div>
+                                <Badge
+                                  variant="outline"
+                                  className={cn(
+                                    "shrink-0 self-start",
+                                    statusTone(repository.analysis_status),
+                                  )}
+                                >
+                                  {getRepositoryStatusLabel(
+                                    repository.analysis_status,
+                                  )}
+                                </Badge>
                               </div>
-                              <Badge
-                                variant="outline"
-                                className={statusTone(
-                                  repository.analysis_status,
-                                )}
-                              >
-                                {getRepositoryStatusLabel(
-                                  repository.analysis_status,
-                                )}
-                              </Badge>
-                            </div>
 
-                            <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                              <span className="inline-flex items-center gap-1">
-                                <GitBranch className="h-3.5 w-3.5" />
-                                {repository.language || "Unknown stack"}
-                              </span>
-                              <span>
-                                {repository.analysis_progress || 0}% done
-                              </span>
-                              {typeof repository.stars === "number" ? (
-                                <span>{repository.stars} stars</span>
-                              ) : null}
-                              {typeof repository.forks === "number" ? (
-                                <span>{repository.forks} forks</span>
-                              ) : null}
+                              <div className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-4">
+                                <div className="rounded-xl border border-border/60 bg-background/70 px-3 py-2">
+                                  <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                                    Stack
+                                  </p>
+                                  <p className="mt-1 inline-flex items-center gap-1 text-sm font-medium">
+                                    <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
+                                    <span className="break-words [overflow-wrap:anywhere]">
+                                      {repository.language || "Unknown"}
+                                    </span>
+                                  </p>
+                                </div>
+                                <div className="rounded-xl border border-border/60 bg-background/70 px-3 py-2">
+                                  <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                                    Progress
+                                  </p>
+                                  <p className="mt-1 text-sm font-medium">
+                                    {repository.analysis_progress || 0}% done
+                                  </p>
+                                </div>
+                                <div className="rounded-xl border border-border/60 bg-background/70 px-3 py-2">
+                                  <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                                    Stars
+                                  </p>
+                                  <p className="mt-1 text-sm font-medium">
+                                    {typeof repository.stars === "number"
+                                      ? repository.stars
+                                      : 0}
+                                  </p>
+                                </div>
+                                <div className="rounded-xl border border-border/60 bg-background/70 px-3 py-2">
+                                  <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                                    Forks
+                                  </p>
+                                  <p className="mt-1 text-sm font-medium">
+                                    {typeof repository.forks === "number"
+                                      ? repository.forks
+                                      : 0}
+                                  </p>
+                                </div>
+                              </div>
                             </div>
                           </button>
                         );
@@ -853,7 +1166,7 @@ export default function AdminGithubPage() {
                   </ScrollArea>
                 </CardContent>
               </Card>
-              <Card className="border-border/60 bg-background/80 shadow-sm">
+              <Card className="min-w-0 border-border/60 bg-background/80 shadow-sm">
                 <CardHeader>
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div>
@@ -890,9 +1203,10 @@ export default function AdminGithubPage() {
                       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                       <Input
                         value={contributorSearchQuery}
-                        onChange={(event) =>
-                          setContributorSearchQuery(event.target.value)
-                        }
+                        onChange={(event) => {
+                          setHasClearedContributorFocus(false);
+                          setContributorSearchQuery(event.target.value);
+                        }}
                         placeholder="Search contributors"
                         className="pl-10"
                         disabled={!selectedRepoId}
@@ -900,6 +1214,19 @@ export default function AdminGithubPage() {
                     </div>
 
                     <div className="flex flex-wrap gap-2">
+                      {contributorSearchQuery ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setHasClearedContributorFocus(true);
+                            setContributorSearchQuery("");
+                          }}
+                        >
+                          Show all contributors
+                        </Button>
+                      ) : null}
                       <Button
                         type="button"
                         variant="outline"
@@ -1064,148 +1391,6 @@ export default function AdminGithubPage() {
                 </CardContent>
               </Card>
             </div>
-
-            <Card className="border-border/60 bg-background/80 shadow-sm">
-              <CardHeader>
-                <CardTitle>Selected repository</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {selectedRepository ? (
-                  <>
-                    <div className="rounded-[1.5rem] border border-border/60 bg-muted/15 p-5">
-                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                        <div className="min-w-0">
-                          <p className="text-xl font-semibold">
-                            {selectedRepository.repo_name}
-                          </p>
-                          <p className="mt-1 text-sm text-muted-foreground">
-                            {selectedRepository.repo_description ||
-                              "No repository description provided."}
-                          </p>
-                          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                            <Badge
-                              variant="outline"
-                              className={statusTone(
-                                selectedRepository.analysis_status,
-                              )}
-                            >
-                              {getRepositoryStatusLabel(
-                                selectedRepository.analysis_status,
-                              )}
-                            </Badge>
-                            <span>
-                              Last analyzed:{" "}
-                              {formatDateTime(
-                                selectedRepository.last_analyzed_at,
-                              )}
-                            </span>
-                          </div>
-                        </div>
-
-                        <Button asChild variant="outline" className="gap-2">
-                          <a
-                            href={selectedRepository.repo_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            <ExternalLink className="h-4 w-4" />
-                            Open repository
-                          </a>
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-[1.5rem] border border-border/60 bg-background p-4">
-                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                          Batch progress
-                        </p>
-                        <p className="mt-2 text-3xl font-semibold">
-                          {selectedRepository.analysis_progress || 0}%
-                        </p>
-                        <Progress
-                          value={selectedRepository.analysis_progress || 0}
-                          className="mt-3 h-2.5"
-                        />
-                        <p className="mt-2 text-xs text-muted-foreground">
-                          {selectedRepository.analysis_current_stage ||
-                            "Select contributors to start a new analysis batch."}
-                        </p>
-                      </div>
-
-                      <div className="rounded-[1.5rem] border border-border/60 bg-background p-4">
-                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                          Queue telemetry
-                        </p>
-                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                          <div>
-                            <p className="text-2xl font-semibold">
-                              {selectedBatchState?.total ??
-                                profilesWithContributorData.length}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              Total in batch
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-2xl font-semibold">
-                              {selectedBatchState?.failed.length ??
-                                failedProfileCount}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              Failed
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-2xl font-semibold">
-                              {selectedBatchState?.processed.length ??
-                                completedProfileCount}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              Processed
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-2xl font-semibold">
-                              {selectedBatchState?.queue.length ?? 0}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              Still queued
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {selectedBatchState?.activeContributor ? (
-                      <div className="rounded-[1.5rem] border border-cyan-500/30 bg-cyan-500/10 p-4 text-sm">
-                        <p className="font-semibold text-cyan-800">
-                          Active contributor
-                        </p>
-                        <p className="mt-1 text-cyan-700">
-                          @{selectedBatchState.activeContributor} is currently
-                          being analyzed.
-                        </p>
-                      </div>
-                    ) : null}
-
-                    {repositoryFailureReason ? (
-                      <Alert className="border-destructive/40 bg-destructive/10">
-                        <CircleAlert className="h-4 w-4" />
-                        <AlertDescription className="text-destructive">
-                          {repositoryFailureReason}
-                        </AlertDescription>
-                      </Alert>
-                    ) : null}
-                  </>
-                ) : (
-                  <div className="rounded-[1.5rem] border border-dashed border-border/60 p-6 text-sm text-muted-foreground">
-                    Sync repositories and select one to inspect its
-                    contributors and analysis history.
-                  </div>
-                )}
-              </CardContent>
-            </Card>
           </section>
         </>
       )}

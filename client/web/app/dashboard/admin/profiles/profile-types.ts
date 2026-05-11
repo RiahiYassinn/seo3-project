@@ -100,12 +100,92 @@ export interface RecommendationCase {
     username?: string;
     role?: string;
   } | null;
+  context_snapshot?: {
+    repoName?: string;
+    contributorLogin?: string;
+    dominantLanguage?: string | null;
+    commitTopics?: string[];
+    strengths?: string[];
+    detectedGaps?: Array<{
+      key: string;
+      label: string;
+      score: number;
+      severity: Severity;
+      evidence?: string[];
+    }>;
+    repeatedWeaknesses?: string[];
+    qualityTrendDelta?: number | null;
+    risk?: Record<string, any>;
+    llmProvider?: string;
+    llmModel?: string;
+    generatedAt?: string;
+    profileSignals?: Record<string, any>;
+  } | null;
+  evidence_snapshot?: {
+    recommendationType?: RecommendationType;
+    topWeaknesses?: Array<{ skill: string; score: number }>;
+    keyFindings?: Array<{
+      title: string;
+      skill: string;
+      severity: Severity;
+      confidence: number;
+      file: string;
+    }>;
+    strengths?: string[];
+    repeatedWeaknesses?: string[];
+    successCriteria?: string[];
+    retrievedCoursesByGap?: Array<{
+      gapKey: string;
+      gapLabel: string;
+      courses: Array<{
+        courseId: string;
+        title: string;
+        url: string;
+        description: string;
+        skills: string[];
+        partner?: string | null;
+        type?: string | null;
+        rating?: number | null;
+        reviewCount?: number | null;
+        vectorScore?: number | null;
+      }>;
+    }>;
+  } | null;
+  target_skills?: string[] | null;
+  effort_level?: "light" | "moderate" | "intensive" | null;
+  due_in_days?: number | null;
+  confidence_score?: number | null;
   learning_path?: {
+    overview?: string;
+    tone?: string;
+    estimatedTotalHours?: number;
     durationWeeks?: number;
+    targetSkills?: string[];
     steps?: Array<{
       order: number;
-      skill: string;
+      skill?: string;
+      title?: string;
       goal: string;
+      focus?: string;
+      why_it_matters?: string;
+      practice_task?: string;
+      success_signal?: string;
+      estimated_hours?: number;
+      gap_keys?: string[];
+      recommended_course_ids?: string[];
+      recommended_courses?: Array<{
+        courseId: string;
+        title: string;
+        url: string;
+        description: string;
+        skills: string[];
+        partner?: string | null;
+        type?: string | null;
+        rating?: number | null;
+        reviewCount?: number | null;
+        vectorScore?: number | null;
+      }>;
+      success_criteria?: string[];
       resources?: Array<{ title: string; type: string; url: string }>;
     }>;
   } | null;
@@ -115,13 +195,20 @@ export interface RecommendationCase {
       skill: string;
       file: string;
       note: string;
+      success_criteria?: string;
     }>;
+    focus_areas?: string[];
     resources?: Array<{ title: string; type: string; url: string }>;
   } | null;
   weakness_snapshot?: {
     topWeaknesses?: Array<{ skill: string; score: number }>;
     weaknessScores?: Record<string, number>;
   } | null;
+  decision_reasons?: Record<string, any> | null;
+  previous_recommendation_id?: string | null;
+  outcome_status?: "pending" | "improving" | "stalled" | "resolved" | null;
+  outcome_metrics?: Record<string, any> | null;
+  feedback?: Record<string, any> | null;
   created_at: string;
   updated_at: string;
 }
@@ -178,7 +265,10 @@ export const statusTone = (status: string | null) => {
   }
 };
 
-export const formatLabel = (value: string) => value.replace(/_/g, " ");
+export const formatLabel = (value: string) => {
+  if (!value) return "";
+  return value.replace(/_/g, " ");
+};
 
 export const confidencePercent = (value: number) =>
   `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
