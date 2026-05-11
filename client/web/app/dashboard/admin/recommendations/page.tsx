@@ -9,7 +9,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   buildAdminWorkflowHref,
   readAdminWorkflowContext,
@@ -34,6 +33,20 @@ import {
   recommendationTypeTone,
 } from "../profiles/profile-types";
 
+const hasAnalysisActivity = (repository: RepositoryRecord) => {
+  const contributorProfiles = Object.values(
+    repository.analysis_metadata?.contributorProfiles || {},
+  );
+
+  return (
+    contributorProfiles.length > 0 ||
+    Boolean((repository as any).last_analyzed_at) ||
+    ["pending", "in_progress", "completed", "failed"].includes(
+      String((repository as any).analysis_status || ""),
+    )
+  );
+};
+
 export default function AdminRecommendationsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -44,7 +57,9 @@ export default function AdminRecommendationsPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
-  const [recommendations, setRecommendations] = useState<RecommendationCase[]>([]);
+  const [recommendations, setRecommendations] = useState<RecommendationCase[]>(
+    [],
+  );
   const [repositories, setRepositories] = useState<RepositoryRecord[]>([]);
   const [ackLoadingId, setAckLoadingId] = useState<string | null>(null);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
@@ -55,7 +70,7 @@ export default function AdminRecommendationsPage() {
     navigationContext.repoId || "all",
   );
   const [contributorFilter, setContributorFilter] = useState<string>(
-    navigationContext.contributorLogin || "",
+    navigationContext.contributorLogin || "all",
   );
 
   const loadData = useCallback(async (isRefresh = false) => {
@@ -76,7 +91,9 @@ export default function AdminRecommendationsPage() {
       setSelectedRecommendationId((current) => {
         if (
           current &&
-          nextRecommendations.some((recommendation) => recommendation.id === current)
+          nextRecommendations.some(
+            (recommendation) => recommendation.id === current,
+          )
         ) {
           return current;
         }
@@ -105,6 +122,11 @@ export default function AdminRecommendationsPage() {
       repositories.map((repository) => [repository.id, repository.repo_name]),
     ) as Record<string, string>;
   }, [repositories]);
+
+  const analyzedRepositories = useMemo(
+    () => repositories.filter((repository) => hasAnalysisActivity(repository)),
+    [repositories],
+  );
 
   const profileIdMap = useMemo(() => {
     const entries: Array<[string, string]> = [];
@@ -139,16 +161,14 @@ export default function AdminRecommendationsPage() {
   );
 
   const filteredRecommendations = useMemo(() => {
-    const contributorQuery = contributorFilter.trim().toLowerCase();
-
     return recommendations
       .filter((recommendation) => {
         const matchesRepository =
           repositoryFilter === "all" ||
           recommendation.repository_id === repositoryFilter;
         const matchesContributor =
-          !contributorQuery ||
-          recommendation.contributor_login.toLowerCase().includes(contributorQuery);
+          contributorFilter === "all" ||
+          recommendation.contributor_login === contributorFilter;
 
         return matchesRepository && matchesContributor;
       })
@@ -182,7 +202,11 @@ export default function AdminRecommendationsPage() {
     ) {
       setSelectedRecommendationId(filteredRecommendations[0]?.id || "");
     }
-  }, [filteredRecommendations, selectedRecommendation, selectedRecommendationId]);
+  }, [
+    filteredRecommendations,
+    selectedRecommendation,
+    selectedRecommendationId,
+  ]);
 
   const workflowContext = useMemo(() => {
     const selectedProfileId =
@@ -202,7 +226,7 @@ export default function AdminRecommendationsPage() {
         undefined,
       contributorLogin:
         selectedRecommendation?.contributor_login ||
-        contributorFilter.trim() ||
+        (contributorFilter !== "all" ? contributorFilter : undefined) ||
         undefined,
       profileId: selectedProfileId || undefined,
       recommendationId: selectedRecommendation?.id || undefined,
@@ -272,17 +296,68 @@ export default function AdminRecommendationsPage() {
   };
 
   const repositoryFilterOptions = useMemo(() => {
-    const uniqueRepositoryIds = Array.from(
-      new Set(recommendations.map((recommendation) => recommendation.repository_id)),
+    const options = analyzedRepositories.map((repository) => ({
+      id: repository.id,
+      name: repository.repo_name,
+    }));
+
+    if (
+      repositoryFilter !== "all" &&
+      !options.some((repository) => repository.id === repositoryFilter)
+    ) {
+      const selectedRepository = repositories.find(
+        (repository) => repository.id === repositoryFilter,
+      );
+      if (selectedRepository) {
+        options.push({
+          id: selectedRepository.id,
+          name: selectedRepository.repo_name,
+        });
+      }
+    }
+
+    return options.sort((left, right) => left.name.localeCompare(right.name));
+  }, [analyzedRepositories, repositories, repositoryFilter]);
+
+  const contributorFilterOptions = useMemo(() => {
+    const relevantRecommendations = recommendations.filter((recommendation) =>
+      repositoryFilter === "all"
+        ? true
+        : recommendation.repository_id === repositoryFilter,
     );
 
-    return uniqueRepositoryIds
-      .map((repositoryId) => ({
-        id: repositoryId,
-        name: repositoryNameMap[repositoryId] || repositoryId,
-      }))
-      .sort((left, right) => left.name.localeCompare(right.name));
-  }, [recommendations, repositoryNameMap]);
+    return Array.from(
+      new Set(
+        relevantRecommendations.map((recommendation) =>
+          String(recommendation.contributor_login || "").trim(),
+        ),
+      ),
+    )
+      .filter(Boolean)
+      .sort((left, right) => left.localeCompare(right));
+  }, [recommendations, repositoryFilter]);
+
+  useEffect(() => {
+    if (loading || repositoryFilter === "all") {
+      return;
+    }
+
+    if (
+      !repositories.some((repository) => repository.id === repositoryFilter)
+    ) {
+      setRepositoryFilter("all");
+    }
+  }, [loading, repositories, repositoryFilter]);
+
+  useEffect(() => {
+    if (loading || contributorFilter === "all") {
+      return;
+    }
+
+    if (!contributorFilterOptions.includes(contributorFilter)) {
+      setContributorFilter("all");
+    }
+  }, [contributorFilter, contributorFilterOptions, loading]);
 
   const retrievedCourses =
     selectedRecommendation?.evidence_snapshot?.retrievedCoursesByGap || [];
@@ -337,18 +412,24 @@ export default function AdminRecommendationsPage() {
             </option>
           ))}
         </select>
-        <Input
+        <select
           value={contributorFilter}
           onChange={(event) => setContributorFilter(event.target.value)}
-          placeholder="Filter by contributor"
-          className="lg:w-72"
-        />
+          className="h-10 rounded-md border border-input bg-background px-3 text-sm lg:w-72"
+        >
+          <option value="all">All contributors</option>
+          {contributorFilterOptions.map((contributorLogin) => (
+            <option key={contributorLogin} value={contributorLogin}>
+              @{contributorLogin}
+            </option>
+          ))}
+        </select>
         <Button
           type="button"
-          variant="ghost"
+          variant="default"
           onClick={() => {
             setRepositoryFilter("all");
-            setContributorFilter("");
+            setContributorFilter("all");
           }}
         >
           Reset
@@ -360,7 +441,9 @@ export default function AdminRecommendationsPage() {
           <CardHeader className="border-b border-border/50 pb-4">
             <div className="flex items-center justify-between gap-3">
               <CardTitle className="text-lg">Queue</CardTitle>
-              <Badge variant="secondary">{filteredRecommendations.length}</Badge>
+              <Badge variant="secondary">
+                {filteredRecommendations.length}
+              </Badge>
             </div>
           </CardHeader>
           <CardContent className="p-0">
@@ -378,13 +461,16 @@ export default function AdminRecommendationsPage() {
             ) : (
               <div className="max-h-[calc(100vh-18rem)] overflow-y-auto">
                 {filteredRecommendations.map((recommendation) => {
-                  const selected = selectedRecommendation?.id === recommendation.id;
+                  const selected =
+                    selectedRecommendation?.id === recommendation.id;
 
                   return (
                     <button
                       key={recommendation.id}
                       type="button"
-                      onClick={() => setSelectedRecommendationId(recommendation.id)}
+                      onClick={() =>
+                        setSelectedRecommendationId(recommendation.id)
+                      }
                       className={`w-full border-b border-border/40 px-4 py-4 text-left transition last:border-b-0 ${
                         selected ? "bg-cyan-500/8" : "hover:bg-muted/30"
                       }`}
@@ -399,14 +485,18 @@ export default function AdminRecommendationsPage() {
                         <Badge
                           variant="outline"
                           className={
-                            recommendationTypeTone[recommendation.recommendation_type]
+                            recommendationTypeTone[
+                              recommendation.recommendation_type
+                            ]
                           }
                         >
                           {formatLabel(recommendation.recommendation_type)}
                         </Badge>
                         <Badge
                           variant="outline"
-                          className={recommendationStatusTone(recommendation.status)}
+                          className={recommendationStatusTone(
+                            recommendation.status,
+                          )}
                         >
                           {formatLabel(recommendation.status)}
                         </Badge>
@@ -435,7 +525,9 @@ export default function AdminRecommendationsPage() {
                             ]
                           }
                         >
-                          {formatLabel(selectedRecommendation.recommendation_type)}
+                          {formatLabel(
+                            selectedRecommendation.recommendation_type,
+                          )}
                         </Badge>
                         <Badge
                           variant="outline"
@@ -455,8 +547,9 @@ export default function AdminRecommendationsPage() {
                         </p>
                       </div>
                       <p className="text-sm text-muted-foreground">
-                        {repositoryNameMap[selectedRecommendation.repository_id] ||
-                          selectedRecommendation.repository_id}{" "}
+                        {repositoryNameMap[
+                          selectedRecommendation.repository_id
+                        ] || selectedRecommendation.repository_id}{" "}
                         • @{selectedRecommendation.contributor_login}
                       </p>
                     </div>
@@ -537,8 +630,8 @@ export default function AdminRecommendationsPage() {
                   </div>
                 </CardHeader>
 
-                {selectedRecommendation.recommendation_type === "learning_path" &&
-                learningSteps.length ? (
+                {selectedRecommendation.recommendation_type ===
+                  "learning_path" && learningSteps.length ? (
                   <CardContent className="space-y-5 p-6">
                     <div className="flex items-center gap-2">
                       <BookOpen className="h-5 w-5 text-cyan-600" />
@@ -571,17 +664,17 @@ export default function AdminRecommendationsPage() {
                 ) : null}
               </Card>
 
-              {selectedRecommendation.recommendation_type === "learning_path" ? (
+              {selectedRecommendation.recommendation_type ===
+              "learning_path" ? (
                 <Card className="border-border/60 bg-background/92 shadow-sm">
                   <CardHeader className="border-b border-border/50">
-                    <CardTitle className="text-lg">
-                      Suggested courses from the vector database
-                    </CardTitle>
+                    <CardTitle className="text-lg">Suggested courses</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-5 p-6">
                     {retrievedCourses.length === 0 ? (
                       <p className="text-sm text-muted-foreground">
-                        No retrieved courses were attached to this recommendation.
+                        No retrieved courses were attached to this
+                        recommendation.
                       </p>
                     ) : (
                       retrievedCourses.map((match) => (

@@ -29,8 +29,12 @@ export default function DeveloperRecommendationsPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
-  const [integration, setIntegration] = useState<GitHubIntegration | null>(null);
-  const [recommendations, setRecommendations] = useState<RecommendationCase[]>([]);
+  const [integration, setIntegration] = useState<GitHubIntegration | null>(
+    null,
+  );
+  const [recommendations, setRecommendations] = useState<RecommendationCase[]>(
+    [],
+  );
   const [repositories, setRepositories] = useState<Record<string, string>>({});
   const [ackLoadingId, setAckLoadingId] = useState<string | null>(null);
 
@@ -55,9 +59,9 @@ export default function DeveloperRecommendationsPage() {
         repoNameMap[repository.id] = repository.repo_name;
       }
 
-      const nextRecommendations = (recommendationResponse.data || []).slice().sort(
-        (left, right) => right.priority_score - left.priority_score,
-      );
+      const nextRecommendations = (recommendationResponse.data || [])
+        .slice()
+        .sort((left, right) => right.priority_score - left.priority_score);
 
       setRepositories(repoNameMap);
       setRecommendations(nextRecommendations);
@@ -151,7 +155,7 @@ export default function DeveloperRecommendationsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.10),transparent_28%),radial-gradient(circle_at_top_right,rgba(217,70,239,0.08),transparent_22%),linear-gradient(180deg,#f8fafc,#eef2f7)]">
+    <div className="min-h-screen bg-background bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.10),transparent_28%),radial-gradient(circle_at_top_right,rgba(217,70,239,0.08),transparent_22%)] dark:bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.22),transparent_35%),radial-gradient(circle_at_top_right,rgba(217,70,239,0.18),transparent_30%)]">
       <Navbar />
 
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -164,9 +168,9 @@ export default function DeveloperRecommendationsPage() {
               Personal Coaching Queue
             </h1>
             <p className="mt-2 max-w-3xl text-muted-foreground">
-              These recommendations are generated from your linked GitHub activity
-              and now include evidence, confidence, and measurable success
-              criteria.
+              These recommendations are generated from your linked GitHub
+              activity and now include evidence, confidence, and measurable
+              success criteria.
             </p>
           </div>
           <Button
@@ -235,7 +239,9 @@ export default function DeveloperRecommendationsPage() {
               <Card className="border-border/60 bg-background/80 shadow-sm">
                 <CardContent className="p-5">
                   <p className="text-sm text-muted-foreground">Assigned</p>
-                  <p className="mt-2 text-3xl font-semibold">{stats.assigned}</p>
+                  <p className="mt-2 text-3xl font-semibold">
+                    {stats.assigned}
+                  </p>
                 </CardContent>
               </Card>
               <Card className="border-border/60 bg-background/80 shadow-sm">

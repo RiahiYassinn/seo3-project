@@ -246,6 +246,7 @@ Instructions:
 - Produce exactly 3 steps.
 - Each step should combine one or more detected gaps with one or two retrieved courses.
 - Use course IDs from the retrieved list only.
+- Never leave recommended_course_ids empty when relevant retrieved courses are available for that step.
 - Keep each practice task concrete and tied to production coding habits.
 - Optimize for the developer's current weaknesses, not a generic curriculum.
 

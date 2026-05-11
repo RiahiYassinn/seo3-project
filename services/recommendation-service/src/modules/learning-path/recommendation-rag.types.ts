@@ -119,6 +119,7 @@ export interface LearningPathStep {
   estimated_hours: number;
   gap_keys: string[];
   recommended_course_ids: string[];
+  recommended_courses?: RetrievedCourse[];
 }
 
 export interface GeneratedLearningPath {

@@ -12,7 +12,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { BriefcaseBusiness, CircleAlert, Loader, Sparkles, UserRoundPlus } from "lucide-react";
+import {
+  BriefcaseBusiness,
+  CircleAlert,
+  Loader,
+  Sparkles,
+  UserRoundPlus,
+} from "lucide-react";
 import { type RecommendationCase } from "@/app/dashboard/admin/profiles/profile-types";
 
 type MentorQueueRecommendation = RecommendationCase & {
@@ -27,7 +33,9 @@ export default function TechLeadRecommendationsPage() {
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [queue, setQueue] = useState<MentorQueueRecommendation[]>([]);
-  const [mentorAvailable, setMentorAvailable] = useState(Boolean(user?.is_mentor));
+  const [mentorAvailable, setMentorAvailable] = useState(
+    Boolean(user?.is_mentor),
+  );
   const [updatingAvailability, setUpdatingAvailability] = useState(false);
 
   useEffect(() => {
@@ -44,7 +52,9 @@ export default function TechLeadRecommendationsPage() {
         "/recommendations/mentor-queue",
       );
       setQueue(
-        (response.data || []).slice().sort((left, right) => right.priority_score - left.priority_score),
+        (response.data || [])
+          .slice()
+          .sort((left, right) => right.priority_score - left.priority_score),
       );
       setError("");
     } catch (requestError: any) {
@@ -155,7 +165,7 @@ export default function TechLeadRecommendationsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(168,85,247,0.10),transparent_28%),radial-gradient(circle_at_top_right,rgba(6,182,212,0.08),transparent_22%),linear-gradient(180deg,#f8fafc,#eef2f7)]">
+    <div className="min-h-screen bg-background bg-[radial-gradient(circle_at_top_left,rgba(168,85,247,0.10),transparent_28%),radial-gradient(circle_at_top_right,rgba(6,182,212,0.08),transparent_22%)] dark:bg-[radial-gradient(circle_at_top_left,rgba(168,85,247,0.22),transparent_35%),radial-gradient(circle_at_top_right,rgba(6,182,212,0.18),transparent_30%)]">
       <Navbar />
 
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -176,7 +186,10 @@ export default function TechLeadRecommendationsPage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-background/80 px-4 py-2">
               <div className="space-y-0.5">
-                <Label htmlFor="mentor-availability" className="text-sm font-medium">
+                <Label
+                  htmlFor="mentor-availability"
+                  className="text-sm font-medium"
+                >
                   Available for new mentoring
                 </Label>
                 <p className="text-xs text-muted-foreground">
@@ -214,10 +227,10 @@ export default function TechLeadRecommendationsPage() {
 
         {!mentorAvailable ? (
           <Alert className="mb-6 border-amber-500/40 bg-amber-500/10">
-            <CircleAlert className="h-4 w-4 text-amber-700" />
-            <AlertDescription className="text-amber-800">
-              Mentor availability is paused. You can still inspect the queue, but
-              you cannot claim new mentorship assignments.
+            <CircleAlert className="h-4 w-4 text-amber-700 dark:text-amber-300" />
+            <AlertDescription className="text-amber-800 dark:text-amber-200">
+              Mentor availability is paused. You can still inspect the queue,
+              but you cannot claim new mentorship assignments.
             </AlertDescription>
           </Alert>
         ) : null}
@@ -253,7 +266,9 @@ export default function TechLeadRecommendationsPage() {
           <Card className="border-border/60 bg-background/80 shadow-sm">
             <CardContent className="p-5">
               <p className="text-sm text-muted-foreground">High priority</p>
-              <p className="mt-2 text-3xl font-semibold">{stats.highPriority}</p>
+              <p className="mt-2 text-3xl font-semibold">
+                {stats.highPriority}
+              </p>
             </CardContent>
           </Card>
         </section>
@@ -288,7 +303,9 @@ export default function TechLeadRecommendationsPage() {
                     <Button
                       onClick={() => claimRecommendation(item.id)}
                       disabled={
-                        !unclaimed || assigningId === item.id || !mentorAvailable
+                        !unclaimed ||
+                        assigningId === item.id ||
+                        !mentorAvailable
                       }
                       className="gap-2"
                       variant={claimedByMe ? "outline" : "default"}

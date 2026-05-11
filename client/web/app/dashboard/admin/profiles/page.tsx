@@ -10,7 +10,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   buildAdminWorkflowHref,
   readAdminWorkflowContext,
@@ -20,7 +19,6 @@ import {
   Bot,
   CircleAlert,
   Loader2,
-  Search,
   Sparkles,
   Users,
 } from "lucide-react";
@@ -49,24 +47,43 @@ const formatAnalysisDate = (value: string | null) =>
 const weaknessBadgeTone =
   "border-slate-400/35 bg-slate-500/10 text-slate-700 hover:bg-slate-500/15 dark:border-slate-300/30 dark:text-slate-200";
 
+const hasAnalysisActivity = (repository: RepositoryRecord) => {
+  const metadata = (repository.analysis_metadata || {}) as Record<string, any>;
+  const contributorProfiles = Object.values(metadata.contributorProfiles || {});
+
+  return (
+    contributorProfiles.length > 0 ||
+    Boolean(metadata.contributorAnalysis) ||
+    Boolean(metadata.failureReason) ||
+    Boolean(metadata.lastBatchRequestedAt) ||
+    Boolean((repository as any).last_analyzed_at) ||
+    ["pending", "in_progress", "completed", "failed"].includes(
+      String((repository as any).analysis_status || ""),
+    )
+  );
+};
+
 export default function AdminProfilesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const navigationContext = useMemo(
+    () => readAdminWorkflowContext(searchParams),
+    [searchParams],
+  );
   const [repositories, setRepositories] = useState<RepositoryRecord[]>([]);
   const [recommendationMap, setRecommendationMap] = useState<
     Record<string, RecommendationCase>
   >({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [hasClearedSearchFocus, setHasClearedSearchFocus] = useState(false);
-  const [generatingRecommendationKey, setGeneratingRecommendationKey] = useState<
-    string | null
-  >(null);
-  const navigationContext = useMemo(
-    () => readAdminWorkflowContext(searchParams),
-    [searchParams],
+  const [repositoryFilter, setRepositoryFilter] = useState<string>(
+    navigationContext.repoId || "all",
   );
+  const [contributorFilter, setContributorFilter] = useState<string>(
+    navigationContext.contributorLogin || "all",
+  );
+  const [generatingRecommendationKey, setGeneratingRecommendationKey] =
+    useState<string | null>(null);
 
   useEffect(() => {
     const loadRecommendations = async (repoRecords: RepositoryRecord[]) => {
@@ -163,75 +180,104 @@ export default function AdminProfilesPage() {
     [repositories],
   );
 
-  useEffect(() => {
-    if (hasClearedSearchFocus || searchQuery) {
-      return;
+  const analyzedRepositories = useMemo(
+    () => repositories.filter((repository) => hasAnalysisActivity(repository)),
+    [repositories],
+  );
+
+  const repositoryFilterOptions = useMemo(() => {
+    const options = analyzedRepositories.map((repository) => ({
+      id: repository.id,
+      name: repository.repo_name,
+    }));
+
+    if (
+      repositoryFilter !== "all" &&
+      !options.some((repository) => repository.id === repositoryFilter)
+    ) {
+      const selectedRepository = repositories.find(
+        (repository) => repository.id === repositoryFilter,
+      );
+      if (selectedRepository) {
+        options.push({
+          id: selectedRepository.id,
+          name: selectedRepository.repo_name,
+        });
+      }
     }
 
-    if (navigationContext.contributorLogin) {
-      setSearchQuery(navigationContext.contributorLogin);
+    return options.sort((left, right) => left.name.localeCompare(right.name));
+  }, [analyzedRepositories, repositories, repositoryFilter]);
+
+  const contributorFilterOptions = useMemo(() => {
+    const relevantProfiles = profiles.filter((profile) =>
+      repositoryFilter === "all"
+        ? true
+        : (profile.repositoryId || "") === repositoryFilter,
+    );
+    const optionMap = new Map<
+      string,
+      { login: string; label: string; repositoryCount: number }
+    >();
+
+    for (const profile of relevantProfiles) {
+      const login = String(profile.contributorLogin || "").trim();
+      if (!login) continue;
+
+      const current = optionMap.get(login);
+      const nextLabel =
+        String(profile.contributorName || "").trim() || `@${login}`;
+
+      optionMap.set(login, {
+        login,
+        label: current?.label || nextLabel,
+        repositoryCount: (current?.repositoryCount || 0) + 1,
+      });
+    }
+
+    return Array.from(optionMap.values()).sort((left, right) =>
+      left.login.localeCompare(right.login),
+    );
+  }, [profiles, repositoryFilter]);
+
+  useEffect(() => {
+    if (loading || repositoryFilter === "all") {
       return;
     }
 
     if (
-      navigationContext.repoId &&
-      repositoryNameMap[navigationContext.repoId]
+      !repositories.some((repository) => repository.id === repositoryFilter)
     ) {
-      setSearchQuery(repositoryNameMap[navigationContext.repoId]);
+      setRepositoryFilter("all");
     }
-  }, [
-    hasClearedSearchFocus,
-    navigationContext.contributorLogin,
-    navigationContext.repoId,
-    repositoryNameMap,
-    searchQuery,
-  ]);
+  }, [loading, repositories, repositoryFilter]);
+
+  useEffect(() => {
+    if (loading || contributorFilter === "all") {
+      return;
+    }
+
+    if (
+      !contributorFilterOptions.some(
+        (contributor) => contributor.login === contributorFilter,
+      )
+    ) {
+      setContributorFilter("all");
+    }
+  }, [contributorFilter, contributorFilterOptions, loading]);
 
   const filteredProfiles = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return profiles;
-
     return profiles.filter((profile) => {
-      const recommendation =
-        recommendationMap[
-          recommendationKey(
-            profile.repositoryId || "",
-            profile.contributorLogin,
-          )
-        ];
+      const matchesRepository =
+        repositoryFilter === "all" ||
+        (profile.repositoryId || "") === repositoryFilter;
+      const matchesContributor =
+        contributorFilter === "all" ||
+        profile.contributorLogin === contributorFilter;
 
-      return (
-        profile.contributorLogin.toLowerCase().includes(query) ||
-        String(profile.contributorName || "")
-          .toLowerCase()
-          .includes(query) ||
-        String(profile.contributorEmail || "")
-          .toLowerCase()
-          .includes(query) ||
-        profile.repositoryName.toLowerCase().includes(query) ||
-        String(profile.skillLevel || "")
-          .toLowerCase()
-          .includes(query) ||
-        profile.status.toLowerCase().includes(query) ||
-        (profile.topWeaknesses || []).some((weakness) =>
-          String(weakness.category || "")
-            .toLowerCase()
-            .includes(query),
-        ) ||
-        (profile.recommendations || []).some((recommendationItem) =>
-          `${recommendationItem.action || ""} ${recommendationItem.weakness || ""}`
-            .toLowerCase()
-            .includes(query),
-        ) ||
-        String(recommendation?.title || "")
-          .toLowerCase()
-          .includes(query) ||
-        String(recommendation?.recommendation_type || "")
-          .toLowerCase()
-          .includes(query)
-      );
+      return matchesRepository && matchesContributor;
     });
-  }, [profiles, recommendationMap, searchQuery]);
+  }, [contributorFilter, profiles, repositoryFilter]);
 
   const focusedProfile =
     filteredProfiles.length === 1 ? filteredProfiles[0] : null;
@@ -263,11 +309,16 @@ export default function AdminProfilesPage() {
 
   const generateRecommendation = async (profile: ContributorProfile) => {
     if (!profile.repositoryId || !profile.contributorLogin) {
-      setError("This profile is missing repository or contributor information.");
+      setError(
+        "This profile is missing repository or contributor information.",
+      );
       return;
     }
 
-    const key = recommendationKey(profile.repositoryId, profile.contributorLogin);
+    const key = recommendationKey(
+      profile.repositoryId,
+      profile.contributorLogin,
+    );
     setGeneratingRecommendationKey(key);
     setError("");
 
@@ -391,30 +442,43 @@ export default function AdminProfilesPage() {
               </p>
             </div>
             <div className="flex w-full flex-col gap-3 lg:w-auto lg:flex-row lg:items-center">
-              <div className="relative w-full lg:w-[22rem]">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={searchQuery}
-                  onChange={(event) => {
-                    setHasClearedSearchFocus(false);
-                    setSearchQuery(event.target.value);
-                  }}
-                  placeholder="Search profiles, contributors, or repositories"
-                  className="pl-10"
-                />
-              </div>
-              {searchQuery ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => {
-                    setHasClearedSearchFocus(true);
-                    setSearchQuery("");
-                  }}
-                >
-                  Show all profiles
-                </Button>
-              ) : null}
+              <select
+                value={repositoryFilter}
+                onChange={(event) => setRepositoryFilter(event.target.value)}
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm lg:w-72"
+              >
+                <option value="all">All repositories</option>
+                {repositoryFilterOptions.map((repository) => (
+                  <option key={repository.id} value={repository.id}>
+                    {repository.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={contributorFilter}
+                onChange={(event) => setContributorFilter(event.target.value)}
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm lg:w-72"
+              >
+                <option value="all">All contributors</option>
+                {contributorFilterOptions.map((contributor) => (
+                  <option key={contributor.login} value={contributor.login}>
+                    {contributor.label}
+                    {contributor.label.startsWith("@")
+                      ? ""
+                      : ` (@${contributor.login})`}
+                  </option>
+                ))}
+              </select>
+              <Button
+                type="button"
+                variant="default"
+                onClick={() => {
+                  setRepositoryFilter("all");
+                  setContributorFilter("all");
+                }}
+              >
+                Reset
+              </Button>
             </div>
           </div>
         </CardHeader>
@@ -588,12 +652,17 @@ export default function AdminProfilesPage() {
 
                       <Button
                         size="sm"
-                        variant={generatedRecommendation ? "outline" : "default"}
+                        variant={
+                          generatedRecommendation ? "outline" : "default"
+                        }
                         className="gap-2"
-                        disabled={generatingRecommendationKey === recommendationKey(
-                          profile.repositoryId || "",
-                          profile.contributorLogin,
-                        )}
+                        disabled={
+                          generatingRecommendationKey ===
+                          recommendationKey(
+                            profile.repositoryId || "",
+                            profile.contributorLogin,
+                          )
+                        }
                         onClick={() => generateRecommendation(profile)}
                       >
                         {generatingRecommendationKey ===
@@ -634,8 +703,8 @@ export default function AdminProfilesPage() {
                 No contributor profiles found
               </p>
               <p className="mt-2 text-sm text-muted-foreground">
-                Run contributor analysis from the GitHub Analysis page to
-                generate profiles here.
+                Run contributor analysis from the GitHub Analysis page or reset
+                the filters to see more profiles here.
               </p>
             </div>
           )}
