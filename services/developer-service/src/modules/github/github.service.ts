@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { RpcException } from '@nestjs/microservices';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository as TypeOrmRepository } from 'typeorm';
+import { In, Repository as TypeOrmRepository } from 'typeorm';
 import { ClientKafka } from '@nestjs/microservices';
 import { Octokit } from '@octokit/rest';
 import * as crypto from 'crypto';
@@ -11,6 +11,7 @@ import { Repository } from './entities/repository.entity';
 import { AnalysisStatus } from './entities/repository.entity';
 import { LinkGithubDto } from './dto/link-github.dto';
 import { AnalysisRequestedEvent } from './events/analysis-requested.event';
+import { Developer } from '../developer/entities/developer.entity';
 
 interface GithubContributor {
   login: string;
@@ -65,6 +66,9 @@ export class GithubService {
 
     @InjectRepository(Repository)
     private readonly repositoryRepo: TypeOrmRepository<Repository>,
+
+    @InjectRepository(Developer)
+    private readonly developerRepo: TypeOrmRepository<Developer>,
 
     @Inject('KAFKA_CLIENT')
     private readonly kafkaClient: ClientKafka,
@@ -430,6 +434,67 @@ export class GithubService {
 
   async getIntegration(developerId: string): Promise<GithubIntegration> {
     return this.getIntegrationForDeveloper(developerId);
+  }
+
+  async findIntegrationByGithubUsername(githubUsername: string): Promise<GithubIntegration | null> {
+    const normalizedUsername = this.normalizeContributorLogin(githubUsername);
+    if (!normalizedUsername) {
+      return null;
+    }
+
+    const integrations = await this.integrationRepo.find({
+      select: ['id', 'developerId', 'githubUsername', 'connectedAt'],
+    });
+
+    const matches = integrations.filter(
+      (integration) =>
+        this.normalizeContributorLogin(integration.githubUsername) ===
+        normalizedUsername,
+    );
+
+    if (matches.length <= 1) {
+      return matches[0] || null;
+    }
+
+    const developers = await this.developerRepo.find({
+      where: {
+        id: In(matches.map((integration) => integration.developerId)),
+      },
+    });
+    const developerById = new Map(
+      developers.map((developer) => [developer.id, developer]),
+    );
+
+    matches.sort((left, right) => {
+      const leftUser = developerById.get(left.developerId);
+      const rightUser = developerById.get(right.developerId);
+      const leftScore = this.githubRecipientScore(leftUser);
+      const rightScore = this.githubRecipientScore(rightUser);
+
+      if (leftScore !== rightScore) {
+        return rightScore - leftScore;
+      }
+
+      return left.connectedAt.getTime() - right.connectedAt.getTime();
+    });
+
+    return matches[0];
+  }
+
+  private githubRecipientScore(developer?: Developer) {
+    if (!developer) {
+      return 0;
+    }
+
+    let score = developer.isActive ? 10 : 0;
+
+    if (developer.role === 'developer') {
+      score += 100;
+    } else if (developer.role === 'tech_lead') {
+      score += 50;
+    }
+
+    return score;
   }
 
   async linkGithub(developerId: string, dto: LinkGithubDto): Promise<GithubIntegration> {

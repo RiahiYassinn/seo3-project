@@ -22,6 +22,7 @@ import { useAuthStore } from "@/lib/store";
 import { useTheme } from "@/hooks/use-theme";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { NotificationButton } from "@/components/notifications/notification-button";
 import { cn } from "@/lib/utils";
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = "admin-sidebar-collapsed";
@@ -426,11 +427,10 @@ export function AdminShell({
                       </p>
                     </div>
                   </div>
-                  {actions ? (
-                    <div className="flex w-full flex-wrap gap-3 lg:w-auto lg:justify-end">
-                      {actions}
-                    </div>
-                  ) : null}
+                  <div className="flex w-full flex-wrap items-center gap-3 lg:w-auto lg:justify-end">
+                    <NotificationButton />
+                    {actions}
+                  </div>
                 </div>
               </div>
 

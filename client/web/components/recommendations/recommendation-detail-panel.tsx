@@ -7,6 +7,7 @@ import {
   BookOpen,
   CalendarClock,
   CheckCircle2,
+  FileText,
   Flame,
   GitBranch,
   Layers3,
@@ -47,8 +48,12 @@ export function RecommendationDetailPanel({
   const evidence = recommendation.evidence_snapshot || null;
   const decision = recommendation.decision_reasons || null;
   const gapCards = context?.detectedGaps || [];
-  const retrievedCoursesByGap = evidence?.retrievedCoursesByGap || [];
+  const retrievedCoursesByGap =
+    recommendation.recommendation_type === "learning_path"
+      ? evidence?.retrievedCoursesByGap || []
+      : [];
   const learningSteps = recommendation.learning_path?.steps || [];
+  const docsReview = recommendation.docs_review || null;
   const generatedAt = context?.generatedAt;
 
   return (
@@ -355,6 +360,91 @@ export function RecommendationDetailPanel({
                     ? `Assigned mentor: ${recommendation.mentor_snapshot.name}${recommendation.mentor_snapshot.email ? ` (${recommendation.mentor_snapshot.email})` : ""}`
                     : "A mentor is attached when the recommendation needs direct guided coaching."}
                 </p>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {recommendation.recommendation_type === "docs_review" &&
+          docsReview?.checklist?.length ? (
+            <Card className="border-emerald-500/25 bg-emerald-500/5 shadow-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <FileText className="h-5 w-5" />
+                  Quick docs review
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {docsReview.focus_areas?.length ? (
+                  <div className="rounded-3xl border border-emerald-500/20 bg-background/80 p-4">
+                    <p className={labelMuted}>Focus Areas</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {docsReview.focus_areas.map((area) => (
+                        <Badge key={`${recommendation.id}-docs-${area}`} variant="outline">
+                          {area}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {docsReview.checklist.map((item, index) => (
+                  <div
+                    key={`${recommendation.id}-docs-review-${index}`}
+                    className="rounded-3xl border border-border/60 bg-background/90 p-5"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                          {item.file || "Repository-wide"}
+                        </p>
+                        <h3 className="mt-1 text-lg font-semibold text-foreground">
+                          {item.title}
+                        </h3>
+                      </div>
+                      {item.skill ? (
+                        <Badge variant="secondary">{formatLabel(item.skill)}</Badge>
+                      ) : null}
+                    </div>
+                    <p className="mt-3 text-sm text-muted-foreground">
+                      {item.note}
+                    </p>
+                    {item.success_criteria ? (
+                      <div className="mt-4 rounded-2xl border border-border/60 bg-muted/10 p-4">
+                        <p className={labelMuted}>Success Signal</p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          {item.success_criteria}
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+
+                {docsReview.resources?.length ? (
+                  <div className="space-y-3">
+                    <p className={labelMuted}>Resources</p>
+                    {docsReview.resources.map((resource) => (
+                      <a
+                        key={`${recommendation.id}-docs-resource-${resource.url}`}
+                        href={resource.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block rounded-2xl border border-border/60 bg-background/90 p-4 transition hover:border-primary/40"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-medium text-foreground">
+                              {resource.title}
+                            </p>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              {resource.type || "resource"}
+                            </p>
+                          </div>
+                          <ArrowUpRight className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
           ) : null}

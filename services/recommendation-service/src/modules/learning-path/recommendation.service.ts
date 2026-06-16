@@ -36,6 +36,10 @@ interface MentorCandidate {
 @Injectable()
 export class RecommendationService implements OnModuleInit {
   private readonly logger = new Logger(RecommendationService.name);
+  private readonly notificationServiceBaseUrl =
+    process.env.NOTIFICATION_SERVICE_HTTP_URL ||
+    process.env.NOTIFICATION_SERVICE_URL?.replace(/^tcp:/, 'http:') ||
+    'http://localhost:3005';
 
   constructor(
     @InjectRepository(RecommendationCase)
@@ -60,24 +64,24 @@ export class RecommendationService implements OnModuleInit {
 
     const summary = (payload.summary || {}) as AnalysisSummary;
     const contributorLogin = this.resolveContributorLogin(payload, targetDeveloperId);
+    const generated = await this.ragLearningPathService.generateRecommendation(
+      payload,
+      summary,
+    );
+    const recommendationType = this.determineRecommendationType(
+      summary,
+      generated,
+    );
     const history = await this.getRecommendationHistory(
       targetDeveloperId,
       contributorLogin,
       payload.repositoryId,
     );
-    const existing = await this.recommendationRepo.findOne({
-      where: {
-        targetDeveloperId,
-        repositoryId: payload.repositoryId,
-        contributorLogin,
-        status: In(['open', 'assigned']),
-      },
-      order: { updatedAt: 'DESC' },
-    });
-
-    const generated = await this.ragLearningPathService.generateRecommendation(
-      payload,
-      summary,
+    const existing = await this.findActiveRecommendation(
+      targetDeveloperId,
+      payload.repositoryId,
+      contributorLogin,
+      recommendationType,
     );
 
     const saved = await this.saveRecommendation({
@@ -89,10 +93,11 @@ export class RecommendationService implements OnModuleInit {
       summary,
       history,
       generated,
+      recommendationType,
       analyzedAt: payload.analyzedAt,
     });
 
-    this.emitNotificationEvent(saved, generated);
+    await this.emitNotificationEvent(saved, generated);
     return this.mapCase(saved);
   }
 
@@ -132,20 +137,6 @@ export class RecommendationService implements OnModuleInit {
       );
     }
 
-    const history = await this.getRecommendationHistory(
-      developerId,
-      normalizedLogin,
-      repositoryId,
-    );
-    const existing = await this.recommendationRepo.findOne({
-      where: {
-        targetDeveloperId: developerId,
-        repositoryId,
-        contributorLogin: normalizedLogin,
-        status: In(['open', 'assigned']),
-      },
-      order: { updatedAt: 'DESC' },
-    });
     const payload: AnalysisCompletedEvent = {
       repositoryId,
       repoName:
@@ -164,6 +155,21 @@ export class RecommendationService implements OnModuleInit {
       payload,
       latestSummary as AnalysisSummary,
     );
+    const recommendationType = this.determineRecommendationType(
+      latestSummary as AnalysisSummary,
+      generated,
+    );
+    const history = await this.getRecommendationHistory(
+      developerId,
+      normalizedLogin,
+      repositoryId,
+    );
+    const existing = await this.findActiveRecommendation(
+      developerId,
+      repositoryId,
+      normalizedLogin,
+      recommendationType,
+    );
 
     const saved = await this.saveRecommendation({
       existing,
@@ -174,10 +180,11 @@ export class RecommendationService implements OnModuleInit {
       summary: latestSummary as AnalysisSummary,
       history,
       generated,
+      recommendationType,
       analyzedAt: payload.analyzedAt,
     });
 
-    this.emitNotificationEvent(saved, generated);
+    await this.emitNotificationEvent(saved, generated);
     return this.mapCase(saved);
   }
 
@@ -218,6 +225,10 @@ export class RecommendationService implements OnModuleInit {
       payload,
       latestSummary,
     );
+    const recommendationType = this.determineRecommendationType(
+      latestSummary,
+      generated,
+    );
 
     const saved = await this.saveRecommendation({
       existing: recommendation,
@@ -228,10 +239,11 @@ export class RecommendationService implements OnModuleInit {
       summary: latestSummary,
       history: history.filter((item) => item.id !== recommendation.id),
       generated,
+      recommendationType,
       analyzedAt: payload.analyzedAt,
     });
 
-    this.emitNotificationEvent(saved, generated, true);
+    await this.emitNotificationEvent(saved, generated, true);
     return this.mapCase(saved);
   }
 
@@ -369,10 +381,14 @@ export class RecommendationService implements OnModuleInit {
     summary: AnalysisSummary;
     history: RecommendationHistorySnapshot[];
     generated: RecommendationGenerationResult;
+    recommendationType: RecommendationType;
     analyzedAt?: string;
   }) {
     const recommendation =
       params.existing || this.recommendationRepo.create();
+    const existingMentorId = recommendation.mentorId;
+    const existingMentorSnapshot = recommendation.mentorSnapshot;
+    const existingStatus = recommendation.status;
     const generatedAt = params.analyzedAt || new Date().toISOString();
     const priorityScore = this.computePriorityScore(
       params.summary,
@@ -386,37 +402,55 @@ export class RecommendationService implements OnModuleInit {
     recommendation.targetDeveloperId = params.targetDeveloperId;
     recommendation.repositoryId = params.repositoryId;
     recommendation.contributorLogin = params.contributorLogin;
-    recommendation.recommendationType = 'learning_path';
-    recommendation.status = 'open';
+    recommendation.recommendationType = params.recommendationType;
+    recommendation.status =
+      params.recommendationType === 'mentorship' && existingStatus === 'assigned'
+        ? 'assigned'
+        : 'open';
     recommendation.priorityScore = priorityScore;
     recommendation.qualityScore = qualityScore;
-    recommendation.title = params.generated.generatedPath.title;
-    recommendation.description = params.generated.generatedPath.summary;
-    recommendation.mentorId = null;
-    recommendation.mentorSnapshot = null;
+    recommendation.title = this.buildRecommendationTitle(params);
+    recommendation.description = this.buildRecommendationDescription(params);
+    recommendation.mentorId =
+      params.recommendationType === 'mentorship' ? existingMentorId || null : null;
+    recommendation.mentorSnapshot =
+      params.recommendationType === 'mentorship'
+        ? existingMentorSnapshot || null
+        : null;
     recommendation.contextSnapshot = this.buildContextSnapshot(
       params,
       generatedAt,
     );
     recommendation.evidenceSnapshot = this.buildEvidenceSnapshot(
+      params.recommendationType,
       params.generated,
       params.summary,
     );
     recommendation.targetSkills = params.generated.detectedGaps.map(
       (gap) => gap.label,
     );
-    recommendation.effortLevel =
-      (params.summary.summary?.critical_count || 0) > 0 ? 'intensive' : 'moderate';
-    recommendation.dueInDays =
-      (params.summary.summary?.critical_count || 0) > 0 ? 10 : 21;
+    recommendation.effortLevel = this.getEffortLevel(
+      params.recommendationType,
+      params.summary,
+    );
+    recommendation.dueInDays = this.getDueInDays(
+      params.recommendationType,
+      params.summary,
+    );
     recommendation.confidenceScore = this.computeConfidenceScore(params.generated);
-    recommendation.learningPath = {
-      overview: params.generated.generatedPath.summary,
-      tone: params.generated.generatedPath.tone,
-      estimatedTotalHours: params.generated.generatedPath.estimated_total_hours,
-      steps: params.generated.generatedPath.steps,
-    };
-    recommendation.docsReview = null;
+    recommendation.learningPath =
+      params.recommendationType === 'learning_path'
+        ? {
+            overview: params.generated.generatedPath.summary,
+            tone: params.generated.generatedPath.tone,
+            estimatedTotalHours: params.generated.generatedPath.estimated_total_hours,
+            steps: params.generated.generatedPath.steps,
+          }
+        : null;
+    recommendation.docsReview =
+      params.recommendationType === 'docs_review'
+        ? this.buildDocsReview(params.summary, params.generated)
+        : null;
     recommendation.weaknessSnapshot = {
       topWeaknesses: params.generated.detectedGaps.map((gap) => ({
         skill: gap.label,
@@ -426,6 +460,8 @@ export class RecommendationService implements OnModuleInit {
     };
     recommendation.decisionReasons = {
       pipeline: 'atlas_vector_rag',
+      recommendationType: params.recommendationType,
+      routing: this.buildRoutingReasons(params.summary, params.generated),
       llm: {
         provider: params.generated.provider,
         model: params.generated.model,
@@ -446,6 +482,7 @@ export class RecommendationService implements OnModuleInit {
       lastGeneratedAt: generatedAt,
       previousRecommendationCount: params.history.length,
       detectedGapCount: params.generated.detectedGaps.length,
+      recommendationType: params.recommendationType,
       llmProvider: params.generated.provider,
       llmModel: params.generated.model,
     };
@@ -481,11 +518,12 @@ export class RecommendationService implements OnModuleInit {
   }
 
   private buildEvidenceSnapshot(
+    recommendationType: RecommendationType,
     generated: RecommendationGenerationResult,
     summary: AnalysisSummary,
   ) {
     return {
-      recommendationType: 'learning_path',
+      recommendationType,
       topWeaknesses: generated.detectedGaps.map((gap) => ({
         skill: gap.label,
         score: gap.score,
@@ -498,15 +536,345 @@ export class RecommendationService implements OnModuleInit {
         file: finding.file_path,
       })),
       strengths: Array.isArray(summary.strengths) ? summary.strengths.slice(0, 5) : [],
-      successCriteria: generated.generatedPath.steps.map(
-        (step) => step.success_signal,
-      ),
+      successCriteria: this.buildSuccessCriteria(recommendationType, generated, summary),
       retrievedCoursesByGap: generated.gapMatches.map((match) => ({
         gapKey: match.gap.key,
         gapLabel: match.gap.label,
         courses: match.courses,
       })),
     };
+  }
+
+  private async findActiveRecommendation(
+    targetDeveloperId: string,
+    repositoryId: string,
+    contributorLogin: string,
+    recommendationType: RecommendationType,
+  ) {
+    return this.recommendationRepo.findOne({
+      where: {
+        targetDeveloperId,
+        repositoryId,
+        contributorLogin,
+        recommendationType,
+        status: In(['open', 'assigned']),
+      },
+      order: { updatedAt: 'DESC' },
+    });
+  }
+
+private determineRecommendationType(
+  summary: AnalysisSummary,
+  generated: RecommendationGenerationResult,
+): RecommendationType {
+  const qualityScore = this.getQualityScore(summary);
+  const counts = this.getFindingCounts(summary);
+  const hasCriticalGap = generated.detectedGaps.some(
+    (gap) => gap.severity === 'critical',
+  );
+  const severeGapCount = generated.detectedGaps.filter((gap) =>
+    ['critical', 'high'].includes(gap.severity),
+  ).length;
+
+  if (
+    (typeof qualityScore === 'number' && qualityScore <= 3.5) || // raised from 4.5
+    counts.critical > 2 ||
+    counts.high >= 5 ||                                          // raised from 3
+    hasCriticalGap ||
+    severeGapCount >= 5                                          // raised from 3
+    // removed the qualityScore <= 5.5 && counts.high > 1 clause entirely
+  ) {
+    return 'mentorship';
+  }
+
+  if (this.hasDocsReviewSignal(summary, generated, qualityScore)) {
+    return 'docs_review';
+  }
+
+  return 'learning_path';
+}
+
+  private buildRecommendationTitle(params: {
+    contributorLogin: string;
+    recommendationType: RecommendationType;
+    generated: RecommendationGenerationResult;
+  }) {
+    if (params.recommendationType === 'mentorship') {
+      return `Mentoring recommended for @${params.contributorLogin}`;
+    }
+
+    if (params.recommendationType === 'docs_review') {
+      return `Quick docs review for @${params.contributorLogin}`;
+    }
+
+    return params.generated.generatedPath.title;
+  }
+
+  private buildRecommendationDescription(params: {
+    recommendationType: RecommendationType;
+    summary: AnalysisSummary;
+    generated: RecommendationGenerationResult;
+  }) {
+    const qualityScore = this.getQualityScore(params.summary);
+    const qualityText =
+      typeof qualityScore === 'number' ? ` Quality score: ${qualityScore.toFixed(1)}/10.` : '';
+
+    if (params.recommendationType === 'mentorship') {
+      const counts = this.getFindingCounts(params.summary);
+      return `Guided mentoring is recommended because the latest analysis found ${counts.critical} critical and ${counts.high} high-severity issue(s).${qualityText}`;
+    }
+
+    if (params.recommendationType === 'docs_review') {
+      const focusAreas = params.generated.detectedGaps
+        .slice(0, 3)
+        .map((gap) => gap.label)
+        .join(', ');
+      return `Run a focused docs and readability review for ${focusAreas || 'the latest code-analysis findings'}.${qualityText}`;
+    }
+
+    return params.generated.generatedPath.summary;
+  }
+
+  private buildDocsReview(
+    summary: AnalysisSummary,
+    generated: RecommendationGenerationResult,
+  ) {
+    const findings = Array.isArray(summary.findings) ? summary.findings : [];
+    const orderedFindings = findings
+      .slice()
+      .sort((left, right) => {
+        const leftDocs = this.isDocumentationSignal(
+          `${left.skill} ${left.title} ${left.message}`,
+        )
+          ? 1
+          : 0;
+        const rightDocs = this.isDocumentationSignal(
+          `${right.skill} ${right.title} ${right.message}`,
+        )
+          ? 1
+          : 0;
+        return (
+          rightDocs - leftDocs ||
+          this.severityRank(right.severity) - this.severityRank(left.severity)
+        );
+      })
+      .slice(0, 5);
+
+    const checklist =
+      orderedFindings.length > 0
+        ? orderedFindings.map((finding) => ({
+            title: finding.title || `Review ${this.humanize(finding.skill)}`,
+            skill: this.humanize(finding.skill || 'documentation_readability'),
+            file: finding.file_path || 'Repository-wide',
+            note:
+              finding.message ||
+              `Review this ${finding.severity || 'medium'} finding and clarify the related implementation notes.`,
+            success_criteria:
+              'The relevant docs, comments, naming, or review notes clearly explain the behavior and expected outcome.',
+          }))
+        : generated.detectedGaps.slice(0, 5).map((gap) => ({
+            title: `Review ${gap.label}`,
+            skill: gap.label,
+            file: 'Repository-wide',
+            note:
+              gap.evidence[0] ||
+              'Add a short review note that explains the gap and the expected follow-up.',
+            success_criteria:
+              'The reviewer can understand the issue, expected fix, and validation step without extra context.',
+          }));
+
+    return {
+      checklist,
+      focus_areas: generated.detectedGaps.slice(0, 4).map((gap) => gap.label),
+      resources: (Array.isArray(summary.learning_resources)
+        ? summary.learning_resources
+        : []
+      )
+        .filter((resource) =>
+          this.isDocumentationSignal(
+            `${resource.skill} ${resource.title} ${resource.type}`,
+          ),
+        )
+        .slice(0, 3)
+        .map((resource) => ({
+          title: resource.title,
+          type: resource.type,
+          url: resource.url,
+        })),
+    };
+  }
+
+  private buildSuccessCriteria(
+    recommendationType: RecommendationType,
+    generated: RecommendationGenerationResult,
+    summary: AnalysisSummary,
+  ) {
+    if (recommendationType === 'docs_review') {
+      return this.buildDocsReview(summary, generated).checklist.map(
+        (item) => item.success_criteria,
+      );
+    }
+
+    if (recommendationType === 'mentorship') {
+      return [
+        'A mentor reviews the highest-severity finding with the contributor.',
+        'The contributor ships a follow-up change that addresses the root cause.',
+        ...generated.generatedPath.steps
+          .slice(0, 2)
+          .map((step) => step.success_signal),
+      ];
+    }
+
+    return generated.generatedPath.steps.map((step) => step.success_signal);
+  }
+
+  private buildRoutingReasons(
+    summary: AnalysisSummary,
+    generated: RecommendationGenerationResult,
+  ) {
+    const qualityScore = this.getQualityScore(summary);
+    const counts = this.getFindingCounts(summary);
+
+    return {
+      qualityScore,
+      findingCounts: counts,
+      hasDocumentationSignal: this.hasDocsReviewSignal(
+        summary,
+        generated,
+        qualityScore,
+      ),
+      topGapSeverities: generated.detectedGaps.map((gap) => ({
+        gap: gap.label,
+        severity: gap.severity,
+        score: gap.score,
+      })),
+    };
+  }
+
+private hasDocsReviewSignal(
+  summary: AnalysisSummary,
+  generated: RecommendationGenerationResult,
+  qualityScore: number | null,
+) {
+  const findings = Array.isArray(summary.findings) ? summary.findings : [];
+  const counts = this.getFindingCounts(summary);
+
+  // Doc signal must dominate: majority of gaps/findings must be doc-related
+  const docGapCount = generated.detectedGaps.filter((gap) =>
+    this.isDocumentationSignal(`${gap.key} ${gap.label}`),
+  ).length;
+  const totalGaps = generated.detectedGaps.length;
+  const docFindingCount = findings.filter((f) =>
+    this.isDocumentationSignal(`${f.skill} ${f.title} ${f.message}`),
+  ).length;
+
+  const docIsDominant =
+    totalGaps > 0 && docGapCount / totalGaps >= 0.5 && docGapCount >= 2;
+  const docFindingsDominant =
+    findings.length > 0 && docFindingCount / findings.length >= 0.5 && docFindingCount >= 2;
+
+  if (docIsDominant || docFindingsDominant) {
+    return true;
+  }
+
+  // Score-based: only for genuinely good code with minor findings
+  return (
+    typeof qualityScore === 'number' &&
+    qualityScore >= 7 &&          // raised from 6
+    counts.critical === 0 &&
+    counts.high === 0 &&
+    counts.medium <= 2 &&         // added: too many medium findings → learning_path
+    generated.detectedGaps.length > 0
+  );
+}
+
+  private isDocumentationSignal(value: string) {
+    return /doc|readability|comment|naming|explain|clarity|technical_documentation/i.test(
+      value || '',
+    );
+  }
+
+  private getQualityScore(summary: AnalysisSummary) {
+    return typeof summary.quality_score === 'number' ? summary.quality_score : null;
+  }
+
+  private getFindingCounts(summary: AnalysisSummary) {
+    const counts = summary.summary || {};
+    const findings = Array.isArray(summary.findings) ? summary.findings : [];
+
+    return {
+      findingCount:
+        typeof counts.finding_count === 'number'
+          ? counts.finding_count
+          : findings.length,
+      critical:
+        typeof counts.critical_count === 'number'
+          ? counts.critical_count
+          : findings.filter((finding) => finding.severity === 'critical').length,
+      high:
+        typeof counts.high_count === 'number'
+          ? counts.high_count
+          : findings.filter((finding) => finding.severity === 'high').length,
+      medium:
+        typeof counts.medium_count === 'number'
+          ? counts.medium_count
+          : findings.filter((finding) => finding.severity === 'medium').length,
+      low:
+        typeof counts.low_count === 'number'
+          ? counts.low_count
+          : findings.filter((finding) => finding.severity === 'low').length,
+    };
+  }
+
+  private getEffortLevel(
+    recommendationType: RecommendationType,
+    summary: AnalysisSummary,
+  ) {
+    if (recommendationType === 'mentorship') {
+      return 'intensive';
+    }
+
+    if (recommendationType === 'docs_review') {
+      return 'light';
+    }
+
+    return (summary.summary?.critical_count || 0) > 0 ? 'intensive' : 'moderate';
+  }
+
+  private getDueInDays(
+    recommendationType: RecommendationType,
+    summary: AnalysisSummary,
+  ) {
+    if (recommendationType === 'mentorship') {
+      return 10;
+    }
+
+    if (recommendationType === 'docs_review') {
+      return 5;
+    }
+
+    return (summary.summary?.critical_count || 0) > 0 ? 10 : 21;
+  }
+
+  private severityRank(severity: string | undefined | null) {
+    switch (severity) {
+      case 'critical':
+        return 4;
+      case 'high':
+        return 3;
+      case 'medium':
+        return 2;
+      case 'low':
+        return 1;
+      default:
+        return 0;
+    }
+  }
+
+  private humanize(value: string) {
+    return String(value || '')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (char) => char.toUpperCase());
   }
 
   private computePriorityScore(
@@ -539,22 +907,39 @@ export class RecommendationService implements OnModuleInit {
     );
   }
 
-  private emitNotificationEvent(
+  private async emitNotificationEvent(
     recommendation: RecommendationCase,
     generated: RecommendationGenerationResult,
     regenerated = false,
   ) {
-    this.eventClient.emit('notification.sent', {
-      type: 'learning_path_ready',
+    const event = {
+      type: `${recommendation.recommendationType}_ready`,
       recommendationId: recommendation.id,
       developerId: recommendation.targetDeveloperId,
       repositoryId: recommendation.repositoryId,
       contributorLogin: recommendation.contributorLogin,
       title: recommendation.title,
-      summary: generated.notificationSummary,
+      summary: this.buildNotificationSummary(recommendation, generated),
       regenerated,
       createdAt: new Date().toISOString(),
-    });
+    };
+
+    await this.createDeveloperNotification(event);
+  }
+
+  private buildNotificationSummary(
+    recommendation: RecommendationCase,
+    generated: RecommendationGenerationResult,
+  ) {
+    if (recommendation.recommendationType === 'mentorship') {
+      return 'Mentoring is recommended based on the latest code-analysis severity and quality score.';
+    }
+
+    if (recommendation.recommendationType === 'docs_review') {
+      return 'A quick docs review is recommended for the latest code-analysis findings.';
+    }
+
+    return generated.notificationSummary;
   }
 
   private async fetchLatestAnalysisSummary(
@@ -643,6 +1028,75 @@ export class RecommendationService implements OnModuleInit {
     } catch (error) {
       this.logger.warn('Could not fetch mentor candidates from developer-service');
       return [];
+    }
+  }
+
+  private async createDeveloperNotification(event: Record<string, any>) {
+    const recipientUserId =
+      (await this.resolveDeveloperIdFromContributor(event.contributorLogin)) ||
+      event.developerId;
+
+    if (!this.isUuid(recipientUserId)) {
+      this.logger.warn(
+        `Skipping developer notification for @${event.contributorLogin || 'unknown'}: no platform user id`,
+      );
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `${this.notificationServiceBaseUrl}/notifications/send`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            recipientUserId,
+            type: event.type,
+            title: event.title || 'Recommendation ready',
+            message:
+              event.summary ||
+              'A new recommendation is ready for your developer profile.',
+            link: '/dashboard/developer/recommendations',
+            priority: 'info',
+            metadata: event,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        this.logger.warn(
+          `Notification service rejected developer notification: ${response.status} ${errorText}`,
+        );
+      }
+    } catch (error: any) {
+      this.logger.warn(
+        `Failed to create developer notification: ${error?.message || error}`,
+      );
+    }
+  }
+
+  private async resolveDeveloperIdFromContributor(contributorLogin?: string | null) {
+    const normalizedLogin = this.normalizeContributorLogin(contributorLogin);
+    if (!normalizedLogin) {
+      return null;
+    }
+
+    try {
+      const integration = await firstValueFrom(
+        this.developerService.send('github_find_integration_by_username', {
+          githubUsername: normalizedLogin,
+        }),
+      );
+
+      return integration?.developer_id || integration?.developerId || null;
+    } catch (error: any) {
+      this.logger.warn(
+        `Could not resolve developer notification recipient for @${normalizedLogin}: ${
+          error?.message || error
+        }`,
+      );
+      return null;
     }
   }
 

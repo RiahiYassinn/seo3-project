@@ -1,22 +1,70 @@
-import { Controller, Get, Post, Body, Param } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { EventPattern, Payload } from '@nestjs/microservices';
+import { CreateNotificationDto } from './dto/create-notification.dto';
+import { NotificationService } from './notification.service';
 
 @Controller('notifications')
 export class NotificationController {
-  @Get(':developerId')
-  async getNotifications(@Param('developerId') developerId: string) {
-    // TODO: Fetch notifications from database
-    return { message: `Get notifications for developer ${developerId}` };
+  constructor(private readonly notificationService: NotificationService) {}
+
+  @Get('user/:userId')
+  async getNotifications(
+    @Param('userId') userId: string,
+    @Query('role') role?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.notificationService.getForViewer(
+      { userId, role },
+      Number(limit) || 50,
+    );
   }
 
   @Post('send')
-  async sendNotification(@Body() notificationDto: any) {
-    // TODO: Send notification via appropriate channel
-    return { status: 'sent' };
+  async sendNotification(@Body() notificationDto: CreateNotificationDto) {
+    const notifications = await this.notificationService.create(notificationDto);
+    return { status: 'sent', notifications };
+  }
+
+  @Post(':id/read')
+  async markAsRead(
+    @Param('id') id: string,
+    @Body() body: { userId: string; role?: string },
+  ) {
+    return this.notificationService.markAsRead(id, {
+      userId: body.userId,
+      role: body.role,
+    });
+  }
+
+  @Post('read-all')
+  async markAllAsRead(@Body() body: { userId: string; role?: string }) {
+    return this.notificationService.markAllAsRead({
+      userId: body.userId,
+      role: body.role,
+    });
   }
 
   @EventPattern('notification.sent')
   async handleNotificationSent(@Payload() message: any) {
-    console.log('Notification sent event:', message);
+    return this.notificationService.handleNotificationEvent(
+      this.unwrapPayload(message),
+    );
+  }
+
+  private unwrapPayload(payload: any) {
+    const rawValue = payload?.value ?? payload;
+    if (!rawValue) {
+      return null;
+    }
+
+    if (typeof rawValue === 'string') {
+      return JSON.parse(rawValue);
+    }
+
+    if (Buffer.isBuffer(rawValue)) {
+      return JSON.parse(rawValue.toString('utf8'));
+    }
+
+    return rawValue;
   }
 }

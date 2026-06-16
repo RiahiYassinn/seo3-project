@@ -139,6 +139,9 @@ const getRepositoryStatusLabel = (status: string | null) => {
   return "Ready";
 };
 
+const getContributorStatusLabel = (status: string | null) =>
+  status ? status.replaceAll("_", " ") : "not analyzed";
+
 const formatDateTime = (value: string | null | undefined) =>
   value ? new Date(value).toLocaleString() : "Not available";
 
@@ -1316,8 +1319,9 @@ export default function AdminGithubPage() {
                                         contributor.analysis_status,
                                       )}
                                     >
-                                      {contributor.analysis_status ||
-                                        "not analyzed"}
+                                      {getContributorStatusLabel(
+                                        contributor.analysis_status,
+                                      )}
                                     </Badge>
                                     {contributor.quality_score !== null && (
                                       <Badge variant="secondary">

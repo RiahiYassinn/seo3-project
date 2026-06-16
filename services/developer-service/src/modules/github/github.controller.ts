@@ -15,6 +15,15 @@ export class GithubController {
     return GithubIntegrationResponseDto.fromEntity(integration);
   }
 
+  @MessagePattern('github_find_integration_by_username')
+  async findIntegrationByUsername(@Payload() data: { githubUsername: string }) {
+    const integration = await this.githubService.findIntegrationByGithubUsername(
+      data.githubUsername,
+    );
+
+    return integration ? GithubIntegrationResponseDto.fromEntity(integration) : null;
+  }
+
   @MessagePattern('github_link_account')
   async linkGithub(@Payload() data: { userId: string } & LinkGithubDto) {
     const { userId, ...dto } = data;

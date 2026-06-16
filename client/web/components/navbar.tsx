@@ -6,6 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { LogOut, Moon, Sun } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
 import { useTheme } from "@/hooks/use-theme";
+import { NotificationButton } from "@/components/notifications/notification-button";
 
 export function Navbar() {
   const { user, logout } = useAuthStore();
@@ -144,9 +145,11 @@ export function Navbar() {
 
             {user ? (
               <>
+                <NotificationButton />
                 <button
                   onClick={toggleTheme}
                   className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-background hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label="Toggle theme"
                 >
                   {isDark ? (
                     <Sun className="h-4 w-4" />

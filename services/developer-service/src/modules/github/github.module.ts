@@ -7,10 +7,11 @@ import { GithubService } from './github.service';
 import { GithubIntegration } from './entities/github-integration.entity';
 import { Repository } from './entities/repository.entity';
 import { GithubAnalysisResultConsumer } from './github-analysis-result.consumer';
+import { Developer } from '../developer/entities/developer.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([GithubIntegration, Repository]),
+    TypeOrmModule.forFeature([GithubIntegration, Repository, Developer]),
     ClientsModule.register([
       {
         name: 'KAFKA_CLIENT',
