@@ -52,6 +52,12 @@ export class RecommendationCase {
   @Column({ name: 'mentor_snapshot', type: 'jsonb', nullable: true })
   mentorSnapshot: Record<string, any> | null;
 
+  @Column({ name: 'mentorship_session_scheduled_at', type: 'timestamp', nullable: true })
+  mentorshipSessionScheduledAt: Date | null;
+
+  @Column({ name: 'mentorship_session_note', type: 'text', nullable: true })
+  mentorshipSessionNote: string | null;
+
   @Column({ name: 'context_snapshot', type: 'jsonb', nullable: true })
   contextSnapshot: Record<string, any> | null;
 

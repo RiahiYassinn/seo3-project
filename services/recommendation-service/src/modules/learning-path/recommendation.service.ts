@@ -1,25 +1,27 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   Logger,
   OnModuleInit,
-} from '@nestjs/common';
-import { ClientKafka, ClientProxy } from '@nestjs/microservices';
-import { InjectRepository } from '@nestjs/typeorm';
-import { firstValueFrom } from 'rxjs';
-import { In, IsNull, Repository } from 'typeorm';
+} from "@nestjs/common";
+import { ClientKafka, ClientProxy } from "@nestjs/microservices";
+import { InjectRepository } from "@nestjs/typeorm";
+import { firstValueFrom } from "rxjs";
+import { In, IsNull, Repository } from "typeorm";
 import {
   RecommendationCase,
   RecommendationType,
-} from './entities/recommendation-case.entity';
+} from "./entities/recommendation-case.entity";
+import { MentorRequest } from "./entities/mentor-request.entity";
 import {
   AnalysisCompletedEvent,
   AnalysisSummary,
   RecommendationGenerationResult,
   RecommendationHistorySnapshot,
-} from './recommendation-rag.types';
-import { RagLearningPathService } from './rag-learning-path.service';
+} from "./recommendation-rag.types";
+import { RagLearningPathService } from "./rag-learning-path.service";
 
 interface MentorCandidate {
   id: string;
@@ -38,15 +40,17 @@ export class RecommendationService implements OnModuleInit {
   private readonly logger = new Logger(RecommendationService.name);
   private readonly notificationServiceBaseUrl =
     process.env.NOTIFICATION_SERVICE_HTTP_URL ||
-    process.env.NOTIFICATION_SERVICE_URL?.replace(/^tcp:/, 'http:') ||
-    'http://localhost:3005';
+    process.env.NOTIFICATION_SERVICE_URL?.replace(/^tcp:/, "http:") ||
+    "http://localhost:3005";
 
   constructor(
     @InjectRepository(RecommendationCase)
     private readonly recommendationRepo: Repository<RecommendationCase>,
-    @Inject('DEVELOPER_SERVICE')
+    @InjectRepository(MentorRequest)
+    private readonly mentorRequestRepo: Repository<MentorRequest>,
+    @Inject("DEVELOPER_SERVICE")
     private readonly developerService: ClientProxy,
-    @Inject('RECOMMENDATION_EVENTS_CLIENT')
+    @Inject("RECOMMENDATION_EVENTS_CLIENT")
     private readonly eventClient: ClientKafka,
     private readonly ragLearningPathService: RagLearningPathService,
   ) {}
@@ -63,7 +67,10 @@ export class RecommendationService implements OnModuleInit {
     }
 
     const summary = (payload.summary || {}) as AnalysisSummary;
-    const contributorLogin = this.resolveContributorLogin(payload, targetDeveloperId);
+    const contributorLogin = this.resolveContributorLogin(
+      payload,
+      targetDeveloperId,
+    );
     const generated = await this.ragLearningPathService.generateRecommendation(
       payload,
       summary,
@@ -89,7 +96,7 @@ export class RecommendationService implements OnModuleInit {
       targetDeveloperId,
       contributorLogin,
       repositoryId: payload.repositoryId,
-      repoName: payload.repoName || 'Repository',
+      repoName: payload.repoName || "Repository",
       summary,
       history,
       generated,
@@ -108,18 +115,20 @@ export class RecommendationService implements OnModuleInit {
   ) {
     const normalizedLogin = this.normalizeContributorLogin(contributorLogin);
     if (!developerId || !repositoryId || !normalizedLogin) {
-      throw new BadRequestException('Developer, repository, and contributor are required');
+      throw new BadRequestException(
+        "Developer, repository, and contributor are required",
+      );
     }
 
     const repository = await firstValueFrom(
-      this.developerService.send('github_get_repository', {
+      this.developerService.send("github_get_repository", {
         userId: developerId,
         repositoryId,
       }),
     );
 
     if (!repository) {
-      throw new BadRequestException('Repository not found');
+      throw new BadRequestException("Repository not found");
     }
 
     const contributorProfiles =
@@ -131,9 +140,9 @@ export class RecommendationService implements OnModuleInit {
       repository?.analysis_summary ||
       null;
 
-    if (!latestSummary || typeof latestSummary !== 'object') {
+    if (!latestSummary || typeof latestSummary !== "object") {
       throw new BadRequestException(
-        'No analysis summary found for this contributor profile',
+        "No analysis summary found for this contributor profile",
       );
     }
 
@@ -143,7 +152,7 @@ export class RecommendationService implements OnModuleInit {
         repository?.repo_name ||
         repository?.repoName ||
         profile?.repositoryName ||
-        'Repository',
+        "Repository",
       developerId,
       requestedByUserId: developerId,
       githubUsername: normalizedLogin,
@@ -176,7 +185,7 @@ export class RecommendationService implements OnModuleInit {
       targetDeveloperId: developerId,
       contributorLogin: normalizedLogin,
       repositoryId,
-      repoName: payload.repoName || 'Repository',
+      repoName: payload.repoName || "Repository",
       summary: latestSummary as AnalysisSummary,
       history,
       generated,
@@ -194,7 +203,7 @@ export class RecommendationService implements OnModuleInit {
     });
 
     if (!recommendation) {
-      throw new BadRequestException('Recommendation not found');
+      throw new BadRequestException("Recommendation not found");
     }
 
     const latestSummary = await this.fetchLatestAnalysisSummary(
@@ -210,14 +219,16 @@ export class RecommendationService implements OnModuleInit {
     );
     const payload: AnalysisCompletedEvent = {
       repositoryId: recommendation.repositoryId,
-      repoName: recommendation.contextSnapshot?.repoName || 'Repository',
+      repoName: recommendation.contextSnapshot?.repoName || "Repository",
       developerId: recommendation.targetDeveloperId,
       requestedByUserId: recommendation.targetDeveloperId,
       githubUsername: recommendation.contributorLogin,
       analyzedAt: new Date().toISOString(),
       summary: latestSummary,
       detectedGaps: Array.isArray(recommendation.contextSnapshot?.detectedGaps)
-        ? recommendation.contextSnapshot?.detectedGaps.map((item: any) => item.label || item)
+        ? recommendation.contextSnapshot?.detectedGaps.map(
+            (item: any) => item.label || item,
+          )
         : undefined,
     };
 
@@ -235,7 +246,7 @@ export class RecommendationService implements OnModuleInit {
       targetDeveloperId: recommendation.targetDeveloperId,
       contributorLogin: recommendation.contributorLogin,
       repositoryId: recommendation.repositoryId,
-      repoName: recommendation.contextSnapshot?.repoName || 'Repository',
+      repoName: recommendation.contextSnapshot?.repoName || "Repository",
       summary: latestSummary,
       history: history.filter((item) => item.id !== recommendation.id),
       generated,
@@ -250,7 +261,7 @@ export class RecommendationService implements OnModuleInit {
   async getRecommendationsForDeveloper(developerId: string) {
     const cases = await this.recommendationRepo.find({
       where: { targetDeveloperId: developerId },
-      order: { priorityScore: 'DESC', createdAt: 'DESC' },
+      order: { priorityScore: "DESC", createdAt: "DESC" },
     });
 
     return cases.map((item) => this.mapCase(item));
@@ -264,16 +275,19 @@ export class RecommendationService implements OnModuleInit {
 
     const cases = await this.recommendationRepo.find({
       where: { contributorLogin: normalizedLogin },
-      order: { priorityScore: 'DESC', createdAt: 'DESC' },
+      order: { priorityScore: "DESC", createdAt: "DESC" },
     });
 
     return cases.map((item) => this.mapCase(item));
   }
 
-  async getRecommendationsForRepository(developerId: string, repositoryId: string) {
+  async getRecommendationsForRepository(
+    developerId: string,
+    repositoryId: string,
+  ) {
     const cases = await this.recommendationRepo.find({
       where: { targetDeveloperId: developerId, repositoryId },
-      order: { priorityScore: 'DESC', createdAt: 'DESC' },
+      order: { priorityScore: "DESC", createdAt: "DESC" },
     });
 
     return cases.map((item) => this.mapCase(item));
@@ -290,30 +304,44 @@ export class RecommendationService implements OnModuleInit {
         repositoryId,
         contributorLogin: this.normalizeContributorLogin(contributorLogin),
       },
-      order: { updatedAt: 'DESC' },
+      order: { updatedAt: "DESC" },
     });
 
     return record ? this.mapCase(record) : null;
   }
 
   async getMentorQueue(mentorId: string) {
+    const pendingRequests = await this.mentorRequestRepo.find({
+      where: { status: "pending" },
+      order: { createdAt: "DESC" },
+    });
+
+    const blockedRecommendationIds = new Set(
+      pendingRequests.map((request) => request.recommendationId),
+    );
+
     const queue = await this.recommendationRepo.find({
       where: [
         {
-          recommendationType: 'mentorship',
-          status: 'open',
+          recommendationType: "mentorship",
+          status: "open",
           mentorId: IsNull(),
         },
         {
-          recommendationType: 'mentorship',
+          recommendationType: "mentorship",
           mentorId,
-          status: In(['open', 'assigned']),
+          status: In(["open", "assigned"]),
         },
       ],
-      order: { priorityScore: 'DESC', createdAt: 'DESC' },
+      order: { priorityScore: "DESC", createdAt: "DESC" },
     });
 
-    return queue.map((item) => this.mapCase(item));
+    return queue
+      .filter(
+        (item) =>
+          item.mentorId === mentorId || !blockedRecommendationIds.has(item.id),
+      )
+      .map((item) => this.mapCase(item));
   }
 
   async assignMentor(recommendationId: string, mentorId: string) {
@@ -330,26 +358,67 @@ export class RecommendationService implements OnModuleInit {
 
     if (!mentor) {
       throw new BadRequestException(
-        'Mentor must be an active tech lead with mentor flag enabled',
+        "Mentor must be an active tech lead with mentor flag enabled",
       );
     }
 
     recommendation.mentorId = mentorId;
     recommendation.mentorSnapshot = {
       id: mentor.id,
-      name: `${mentor.first_name || ''} ${mentor.last_name || ''}`.trim(),
+      name: `${mentor.first_name || ""} ${mentor.last_name || ""}`.trim(),
       username: mentor.username || null,
       email: mentor.email,
       role: mentor.role,
     };
-    recommendation.status = 'assigned';
-    recommendation.recommendationType = 'mentorship';
+    recommendation.status = "assigned";
+    recommendation.recommendationType = "mentorship";
 
     const saved = await this.recommendationRepo.save(recommendation);
     return this.mapCase(saved);
   }
 
-  async acknowledgeRecommendation(recommendationId: string, developerId: string) {
+  async scheduleMentorshipSession(
+    recommendationId: string,
+    mentorId: string,
+    scheduledAt: string,
+    note?: string | null,
+  ) {
+    const recommendation = await this.recommendationRepo.findOne({
+      where: { id: recommendationId },
+    });
+
+    if (!recommendation) {
+      throw new BadRequestException("Recommendation not found");
+    }
+
+    if (recommendation.recommendationType !== "mentorship") {
+      throw new BadRequestException(
+        "Only mentorship recommendations can have scheduled sessions",
+      );
+    }
+
+    if (recommendation.mentorId !== mentorId) {
+      throw new BadRequestException(
+        "Only the assigned mentor can schedule this session",
+      );
+    }
+
+    const parsedScheduledAt = new Date(scheduledAt);
+    if (Number.isNaN(parsedScheduledAt.getTime())) {
+      throw new BadRequestException("A valid session date and time is required");
+    }
+
+    recommendation.mentorshipSessionScheduledAt = parsedScheduledAt;
+    recommendation.mentorshipSessionNote = note?.trim() || null;
+
+    const saved = await this.recommendationRepo.save(recommendation);
+    await this.emitMentorshipSessionScheduledNotification(saved);
+    return this.mapCase(saved);
+  }
+  async acknowledgeRecommendation(
+    recommendationId: string,
+    developerId: string,
+  ) {
     const recommendation = await this.recommendationRepo.findOne({
       where: {
         id: recommendationId,
@@ -358,11 +427,11 @@ export class RecommendationService implements OnModuleInit {
     });
 
     if (!recommendation) {
-      throw new BadRequestException('Recommendation not found');
+      throw new BadRequestException("Recommendation not found");
     }
 
-    recommendation.status = 'completed';
-    recommendation.outcomeStatus = 'resolved';
+    recommendation.status = "completed";
+    recommendation.outcomeStatus = "resolved";
     recommendation.outcomeMetrics = {
       ...(recommendation.outcomeMetrics || {}),
       completedAt: new Date().toISOString(),
@@ -370,6 +439,361 @@ export class RecommendationService implements OnModuleInit {
 
     const saved = await this.recommendationRepo.save(recommendation);
     return this.mapCase(saved);
+  }
+
+  async getAvailableMentors() {
+    const mentors = await this.fetchMentorCandidates();
+    return mentors.map((mentor) => ({
+      id: mentor.id,
+      email: mentor.email,
+      username: mentor.username || null,
+      first_name: mentor.first_name || null,
+      last_name: mentor.last_name || null,
+      role: mentor.role,
+      is_mentor: mentor.is_mentor,
+      is_active: mentor.is_active,
+      last_login_at: mentor.last_login_at || null,
+    }));
+  }
+
+  async getMentorRequestsForDeveloper(developerId: string) {
+    const requests = await this.mentorRequestRepo.find({
+      where: { requesterDeveloperId: developerId },
+      order: { createdAt: "DESC" },
+    });
+
+    return this.mapMentorRequests(requests);
+  }
+
+  async getMentorRequestsForMentor(mentorId: string) {
+    const requests = await this.mentorRequestRepo.find({
+      where: { mentorId, status: "pending" },
+      order: { createdAt: "DESC" },
+    });
+
+    return this.mapMentorRequests(requests);
+  }
+
+  async requestMentor(
+    recommendationId: string,
+    developerId: string,
+    mentorId: string,
+  ) {
+    const recommendation = await this.recommendationRepo.findOne({
+      where: { id: recommendationId },
+    });
+
+    if (!recommendation) {
+      throw new BadRequestException("Recommendation not found");
+    }
+
+    const requesterDeveloperId = recommendation.targetDeveloperId;
+    if (developerId && developerId !== requesterDeveloperId) {
+      this.logger.warn(
+        `Mentor request developer id mismatch for recommendation ${recommendationId}: ` +
+          `received=${developerId}, stored=${requesterDeveloperId}`,
+      );
+    }
+
+    if (recommendation.recommendationType !== "mentorship") {
+      throw new BadRequestException(
+        "Only mentorship recommendations can be sent to a mentor",
+      );
+    }
+
+    if (recommendation.mentorId) {
+      throw new ConflictException("This recommendation already has a mentor");
+    }
+
+    const mentors = await this.fetchMentorCandidates();
+    const mentor = mentors.find((candidate) => candidate.id === mentorId);
+
+    if (!mentor) {
+      throw new BadRequestException("Selected mentor is not available");
+    }
+
+    const existingPendingRequest = await this.mentorRequestRepo.findOne({
+      where: { recommendationId, status: "pending" },
+    });
+
+    if (existingPendingRequest) {
+      throw new ConflictException(
+        "A mentor request is already pending for this recommendation",
+      );
+    }
+
+    const requesterSnapshot = await this.fetchDeveloperSnapshot(
+      requesterDeveloperId,
+    );
+    const request = this.mentorRequestRepo.create({
+      recommendationId,
+      requesterDeveloperId,
+      mentorId,
+      status: "pending",
+      mentorSnapshot: {
+        id: mentor.id,
+        name: `${mentor.first_name || ""} ${mentor.last_name || ""}`.trim(),
+        username: mentor.username || null,
+        email: mentor.email,
+        role: mentor.role,
+      },
+      requesterSnapshot,
+      respondedAt: null,
+    });
+
+    const saved = await this.mentorRequestRepo.save(request);
+    await this.emitMentorRequestNotification(saved, recommendation);
+    return this.mapMentorRequest(saved, recommendation);
+  }
+
+  async respondToMentorRequest(
+    requestId: string,
+    mentorId: string,
+    decision: "accepted" | "declined",
+  ) {
+    const request = await this.mentorRequestRepo.findOne({
+      where: { id: requestId, mentorId },
+    });
+
+    if (!request) {
+      throw new BadRequestException("Mentor request not found");
+    }
+
+    if (request.status !== "pending") {
+      throw new ConflictException("Mentor request has already been resolved");
+    }
+
+    const recommendation = await this.recommendationRepo.findOne({
+      where: { id: request.recommendationId },
+    });
+
+    if (!recommendation) {
+      throw new BadRequestException("Recommendation not found");
+    }
+
+    if (recommendation.mentorId && recommendation.mentorId !== mentorId) {
+      throw new ConflictException(
+        "This recommendation has already been assigned to another mentor",
+      );
+    }
+
+    if (decision === "accepted") {
+      const mentors = await this.fetchMentorCandidates();
+      const mentor = mentors.find((candidate) => candidate.id === mentorId);
+
+      if (!mentor) {
+        throw new BadRequestException("Mentor is not available anymore");
+      }
+
+      recommendation.mentorId = mentorId;
+      recommendation.mentorSnapshot = {
+        id: mentor.id,
+        name: `${mentor.first_name || ""} ${mentor.last_name || ""}`.trim(),
+        username: mentor.username || null,
+        email: mentor.email,
+        role: mentor.role,
+      };
+      recommendation.status = "assigned";
+      recommendation.recommendationType = "mentorship";
+      await this.recommendationRepo.save(recommendation);
+      request.status = "accepted";
+    } else {
+      request.status = "declined";
+    }
+
+    request.respondedAt = new Date();
+    const saved = await this.mentorRequestRepo.save(request);
+    await this.emitMentorDecisionNotification(saved, recommendation, decision);
+
+    return {
+      request: this.mapMentorRequest(saved, recommendation),
+      recommendation: this.mapCase(recommendation),
+    };
+  }
+
+  private async emitMentorshipSessionScheduledNotification(
+    recommendation: RecommendationCase,
+  ) {
+    if (!recommendation.mentorshipSessionScheduledAt) {
+      return;
+    }
+
+    const scheduledAt = recommendation.mentorshipSessionScheduledAt;
+    const formattedScheduledAt = scheduledAt.toLocaleString("en-US", {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: "UTC",
+    });
+
+    await this.sendNotification({
+      recipientUserId: recommendation.targetDeveloperId,
+      type: "mentorship_session_scheduled",
+      title: "Mentorship session scheduled",
+      message: `Your mentoring session for "${recommendation.title}" is scheduled for ${formattedScheduledAt} UTC.`,
+      link: `/dashboard/developer/recommendations/${recommendation.id}`,
+      priority: "high",
+      metadata: {
+        recommendationId: recommendation.id,
+        mentorId: recommendation.mentorId,
+        scheduledAt: scheduledAt.toISOString(),
+        note: recommendation.mentorshipSessionNote,
+      },
+    });
+  }
+  private async mapMentorRequests(requests: MentorRequest[]) {
+    const recommendations = await Promise.all(
+      requests.map((request) =>
+        this.recommendationRepo.findOne({
+          where: { id: request.recommendationId },
+        }),
+      ),
+    );
+
+    return requests.map((request, index) =>
+      this.mapMentorRequest(request, recommendations[index] || null),
+    );
+  }
+
+  private mapMentorRequest(
+    request: MentorRequest,
+    recommendation: RecommendationCase | null,
+  ) {
+    return {
+      id: request.id,
+      recommendation_id: request.recommendationId,
+      requester_developer_id: request.requesterDeveloperId,
+      mentor_id: request.mentorId,
+      status: request.status,
+      mentor_snapshot: request.mentorSnapshot,
+      requester_snapshot: request.requesterSnapshot,
+      responded_at: request.respondedAt?.toISOString() || null,
+      created_at: request.createdAt.toISOString(),
+      updated_at: request.updatedAt.toISOString(),
+      recommendation: recommendation ? this.mapCase(recommendation) : null,
+    };
+  }
+
+  private async fetchDeveloperSnapshot(developerId: string) {
+    try {
+      const user = await firstValueFrom(
+        this.developerService.send("get_user_by_id", {
+          userId: developerId,
+        }),
+      );
+
+      if (!user) {
+        return null;
+      }
+
+      return {
+        id: user.id,
+        name:
+          `${user.first_name || ""} ${user.last_name || ""}`.trim() ||
+          user.username ||
+          user.email ||
+          null,
+        username: user.username || null,
+        email: user.email || null,
+        role: user.role || null,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `Could not resolve developer snapshot for mentor request: ${message}`,
+      );
+      return null;
+    }
+  }
+
+  private async sendNotification(params: {
+    recipientUserId: string;
+    type: string;
+    title: string;
+    message: string;
+    link?: string | null;
+    priority?: string;
+    metadata?: Record<string, any>;
+  }) {
+    try {
+      const response = await fetch(
+        `${this.notificationServiceBaseUrl}/notifications/send`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            recipientUserId: params.recipientUserId,
+            type: params.type,
+            title: params.title,
+            message: params.message,
+            link: params.link || null,
+            priority: params.priority || "info",
+            metadata: params.metadata || {},
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        this.logger.warn(
+          `Notification service rejected mentor workflow notification: ${response.status} ${errorText}`,
+        );
+      }
+    } catch (error: any) {
+      this.logger.warn(
+        `Failed to create mentor workflow notification: ${error?.message || error}`,
+      );
+    }
+  }
+
+  private async emitMentorRequestNotification(
+    request: MentorRequest,
+    recommendation: RecommendationCase,
+  ) {
+    const requester = request.requesterSnapshot;
+    const mentor = request.mentorSnapshot;
+
+    await this.sendNotification({
+      recipientUserId: request.mentorId,
+      type: "mentor_request_created",
+      title: `Mentor request from ${requester?.name || `@${recommendation.contributorLogin}`}`,
+      message: `${requester?.name || `@${recommendation.contributorLogin}`} asked for help with "${recommendation.title}".`,
+      link: "/dashboard/tech_lead/recommendations",
+      priority: "high",
+      metadata: {
+        requestId: request.id,
+        recommendationId: recommendation.id,
+        mentorId: mentor?.id || request.mentorId,
+        requester,
+        mentor,
+      },
+    });
+  }
+
+  private async emitMentorDecisionNotification(
+    request: MentorRequest,
+    recommendation: RecommendationCase,
+    decision: "accepted" | "declined",
+  ) {
+    const isAccepted = decision === "accepted";
+    await this.sendNotification({
+      recipientUserId: request.requesterDeveloperId,
+      type: isAccepted ? "mentor_request_accepted" : "mentor_request_declined",
+      title: isAccepted
+        ? "Mentorship request accepted"
+        : "Mentorship request declined",
+      message: isAccepted
+        ? `A mentor accepted your request for "${recommendation.title}".`
+        : `Your mentorship request for "${recommendation.title}" was declined.`,
+      link: `/dashboard/developer/recommendations/${recommendation.id}`,
+      priority: isAccepted ? "high" : "info",
+      metadata: {
+        requestId: request.id,
+        recommendationId: recommendation.id,
+        decision,
+        mentorId: request.mentorId,
+        requesterDeveloperId: request.requesterDeveloperId,
+      },
+    });
   }
 
   private async saveRecommendation(params: {
@@ -384,8 +808,7 @@ export class RecommendationService implements OnModuleInit {
     recommendationType: RecommendationType;
     analyzedAt?: string;
   }) {
-    const recommendation =
-      params.existing || this.recommendationRepo.create();
+    const recommendation = params.existing || this.recommendationRepo.create();
     const existingMentorId = recommendation.mentorId;
     const existingMentorSnapshot = recommendation.mentorSnapshot;
     const existingStatus = recommendation.status;
@@ -395,7 +818,7 @@ export class RecommendationService implements OnModuleInit {
       params.generated,
     );
     const qualityScore =
-      typeof params.summary.quality_score === 'number'
+      typeof params.summary.quality_score === "number"
         ? params.summary.quality_score
         : null;
 
@@ -404,17 +827,20 @@ export class RecommendationService implements OnModuleInit {
     recommendation.contributorLogin = params.contributorLogin;
     recommendation.recommendationType = params.recommendationType;
     recommendation.status =
-      params.recommendationType === 'mentorship' && existingStatus === 'assigned'
-        ? 'assigned'
-        : 'open';
+      params.recommendationType === "mentorship" &&
+      existingStatus === "assigned"
+        ? "assigned"
+        : "open";
     recommendation.priorityScore = priorityScore;
     recommendation.qualityScore = qualityScore;
     recommendation.title = this.buildRecommendationTitle(params);
     recommendation.description = this.buildRecommendationDescription(params);
     recommendation.mentorId =
-      params.recommendationType === 'mentorship' ? existingMentorId || null : null;
+      params.recommendationType === "mentorship"
+        ? existingMentorId || null
+        : null;
     recommendation.mentorSnapshot =
-      params.recommendationType === 'mentorship'
+      params.recommendationType === "mentorship"
         ? existingMentorSnapshot || null
         : null;
     recommendation.contextSnapshot = this.buildContextSnapshot(
@@ -437,18 +863,21 @@ export class RecommendationService implements OnModuleInit {
       params.recommendationType,
       params.summary,
     );
-    recommendation.confidenceScore = this.computeConfidenceScore(params.generated);
+    recommendation.confidenceScore = this.computeConfidenceScore(
+      params.generated,
+    );
     recommendation.learningPath =
-      params.recommendationType === 'learning_path'
+      params.recommendationType === "learning_path"
         ? {
             overview: params.generated.generatedPath.summary,
             tone: params.generated.generatedPath.tone,
-            estimatedTotalHours: params.generated.generatedPath.estimated_total_hours,
+            estimatedTotalHours:
+              params.generated.generatedPath.estimated_total_hours,
             steps: params.generated.generatedPath.steps,
           }
         : null;
     recommendation.docsReview =
-      params.recommendationType === 'docs_review'
+      params.recommendationType === "docs_review"
         ? this.buildDocsReview(params.summary, params.generated)
         : null;
     recommendation.weaknessSnapshot = {
@@ -459,7 +888,7 @@ export class RecommendationService implements OnModuleInit {
       weaknessScores: params.summary.weakness_scores || {},
     };
     recommendation.decisionReasons = {
-      pipeline: 'atlas_vector_rag',
+      pipeline: "atlas_vector_rag",
       recommendationType: params.recommendationType,
       routing: this.buildRoutingReasons(params.summary, params.generated),
       llm: {
@@ -477,7 +906,7 @@ export class RecommendationService implements OnModuleInit {
     recommendation.analysisSummary = params.summary as Record<string, any>;
     recommendation.previousRecommendationId =
       params.history.find((item) => item.id !== recommendation.id)?.id || null;
-    recommendation.outcomeStatus = 'pending';
+    recommendation.outcomeStatus = "pending";
     recommendation.outcomeMetrics = {
       lastGeneratedAt: generatedAt,
       previousRecommendationCount: params.history.length,
@@ -513,7 +942,8 @@ export class RecommendationService implements OnModuleInit {
       llmProvider: params.generated.provider,
       llmModel: params.generated.model,
       generatedAt,
-      profileSignals: params.summary.analysis_metadata?.skill_profile_inputs || {},
+      profileSignals:
+        params.summary.analysis_metadata?.skill_profile_inputs || {},
     };
   }
 
@@ -535,8 +965,14 @@ export class RecommendationService implements OnModuleInit {
         confidence: finding.confidence,
         file: finding.file_path,
       })),
-      strengths: Array.isArray(summary.strengths) ? summary.strengths.slice(0, 5) : [],
-      successCriteria: this.buildSuccessCriteria(recommendationType, generated, summary),
+      strengths: Array.isArray(summary.strengths)
+        ? summary.strengths.slice(0, 5)
+        : [],
+      successCriteria: this.buildSuccessCriteria(
+        recommendationType,
+        generated,
+        summary,
+      ),
       retrievedCoursesByGap: generated.gapMatches.map((match) => ({
         gapKey: match.gap.key,
         gapLabel: match.gap.label,
@@ -557,53 +993,53 @@ export class RecommendationService implements OnModuleInit {
         repositoryId,
         contributorLogin,
         recommendationType,
-        status: In(['open', 'assigned']),
+        status: In(["open", "assigned"]),
       },
-      order: { updatedAt: 'DESC' },
+      order: { updatedAt: "DESC" },
     });
   }
 
-private determineRecommendationType(
-  summary: AnalysisSummary,
-  generated: RecommendationGenerationResult,
-): RecommendationType {
-  const qualityScore = this.getQualityScore(summary);
-  const counts = this.getFindingCounts(summary);
-  const hasCriticalGap = generated.detectedGaps.some(
-    (gap) => gap.severity === 'critical',
-  );
-  const severeGapCount = generated.detectedGaps.filter((gap) =>
-    ['critical', 'high'].includes(gap.severity),
-  ).length;
+  private determineRecommendationType(
+    summary: AnalysisSummary,
+    generated: RecommendationGenerationResult,
+  ): RecommendationType {
+    const qualityScore = this.getQualityScore(summary);
+    const counts = this.getFindingCounts(summary);
+    const hasCriticalGap = generated.detectedGaps.some(
+      (gap) => gap.severity === "critical",
+    );
+    const severeGapCount = generated.detectedGaps.filter((gap) =>
+      ["critical", "high"].includes(gap.severity),
+    ).length;
 
-  if (
-    (typeof qualityScore === 'number' && qualityScore <= 3.5) || // raised from 4.5
-    counts.critical > 2 ||
-    counts.high >= 5 ||                                          // raised from 3
-    hasCriticalGap ||
-    severeGapCount >= 5                                          // raised from 3
-    // removed the qualityScore <= 5.5 && counts.high > 1 clause entirely
-  ) {
-    return 'mentorship';
+    if (
+      (typeof qualityScore === "number" && qualityScore <= 3.5) || // raised from 4.5
+      counts.critical > 2 ||
+      counts.high >= 5 || // raised from 3
+      hasCriticalGap ||
+      severeGapCount >= 5 // raised from 3
+      // removed the qualityScore <= 5.5 && counts.high > 1 clause entirely
+    ) {
+      return "mentorship";
+    }
+
+    if (this.hasDocsReviewSignal(summary, generated, qualityScore)) {
+      return "docs_review";
+    }
+
+    return "learning_path";
   }
-
-  if (this.hasDocsReviewSignal(summary, generated, qualityScore)) {
-    return 'docs_review';
-  }
-
-  return 'learning_path';
-}
 
   private buildRecommendationTitle(params: {
     contributorLogin: string;
     recommendationType: RecommendationType;
     generated: RecommendationGenerationResult;
   }) {
-    if (params.recommendationType === 'mentorship') {
+    if (params.recommendationType === "mentorship") {
       return `Mentoring recommended for @${params.contributorLogin}`;
     }
 
-    if (params.recommendationType === 'docs_review') {
+    if (params.recommendationType === "docs_review") {
       return `Quick docs review for @${params.contributorLogin}`;
     }
 
@@ -617,19 +1053,21 @@ private determineRecommendationType(
   }) {
     const qualityScore = this.getQualityScore(params.summary);
     const qualityText =
-      typeof qualityScore === 'number' ? ` Quality score: ${qualityScore.toFixed(1)}/10.` : '';
+      typeof qualityScore === "number"
+        ? ` Quality score: ${qualityScore.toFixed(1)}/10.`
+        : "";
 
-    if (params.recommendationType === 'mentorship') {
+    if (params.recommendationType === "mentorship") {
       const counts = this.getFindingCounts(params.summary);
       return `Guided mentoring is recommended because the latest analysis found ${counts.critical} critical and ${counts.high} high-severity issue(s).${qualityText}`;
     }
 
-    if (params.recommendationType === 'docs_review') {
+    if (params.recommendationType === "docs_review") {
       const focusAreas = params.generated.detectedGaps
         .slice(0, 3)
         .map((gap) => gap.label)
-        .join(', ');
-      return `Run a focused docs and readability review for ${focusAreas || 'the latest code-analysis findings'}.${qualityText}`;
+        .join(", ");
+      return `Run a focused docs and readability review for ${focusAreas || "the latest code-analysis findings"}.${qualityText}`;
     }
 
     return params.generated.generatedPath.summary;
@@ -664,23 +1102,23 @@ private determineRecommendationType(
       orderedFindings.length > 0
         ? orderedFindings.map((finding) => ({
             title: finding.title || `Review ${this.humanize(finding.skill)}`,
-            skill: this.humanize(finding.skill || 'documentation_readability'),
-            file: finding.file_path || 'Repository-wide',
+            skill: this.humanize(finding.skill || "documentation_readability"),
+            file: finding.file_path || "Repository-wide",
             note:
               finding.message ||
-              `Review this ${finding.severity || 'medium'} finding and clarify the related implementation notes.`,
+              `Review this ${finding.severity || "medium"} finding and clarify the related implementation notes.`,
             success_criteria:
-              'The relevant docs, comments, naming, or review notes clearly explain the behavior and expected outcome.',
+              "The relevant docs, comments, naming, or review notes clearly explain the behavior and expected outcome.",
           }))
         : generated.detectedGaps.slice(0, 5).map((gap) => ({
             title: `Review ${gap.label}`,
             skill: gap.label,
-            file: 'Repository-wide',
+            file: "Repository-wide",
             note:
               gap.evidence[0] ||
-              'Add a short review note that explains the gap and the expected follow-up.',
+              "Add a short review note that explains the gap and the expected follow-up.",
             success_criteria:
-              'The reviewer can understand the issue, expected fix, and validation step without extra context.',
+              "The reviewer can understand the issue, expected fix, and validation step without extra context.",
           }));
 
     return {
@@ -709,16 +1147,16 @@ private determineRecommendationType(
     generated: RecommendationGenerationResult,
     summary: AnalysisSummary,
   ) {
-    if (recommendationType === 'docs_review') {
+    if (recommendationType === "docs_review") {
       return this.buildDocsReview(summary, generated).checklist.map(
         (item) => item.success_criteria,
       );
     }
 
-    if (recommendationType === 'mentorship') {
+    if (recommendationType === "mentorship") {
       return [
-        'A mentor reviews the highest-severity finding with the contributor.',
-        'The contributor ships a follow-up change that addresses the root cause.',
+        "A mentor reviews the highest-severity finding with the contributor.",
+        "The contributor ships a follow-up change that addresses the root cause.",
         ...generated.generatedPath.steps
           .slice(0, 2)
           .map((step) => step.success_signal),
@@ -751,51 +1189,55 @@ private determineRecommendationType(
     };
   }
 
-private hasDocsReviewSignal(
-  summary: AnalysisSummary,
-  generated: RecommendationGenerationResult,
-  qualityScore: number | null,
-) {
-  const findings = Array.isArray(summary.findings) ? summary.findings : [];
-  const counts = this.getFindingCounts(summary);
+  private hasDocsReviewSignal(
+    summary: AnalysisSummary,
+    generated: RecommendationGenerationResult,
+    qualityScore: number | null,
+  ) {
+    const findings = Array.isArray(summary.findings) ? summary.findings : [];
+    const counts = this.getFindingCounts(summary);
 
-  // Doc signal must dominate: majority of gaps/findings must be doc-related
-  const docGapCount = generated.detectedGaps.filter((gap) =>
-    this.isDocumentationSignal(`${gap.key} ${gap.label}`),
-  ).length;
-  const totalGaps = generated.detectedGaps.length;
-  const docFindingCount = findings.filter((f) =>
-    this.isDocumentationSignal(`${f.skill} ${f.title} ${f.message}`),
-  ).length;
+    // Doc signal must dominate: majority of gaps/findings must be doc-related
+    const docGapCount = generated.detectedGaps.filter((gap) =>
+      this.isDocumentationSignal(`${gap.key} ${gap.label}`),
+    ).length;
+    const totalGaps = generated.detectedGaps.length;
+    const docFindingCount = findings.filter((f) =>
+      this.isDocumentationSignal(`${f.skill} ${f.title} ${f.message}`),
+    ).length;
 
-  const docIsDominant =
-    totalGaps > 0 && docGapCount / totalGaps >= 0.5 && docGapCount >= 2;
-  const docFindingsDominant =
-    findings.length > 0 && docFindingCount / findings.length >= 0.5 && docFindingCount >= 2;
+    const docIsDominant =
+      totalGaps > 0 && docGapCount / totalGaps >= 0.5 && docGapCount >= 2;
+    const docFindingsDominant =
+      findings.length > 0 &&
+      docFindingCount / findings.length >= 0.5 &&
+      docFindingCount >= 2;
 
-  if (docIsDominant || docFindingsDominant) {
-    return true;
+    if (docIsDominant || docFindingsDominant) {
+      return true;
+    }
+
+    // Score-based: only for genuinely good code with minor findings
+    return (
+      typeof qualityScore === "number" &&
+      qualityScore >= 7 && // raised from 6
+      counts.critical === 0 &&
+      counts.high === 0 &&
+      counts.medium <= 2 && // added: too many medium findings → learning_path
+      generated.detectedGaps.length > 0
+    );
   }
-
-  // Score-based: only for genuinely good code with minor findings
-  return (
-    typeof qualityScore === 'number' &&
-    qualityScore >= 7 &&          // raised from 6
-    counts.critical === 0 &&
-    counts.high === 0 &&
-    counts.medium <= 2 &&         // added: too many medium findings → learning_path
-    generated.detectedGaps.length > 0
-  );
-}
 
   private isDocumentationSignal(value: string) {
     return /doc|readability|comment|naming|explain|clarity|technical_documentation/i.test(
-      value || '',
+      value || "",
     );
   }
 
   private getQualityScore(summary: AnalysisSummary) {
-    return typeof summary.quality_score === 'number' ? summary.quality_score : null;
+    return typeof summary.quality_score === "number"
+      ? summary.quality_score
+      : null;
   }
 
   private getFindingCounts(summary: AnalysisSummary) {
@@ -804,25 +1246,26 @@ private hasDocsReviewSignal(
 
     return {
       findingCount:
-        typeof counts.finding_count === 'number'
+        typeof counts.finding_count === "number"
           ? counts.finding_count
           : findings.length,
       critical:
-        typeof counts.critical_count === 'number'
+        typeof counts.critical_count === "number"
           ? counts.critical_count
-          : findings.filter((finding) => finding.severity === 'critical').length,
+          : findings.filter((finding) => finding.severity === "critical")
+              .length,
       high:
-        typeof counts.high_count === 'number'
+        typeof counts.high_count === "number"
           ? counts.high_count
-          : findings.filter((finding) => finding.severity === 'high').length,
+          : findings.filter((finding) => finding.severity === "high").length,
       medium:
-        typeof counts.medium_count === 'number'
+        typeof counts.medium_count === "number"
           ? counts.medium_count
-          : findings.filter((finding) => finding.severity === 'medium').length,
+          : findings.filter((finding) => finding.severity === "medium").length,
       low:
-        typeof counts.low_count === 'number'
+        typeof counts.low_count === "number"
           ? counts.low_count
-          : findings.filter((finding) => finding.severity === 'low').length,
+          : findings.filter((finding) => finding.severity === "low").length,
     };
   }
 
@@ -830,26 +1273,28 @@ private hasDocsReviewSignal(
     recommendationType: RecommendationType,
     summary: AnalysisSummary,
   ) {
-    if (recommendationType === 'mentorship') {
-      return 'intensive';
+    if (recommendationType === "mentorship") {
+      return "intensive";
     }
 
-    if (recommendationType === 'docs_review') {
-      return 'light';
+    if (recommendationType === "docs_review") {
+      return "light";
     }
 
-    return (summary.summary?.critical_count || 0) > 0 ? 'intensive' : 'moderate';
+    return (summary.summary?.critical_count || 0) > 0
+      ? "intensive"
+      : "moderate";
   }
 
   private getDueInDays(
     recommendationType: RecommendationType,
     summary: AnalysisSummary,
   ) {
-    if (recommendationType === 'mentorship') {
+    if (recommendationType === "mentorship") {
       return 10;
     }
 
-    if (recommendationType === 'docs_review') {
+    if (recommendationType === "docs_review") {
       return 5;
     }
 
@@ -858,13 +1303,13 @@ private hasDocsReviewSignal(
 
   private severityRank(severity: string | undefined | null) {
     switch (severity) {
-      case 'critical':
+      case "critical":
         return 4;
-      case 'high':
+      case "high":
         return 3;
-      case 'medium':
+      case "medium":
         return 2;
-      case 'low':
+      case "low":
         return 1;
       default:
         return 0;
@@ -872,8 +1317,8 @@ private hasDocsReviewSignal(
   }
 
   private humanize(value: string) {
-    return String(value || '')
-      .replace(/_/g, ' ')
+    return String(value || "")
+      .replace(/_/g, " ")
       .replace(/\b\w/g, (char) => char.toUpperCase());
   }
 
@@ -899,11 +1344,14 @@ private hasDocsReviewSignal(
     const matchCoverage =
       generated.gapMatches.length === 0
         ? 0
-        : generated.gapMatches.filter((match) => match.courses.length > 0).length /
-          generated.gapMatches.length;
-    const providerPenalty = generated.provider === 'fallback' ? 0.08 : 0;
+        : generated.gapMatches.filter((match) => match.courses.length > 0)
+            .length / generated.gapMatches.length;
+    const providerPenalty = generated.provider === "fallback" ? 0.08 : 0;
     return Number(
-      Math.max(0.5, Math.min(0.94, 0.58 + matchCoverage * 0.24 - providerPenalty)).toFixed(2),
+      Math.max(
+        0.5,
+        Math.min(0.94, 0.58 + matchCoverage * 0.24 - providerPenalty),
+      ).toFixed(2),
     );
   }
 
@@ -931,12 +1379,12 @@ private hasDocsReviewSignal(
     recommendation: RecommendationCase,
     generated: RecommendationGenerationResult,
   ) {
-    if (recommendation.recommendationType === 'mentorship') {
-      return 'Mentoring is recommended based on the latest code-analysis severity and quality score.';
+    if (recommendation.recommendationType === "mentorship") {
+      return "Mentoring is recommended based on the latest code-analysis severity and quality score.";
     }
 
-    if (recommendation.recommendationType === 'docs_review') {
-      return 'A quick docs review is recommended for the latest code-analysis findings.';
+    if (recommendation.recommendationType === "docs_review") {
+      return "A quick docs review is recommended for the latest code-analysis findings.";
     }
 
     return generated.notificationSummary;
@@ -950,7 +1398,7 @@ private hasDocsReviewSignal(
   ): Promise<AnalysisSummary> {
     try {
       const repository = await firstValueFrom(
-        this.developerService.send('github_get_repository', {
+        this.developerService.send("github_get_repository", {
           userId: targetDeveloperId,
           repositoryId,
         }),
@@ -967,7 +1415,7 @@ private hasDocsReviewSignal(
         repository?.analysis_summary ||
         null;
 
-      if (profileSummary && typeof profileSummary === 'object') {
+      if (profileSummary && typeof profileSummary === "object") {
         return profileSummary as AnalysisSummary;
       }
     } catch (error: any) {
@@ -976,12 +1424,12 @@ private hasDocsReviewSignal(
       );
     }
 
-    if (fallbackSummary && typeof fallbackSummary === 'object') {
+    if (fallbackSummary && typeof fallbackSummary === "object") {
       return fallbackSummary;
     }
 
     throw new BadRequestException(
-      'No analysis summary available to regenerate this recommendation',
+      "No analysis summary available to regenerate this recommendation",
     );
   }
 
@@ -996,7 +1444,7 @@ private hasDocsReviewSignal(
         contributorLogin,
         repositoryId,
       },
-      order: { createdAt: 'DESC' },
+      order: { createdAt: "DESC" },
       take: 8,
     });
 
@@ -1012,7 +1460,7 @@ private hasDocsReviewSignal(
   private async fetchMentorCandidates(): Promise<MentorCandidate[]> {
     try {
       const response = await firstValueFrom(
-        this.developerService.send('developer_get_available_mentors', {}),
+        this.developerService.send("developer_get_available_mentors", {}),
       );
 
       if (!Array.isArray(response)) {
@@ -1022,11 +1470,13 @@ private hasDocsReviewSignal(
       return response.filter(
         (mentor) =>
           mentor?.is_active &&
-          mentor?.role === 'tech_lead' &&
+          mentor?.role === "tech_lead" &&
           mentor?.is_mentor === true,
       );
     } catch (error) {
-      this.logger.warn('Could not fetch mentor candidates from developer-service');
+      this.logger.warn(
+        "Could not fetch mentor candidates from developer-service",
+      );
       return [];
     }
   }
@@ -1038,7 +1488,7 @@ private hasDocsReviewSignal(
 
     if (!this.isUuid(recipientUserId)) {
       this.logger.warn(
-        `Skipping developer notification for @${event.contributorLogin || 'unknown'}: no platform user id`,
+        `Skipping developer notification for @${event.contributorLogin || "unknown"}: no platform user id`,
       );
       return;
     }
@@ -1047,24 +1497,24 @@ private hasDocsReviewSignal(
       const response = await fetch(
         `${this.notificationServiceBaseUrl}/notifications/send`,
         {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             recipientUserId,
             type: event.type,
-            title: event.title || 'Recommendation ready',
+            title: event.title || "Recommendation ready",
             message:
               event.summary ||
-              'A new recommendation is ready for your developer profile.',
-            link: '/dashboard/developer/recommendations',
-            priority: 'info',
+              "A new recommendation is ready for your developer profile.",
+            link: "/dashboard/developer/recommendations",
+            priority: "info",
             metadata: event,
           }),
         },
       );
 
       if (!response.ok) {
-        const errorText = await response.text().catch(() => '');
+        const errorText = await response.text().catch(() => "");
         this.logger.warn(
           `Notification service rejected developer notification: ${response.status} ${errorText}`,
         );
@@ -1076,7 +1526,9 @@ private hasDocsReviewSignal(
     }
   }
 
-  private async resolveDeveloperIdFromContributor(contributorLogin?: string | null) {
+  private async resolveDeveloperIdFromContributor(
+    contributorLogin?: string | null,
+  ) {
     const normalizedLogin = this.normalizeContributorLogin(contributorLogin);
     if (!normalizedLogin) {
       return null;
@@ -1084,7 +1536,7 @@ private hasDocsReviewSignal(
 
     try {
       const integration = await firstValueFrom(
-        this.developerService.send('github_find_integration_by_username', {
+        this.developerService.send("github_find_integration_by_username", {
           githubUsername: normalizedLogin,
         }),
       );
@@ -1114,6 +1566,9 @@ private hasDocsReviewSignal(
       description: record.description,
       mentor_id: record.mentorId,
       mentor_snapshot: record.mentorSnapshot,
+      mentorship_session_scheduled_at:
+        record.mentorshipSessionScheduledAt?.toISOString() || null,
+      mentorship_session_note: record.mentorshipSessionNote,
       context_snapshot: record.contextSnapshot,
       evidence_snapshot: record.evidenceSnapshot,
       target_skills: record.targetSkills,
@@ -1134,7 +1589,9 @@ private hasDocsReviewSignal(
     };
   }
 
-  private resolveTargetDeveloperId(payload: AnalysisCompletedEvent): string | null {
+  private resolveTargetDeveloperId(
+    payload: AnalysisCompletedEvent,
+  ): string | null {
     if (this.isUuid(payload.requestedByUserId)) {
       return payload.requestedByUserId as string;
     }
@@ -1159,7 +1616,9 @@ private hasDocsReviewSignal(
   }
 
   private normalizeContributorLogin(login: string | undefined | null) {
-    return String(login || '').trim().toLowerCase();
+    return String(login || "")
+      .trim()
+      .toLowerCase();
   }
 
   private isUuid(value: string | undefined | null) {

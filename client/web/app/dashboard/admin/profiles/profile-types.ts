@@ -100,6 +100,8 @@ export interface RecommendationCase {
     username?: string;
     role?: string;
   } | null;
+  mentorship_session_scheduled_at?: string | null;
+  mentorship_session_note?: string | null;
   context_snapshot?: {
     repoName?: string;
     contributorLogin?: string;

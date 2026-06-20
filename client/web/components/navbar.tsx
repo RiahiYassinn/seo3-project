@@ -72,24 +72,15 @@ export function Navbar() {
             {user?.role === "developer" && (
               <>
                 <Link
-                  href="/dashboard/developer/github"
-                  className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
-                    isActive("/dashboard/developer/github")
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  GitHub
-                </Link>
-                <Link
                   href="/dashboard/developer/recommendations"
                   className={`text-sm font-medium px-3 py-2 rounded-md transition-colors ${
-                    isActive("/dashboard/developer/recommendations")
+                    pathname.startsWith("/dashboard/developer/recommendations") ||
+                    pathname.startsWith("/dashboard/developer/github")
                       ? "bg-primary/10 text-primary"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
-                  Recommendations
+                  GitHub Recommendations
                 </Link>
               </>
             )}

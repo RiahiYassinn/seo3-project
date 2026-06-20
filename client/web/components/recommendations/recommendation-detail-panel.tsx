@@ -54,6 +54,15 @@ export function RecommendationDetailPanel({
       : [];
   const learningSteps = recommendation.learning_path?.steps || [];
   const docsReview = recommendation.docs_review || null;
+  const scheduledSession = recommendation.mentorship_session_scheduled_at
+    ? new Date(recommendation.mentorship_session_scheduled_at)
+    : null;
+  const scheduledSessionLabel = scheduledSession
+    ? scheduledSession.toLocaleString([], {
+        dateStyle: "medium",
+        timeStyle: "short",
+      })
+    : null;
   const generatedAt = context?.generatedAt;
 
   return (
@@ -360,6 +369,22 @@ export function RecommendationDetailPanel({
                     ? `Assigned mentor: ${recommendation.mentor_snapshot.name}${recommendation.mentor_snapshot.email ? ` (${recommendation.mentor_snapshot.email})` : ""}`
                     : "A mentor is attached when the recommendation needs direct guided coaching."}
                 </p>
+                {scheduledSessionLabel ? (
+                  <div className="rounded-2xl border border-violet-500/20 bg-background/80 p-4">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      <CalendarClock className="h-4 w-4 text-violet-600" />
+                      Session scheduled
+                    </div>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {scheduledSessionLabel}
+                    </p>
+                    {recommendation.mentorship_session_note ? (
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        {recommendation.mentorship_session_note}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
           ) : null}

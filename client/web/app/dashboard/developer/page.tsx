@@ -109,10 +109,12 @@ export default function DeveloperDashboardRedirect() {
 
               <Button
                 className="w-full gap-2"
-                onClick={() => router.push("/dashboard/developer/github")}
+                onClick={() =>
+                  router.push("/dashboard/developer/recommendations")
+                }
               >
                 <LinkIcon className="h-4 w-4" />
-                {integration ? "Manage Linked GitHub" : "Link GitHub"}
+                {integration ? "Manage GitHub & Recommendations" : "Link GitHub"}
               </Button>
             </CardContent>
           </Card>

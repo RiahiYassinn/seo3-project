@@ -21,7 +21,7 @@ export default function DeveloperRepositoryRedirectPage() {
       return;
     }
 
-    router.replace("/dashboard/developer/github");
+    router.replace("/dashboard/developer/recommendations");
   }, [hasHydrated, router, user]);
 
   return (
