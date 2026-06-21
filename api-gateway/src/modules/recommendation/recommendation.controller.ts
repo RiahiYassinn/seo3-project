@@ -222,6 +222,37 @@ export class RecommendationController {
     return this.recommendationService.getMentorQueue(req.user.id);
   }
 
+  @Get(":recommendationId")
+  @ApiOperation({ summary: "Get a single recommendation by id" })
+  async getRecommendation(
+    @Req() req: any,
+    @Param("recommendationId") recommendationId: string,
+  ) {
+    const normalizedRole = String(req?.user?.role || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[-\s]+/g, "_");
+    let contributorLogin: string | undefined;
+
+    if (normalizedRole === "developer") {
+      try {
+        const integration = await this.githubService.getIntegration(req.user.id);
+        contributorLogin = String(integration?.github_username || "").trim() || undefined;
+      } catch (error) {
+        if (!(error instanceof NotFoundException)) {
+          throw error;
+        }
+      }
+    }
+
+    return this.recommendationService.getRecommendationById(
+      recommendationId,
+      req.user.id,
+      normalizedRole,
+      contributorLogin,
+    );
+  }
+
   @Post(":recommendationId/assign-self")
   @ApiOperation({
     summary: "Assign current tech lead to a mentorship recommendation",

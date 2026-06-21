@@ -170,6 +170,29 @@ export class RecommendationService {
     }
   }
 
+  async getRecommendationById(
+    recommendationId: string,
+    requesterId: string,
+    requesterRole: string,
+    contributorLogin?: string,
+  ) {
+    try {
+      const response = await axios.get(
+        `${this.baseUrl}/recommendations/${recommendationId}`,
+        {
+          params: {
+            requesterId,
+            requesterRole,
+            contributorLogin,
+          },
+        },
+      );
+      return response.data;
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
   async assignMentor(recommendationId: string, mentorId: string) {
     try {
       const response = await axios.post(

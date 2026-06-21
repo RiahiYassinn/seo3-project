@@ -2,26 +2,28 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Navbar } from "@/components/navbar";
 import api from "@/lib/api";
 import { authAPI } from "@/lib/auth";
-import { RecommendationDetailPanel } from "@/components/recommendations/recommendation-detail-panel";
 import { useAuthStore } from "@/lib/store";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
   BriefcaseBusiness,
-  CalendarClock,
+  ChevronRight,
   CircleAlert,
+  Clock3,
+  FolderGit2,
   Loader,
   Sparkles,
   ThumbsDown,
   ThumbsUp,
+  UserRound,
   UserRoundPlus,
 } from "lucide-react";
 import { type RecommendationCase } from "@/app/dashboard/admin/profiles/profile-types";
@@ -55,13 +57,6 @@ interface MentorRequestRecord {
   responded_at?: string | null;
 }
 
-const toDateTimeLocalValue = (value?: string | null) => {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const offsetMs = date.getTimezoneOffset() * 60000;
-  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
-};
 export default function TechLeadRecommendationsPage() {
   const router = useRouter();
   const { user, hasHydrated, updateUser } = useAuthStore();
@@ -76,10 +71,6 @@ export default function TechLeadRecommendationsPage() {
   const [respondingRequestId, setRespondingRequestId] = useState<string | null>(
     null,
   );
-  const [schedulingId, setSchedulingId] = useState<string | null>(null);
-  const [scheduleForms, setScheduleForms] = useState<
-    Record<string, { scheduledAt: string; note: string }>
-  >({});
   const [mentorAvailable, setMentorAvailable] = useState(
     Boolean(user?.is_mentor),
   );
@@ -90,16 +81,12 @@ export default function TechLeadRecommendationsPage() {
   }, [user?.is_mentor]);
 
   const loadQueue = useCallback(async (isRefresh = false) => {
-    if (isRefresh) {
-      setRefreshing(true);
-    }
-
+    if (isRefresh) setRefreshing(true);
     try {
       const [queueResponse, requestResponse] = await Promise.all([
         api.get<MentorQueueRecommendation[]>("/recommendations/mentor-queue"),
         api.get<MentorRequestRecord[]>("/recommendations/mentor-requests"),
       ]);
-
       setQueue(
         (queueResponse.data || [])
           .slice()
@@ -115,25 +102,20 @@ export default function TechLeadRecommendationsPage() {
       );
     } finally {
       setLoading(false);
-      if (isRefresh) {
-        setRefreshing(false);
-      }
+      if (isRefresh) setRefreshing(false);
     }
   }, []);
 
   useEffect(() => {
     if (!hasHydrated) return;
-
     if (!user) {
       router.replace("/login");
       return;
     }
-
     if (user.role !== "tech_lead") {
       router.replace("/dashboard");
       return;
     }
-
     loadQueue();
   }, [hasHydrated, loadQueue, router, user]);
 
@@ -154,13 +136,11 @@ export default function TechLeadRecommendationsPage() {
       );
       return;
     }
-
     setAssigningId(recommendationId);
     try {
       const response = await api.post<MentorQueueRecommendation>(
         `/recommendations/${recommendationId}/assign-self`,
       );
-
       if (response.data) {
         setQueue((previous) =>
           previous.map((recommendation) =>
@@ -188,13 +168,10 @@ export default function TechLeadRecommendationsPage() {
   ) => {
     setRespondingRequestId(requestId);
     setError("");
-
     try {
       await api.post(
         `/recommendations/mentor-requests/${requestId}/${action}`,
-        {
-          mentorId,
-        },
+        { mentorId },
       );
       await loadQueue(true);
     } catch (requestError: any) {
@@ -208,73 +185,10 @@ export default function TechLeadRecommendationsPage() {
     }
   };
 
-  const updateScheduleForm = (
-    recommendationId: string,
-    field: "scheduledAt" | "note",
-    value: string,
-  ) => {
-    setScheduleForms((current) => ({
-      ...current,
-      [recommendationId]: {
-        scheduledAt: current[recommendationId]?.scheduledAt || "",
-        note: current[recommendationId]?.note || "",
-        [field]: value,
-      },
-    }));
-  };
-
-  const scheduleSession = async (recommendation: MentorQueueRecommendation) => {
-    const form = scheduleForms[recommendation.id];
-    const scheduledAt = form?.scheduledAt;
-
-    if (!scheduledAt) {
-      setError("Choose a date and time for the mentoring session.");
-      return;
-    }
-
-    setSchedulingId(recommendation.id);
-    setError("");
-
-    try {
-      const { data } = await api.post<MentorQueueRecommendation>(
-        `/recommendations/${recommendation.id}/schedule-session`,
-        {
-          scheduledAt: new Date(scheduledAt).toISOString(),
-          note: form?.note?.trim() || undefined,
-        },
-      );
-
-      if (data) {
-        setQueue((previous) =>
-          previous.map((item) =>
-            item.id === recommendation.id ? { ...item, ...data } : item,
-          ),
-        );
-        setScheduleForms((current) => ({
-          ...current,
-          [recommendation.id]: {
-            scheduledAt: toDateTimeLocalValue(
-              data.mentorship_session_scheduled_at,
-            ),
-            note: data.mentorship_session_note || "",
-          },
-        }));
-      }
-    } catch (requestError: any) {
-      setError(
-        requestError?.response?.data?.message ||
-          requestError?.message ||
-          "Failed to schedule mentoring session",
-      );
-    } finally {
-      setSchedulingId(null);
-    }
-  };
   const handleMentorAvailabilityChange = async (checked: boolean) => {
     const previousValue = mentorAvailable;
     setMentorAvailable(checked);
     setUpdatingAvailability(true);
-
     try {
       const response = await authAPI.updateMentorAvailability(checked);
       updateUser(response.user);
@@ -306,7 +220,6 @@ export default function TechLeadRecommendationsPage() {
   return (
     <div className="min-h-screen bg-background bg-[radial-gradient(circle_at_top_left,rgba(168,85,247,0.10),transparent_28%),radial-gradient(circle_at_top_right,rgba(6,182,212,0.08),transparent_22%)] dark:bg-[radial-gradient(circle_at_top_left,rgba(168,85,247,0.22),transparent_35%),radial-gradient(circle_at_top_right,rgba(6,182,212,0.18),transparent_30%)]">
       <Navbar />
-
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
@@ -317,9 +230,8 @@ export default function TechLeadRecommendationsPage() {
               Tech Lead Mentor Queue
             </h1>
             <p className="mt-2 max-w-3xl text-muted-foreground">
-              Review escalated coaching recommendations with the same evidence
-              package admins see, then claim the ones where mentorship will have
-              the highest leverage.
+              Review escalated coaching recommendations, then claim the ones
+              where mentorship will have the highest leverage.
             </p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -422,10 +334,6 @@ export default function TechLeadRecommendationsPage() {
                 <h2 className="mt-2 text-2xl font-semibold tracking-tight">
                   Pending requests from developers
                 </h2>
-                <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-                  Review these before you claim items from the wider mentorship
-                  queue.
-                </p>
               </div>
               <Badge variant="outline" className="w-fit">
                 {mentorRequests.length}
@@ -532,6 +440,7 @@ export default function TechLeadRecommendationsPage() {
             </div>
           </section>
         ) : null}
+
         {queue.length === 0 ? (
           <Card className="border-dashed border-border/60 bg-background/70">
             <CardContent className="p-10 text-center">
@@ -548,112 +457,98 @@ export default function TechLeadRecommendationsPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="space-y-6">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {queue.map((item) => {
               const claimedByMe = item.mentor_id === user?.id;
               const unclaimed = !item.mentor_id;
+              const repoName =
+                item.context_snapshot?.repoName ||
+                item.repository_id ||
+                "Unknown repo";
 
               return (
-                <RecommendationDetailPanel
+                <Link
                   key={item.id}
-                  recommendation={item}
-                  compact
-                  actions={
-                    <>
+                  href={`/dashboard/tech_lead/recommendations/${item.id}`}
+                  className="group flex flex-col rounded-2xl border border-border/60 bg-background/80 p-5 shadow-sm transition hover:border-primary/50 hover:shadow-md"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <h3 className="line-clamp-2 text-base font-semibold tracking-tight">
+                      {item.title}
+                    </h3>
+                    <Badge
+                      variant="outline"
+                      className={`shrink-0 ${
+                        claimedByMe
+                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
+                          : unclaimed
+                            ? "border-amber-500/30 bg-amber-500/10 text-amber-700"
+                            : ""
+                      }`}
+                    >
+                      {claimedByMe
+                        ? "Assigned to you"
+                        : unclaimed
+                          ? "Unclaimed"
+                          : "Assigned"}
+                    </Badge>
+                  </div>
+
+                  <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
+                    {item.description || "No description provided."}
+                  </p>
+
+                  <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <FolderGit2 className="h-3.5 w-3.5" />
+                      {repoName}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <UserRound className="h-3.5 w-3.5" />
+                      Priority {item.priority_score}
+                    </span>
+                    {item.mentorship_session_scheduled_at ? (
+                      <span className="flex items-center gap-1">
+                        <Clock3 className="h-3.5 w-3.5" />
+                        {new Date(
+                          item.mentorship_session_scheduled_at,
+                        ).toLocaleString()}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-4 flex items-center justify-between border-t border-border/60 pt-3">
+                    {unclaimed ? (
                       <Button
-                        onClick={() => claimRecommendation(item.id)}
-                        disabled={
-                          !unclaimed ||
-                          assigningId === item.id ||
-                          !mentorAvailable
-                        }
+                        size="sm"
                         className="gap-2"
-                        variant={claimedByMe ? "outline" : "default"}
+                        disabled={assigningId === item.id || !mentorAvailable}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          claimRecommendation(item.id);
+                        }}
                       >
                         {assigningId === item.id ? (
-                          <>
-                            <Loader className="h-4 w-4 animate-spin" />
-                            Claiming
-                          </>
-                        ) : claimedByMe ? (
-                          "Assigned to You"
+                          <Loader className="h-4 w-4 animate-spin" />
                         ) : (
-                          <>
-                            <UserRoundPlus className="h-4 w-4" />
-                            Claim Mentorship
-                          </>
+                          <UserRoundPlus className="h-4 w-4" />
                         )}
+                        Claim
                       </Button>
-                      {claimedByMe ? (
-                        <form
-                          className="flex w-full flex-col gap-3 rounded-xl border border-border/60 bg-background/80 p-3 sm:flex-row sm:items-end"
-                          onSubmit={(event) => {
-                            event.preventDefault();
-                            scheduleSession(item);
-                          }}
-                        >
-                          <div className="min-w-[220px] flex-1 space-y-1">
-                            <Label htmlFor={`session-date-${item.id}`}>
-                              Session date and time
-                            </Label>
-                            <Input
-                              id={`session-date-${item.id}`}
-                              type="datetime-local"
-                              value={
-                                scheduleForms[item.id]?.scheduledAt ??
-                                toDateTimeLocalValue(
-                                  item.mentorship_session_scheduled_at,
-                                )
-                              }
-                              onChange={(event) =>
-                                updateScheduleForm(
-                                  item.id,
-                                  "scheduledAt",
-                                  event.target.value,
-                                )
-                              }
-                              disabled={schedulingId === item.id}
-                            />
-                          </div>
-                          <div className="min-w-[220px] flex-1 space-y-1">
-                            <Label htmlFor={`session-note-${item.id}`}>
-                              Note
-                            </Label>
-                            <Input
-                              id={`session-note-${item.id}`}
-                              value={
-                                scheduleForms[item.id]?.note ??
-                                item.mentorship_session_note ??
-                                ""
-                              }
-                              onChange={(event) =>
-                                updateScheduleForm(
-                                  item.id,
-                                  "note",
-                                  event.target.value,
-                                )
-                              }
-                              placeholder="Optional agenda or meeting link"
-                              disabled={schedulingId === item.id}
-                            />
-                          </div>
-                          <Button
-                            type="submit"
-                            className="gap-2 sm:w-auto"
-                            disabled={schedulingId === item.id}
-                          >
-                            {schedulingId === item.id ? (
-                              <Loader className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <CalendarClock className="h-4 w-4" />
-                            )}
-                            Schedule
-                          </Button>
-                        </form>
-                      ) : null}
-                    </>
-                  }
-                />
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        {claimedByMe
+                          ? "You're mentoring this"
+                          : "Claimed by another mentor"}
+                      </span>
+                    )}
+                    <span className="flex items-center gap-1 text-sm font-medium text-primary opacity-0 transition group-hover:opacity-100">
+                      View details
+                      <ChevronRight className="h-4 w-4" />
+                    </span>
+                  </div>
+                </Link>
               );
             })}
           </div>

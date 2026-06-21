@@ -1,9 +1,11 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
+  NotFoundException,
   OnModuleInit,
 } from "@nestjs/common";
 import { ClientKafka, ClientProxy } from "@nestjs/microservices";
@@ -308,6 +310,46 @@ export class RecommendationService implements OnModuleInit {
     });
 
     return record ? this.mapCase(record) : null;
+  }
+
+  async getRecommendationById(
+    recommendationId: string,
+    requesterId: string,
+    requesterRole: string,
+    contributorLogin?: string,
+  ) {
+    const recommendation = await this.recommendationRepo.findOne({
+      where: { id: recommendationId },
+    });
+
+    if (!recommendation) {
+      throw new NotFoundException("Recommendation not found");
+    }
+
+    const normalizedRole = String(requesterRole || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[-\s]+/g, "_");
+
+    if (normalizedRole === "admin") {
+      return this.mapCase(recommendation);
+    }
+
+    if (normalizedRole === "tech_lead") {
+      this.assertTechLeadCanViewRecommendation(recommendation, requesterId);
+      return this.mapCase(recommendation);
+    }
+
+    if (normalizedRole === "developer") {
+      this.assertDeveloperCanViewRecommendation(
+        recommendation,
+        requesterId,
+        contributorLogin,
+      );
+      return this.mapCase(recommendation);
+    }
+
+    throw new ForbiddenException("You do not have access to this recommendation");
   }
 
   async getMentorQueue(mentorId: string) {
@@ -1550,6 +1592,39 @@ export class RecommendationService implements OnModuleInit {
       );
       return null;
     }
+  }
+
+  private assertTechLeadCanViewRecommendation(
+    recommendation: RecommendationCase,
+    requesterId: string,
+  ) {
+    if (recommendation.recommendationType !== "mentorship") {
+      throw new ForbiddenException("You do not have access to this recommendation");
+    }
+
+    if (recommendation.mentorId && recommendation.mentorId !== requesterId) {
+      throw new ForbiddenException(
+        "This recommendation is assigned to another mentor",
+      );
+    }
+  }
+
+  private assertDeveloperCanViewRecommendation(
+    recommendation: RecommendationCase,
+    requesterId: string,
+    contributorLogin?: string,
+  ) {
+    const normalizedContributor = this.normalizeContributorLogin(contributorLogin);
+    const ownsByDeveloperId = recommendation.targetDeveloperId === requesterId;
+    const ownsByContributorLogin =
+      Boolean(normalizedContributor) &&
+      recommendation.contributorLogin === normalizedContributor;
+
+    if (ownsByDeveloperId || ownsByContributorLogin) {
+      return;
+    }
+
+    throw new ForbiddenException("You do not have access to this recommendation");
   }
 
   private mapCase(record: RecommendationCase) {

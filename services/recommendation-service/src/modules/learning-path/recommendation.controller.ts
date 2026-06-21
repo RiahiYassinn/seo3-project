@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   Post,
+  Query,
 } from "@nestjs/common";
 import { RecommendationService } from "./recommendation.service";
 import { CourseCatalogService } from "./course-catalog.service";
@@ -147,6 +148,21 @@ export class RecommendationController {
   @Get("mentor/:mentorId/queue")
   async getMentorQueue(@Param("mentorId") mentorId: string) {
     return this.recommendationService.getMentorQueue(mentorId);
+  }
+
+  @Get(":recommendationId")
+  async getRecommendationById(
+    @Param("recommendationId") recommendationId: string,
+    @Query("requesterId") requesterId: string,
+    @Query("requesterRole") requesterRole: string,
+    @Query("contributorLogin") contributorLogin?: string,
+  ) {
+    return this.recommendationService.getRecommendationById(
+      recommendationId,
+      requesterId,
+      requesterRole,
+      contributorLogin,
+    );
   }
 
   @Post(":recommendationId/assign")
