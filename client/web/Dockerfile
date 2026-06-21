@@ -1,17 +1,28 @@
 # Base Node.js image
-FROM node:18-alpine AS base
+FROM node:20-alpine AS base
 
 # Dependencies stage
 FROM base AS deps
 WORKDIR /app
 
+ARG NEXT_PUBLIC_API_GATEWAY=http://localhost:3000
+ARG NEXT_PUBLIC_API_GATEWAY_URL=http://localhost:3000
+ENV NEXT_PUBLIC_API_GATEWAY=$NEXT_PUBLIC_API_GATEWAY
+ENV NEXT_PUBLIC_API_GATEWAY_URL=$NEXT_PUBLIC_API_GATEWAY_URL
+
 # Copy package files
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 
 # Build stage
 FROM base AS builder
 WORKDIR /app
+
+ARG NEXT_PUBLIC_API_GATEWAY=http://localhost:3000
+ARG NEXT_PUBLIC_API_GATEWAY_URL=http://localhost:3000
+ENV NEXT_PUBLIC_API_GATEWAY=$NEXT_PUBLIC_API_GATEWAY
+ENV NEXT_PUBLIC_API_GATEWAY_URL=$NEXT_PUBLIC_API_GATEWAY_URL
+ENV NEXT_FONT_GOOGLE_MOCKED_RESPONSES=1
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .

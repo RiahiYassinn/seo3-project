@@ -10,7 +10,66 @@
 - Apache Kafka
 - Redis
 
-## Local Development
+## Run Everything with Docker (recommended)
+
+This starts infrastructure **and** all application services in containers.
+
+### 1. Prerequisites
+
+- Docker Desktop (or Docker Engine + Compose v2)
+- At least 8 GB RAM available for Docker
+
+### 2. Configure environment
+
+```bash
+cp .env.docker.example .env.docker
+# Edit .env.docker — at minimum set JWT_ACCESS_SECRET, JWT_REFRESH_SECRET, TOKEN_ENCRYPTION_KEY
+```
+
+### 3. Start the full stack
+
+```bash
+# Linux / macOS
+bash scripts/docker-up.sh
+
+# Windows PowerShell
+powershell -ExecutionPolicy Bypass -File scripts/docker-up.ps1
+
+# Or via npm (cross-platform)
+npm run docker:app:up
+```
+
+First build can take several minutes while images compile.
+
+### 4. Open the app
+
+| Service | URL |
+|---------|-----|
+| Web client | http://localhost:3010 |
+| API Gateway | http://localhost:3000 |
+| Swagger docs | http://localhost:3000/docs |
+| Kafka UI | http://localhost:8080 |
+| NLP service | http://localhost:8000 |
+
+### 5. Stop the stack
+
+```bash
+npm run docker:app:down
+```
+
+### Infrastructure only (local dev with hot reload)
+
+If you prefer running NestJS/Next.js on the host with `npm run dev`:
+
+```bash
+npm run docker:up    # postgres, mongodb, redis, kafka only
+cp .env.example .env
+npm run dev
+```
+
+---
+
+## Local Development (without app containers)
 
 ### 1. Start Infrastructure Services
 
@@ -72,14 +131,15 @@ npm run dev:client       # Next.js on port 3000
 ### Using Docker Compose
 
 ```bash
-# Build and start all services
-docker-compose -f docker-compose.prod.yml up -d
+cp .env.docker.example .env.docker
+docker compose -f docker-compose.prod.yml up -d --build
+```
 
-# View logs
-docker-compose -f docker-compose.prod.yml logs -f
+See **Run Everything with Docker** above for URLs and npm shortcuts.
 
-# Stop all services
-docker-compose -f docker-compose.prod.yml down
+```bash
+npm run docker:app:logs   # tail all service logs
+npm run docker:app:down   # stop stack
 ```
 
 ### Building Individual Services

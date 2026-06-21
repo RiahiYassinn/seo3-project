@@ -1,5 +1,5 @@
 # Base Node.js image
-FROM node:18-alpine AS base
+FROM node:20-alpine AS base
 
 # Build stage
 FROM base AS builder
@@ -7,13 +7,13 @@ WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 
 # Copy source code
 COPY . .
 
 # Build application
-RUN npm run build
+RUN npm run build && npm prune --omit=dev
 
 # Production stage
 FROM base AS runner

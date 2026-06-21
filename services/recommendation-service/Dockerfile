@@ -1,31 +1,21 @@
-# Base Node.js image
-FROM node:20-alpine AS base
-
-# Build stage
-FROM base AS builder
+FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Copy package files
 COPY package*.json ./
 RUN npm install
 
-# Copy source code
 COPY . .
-
-# Build application
 RUN npm run build && npm prune --omit=dev
 
-# Production stage
-FROM base AS runner
+FROM node:20-alpine AS runner
 WORKDIR /app
 
-ENV NODE_ENV production
+ENV NODE_ENV=production
 
-# Copy built application
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
 
-EXPOSE 3000
+EXPOSE 3004
 
 CMD ["node", "dist/main.js"]

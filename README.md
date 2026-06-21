@@ -76,22 +76,28 @@ seo3-project/
 - Apache Kafka
 - Redis
 
-### Installation
+### Quick start with Docker (full stack)
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd seo3-project
-
-# Install dependencies for all services
-npm run install:all
-
-# Start infrastructure services (databases, Kafka, Redis)
-docker-compose up -d
-
-# Start all microservices in development mode
-npm run dev:all
+cp .env.docker.example .env.docker
+npm run docker:app:up
 ```
+
+Then open **http://localhost:3010** (web) and **http://localhost:3000/docs** (API).
+
+See [docs/deployment.md](docs/deployment.md) for details.
+
+### Local development (hybrid)
+
+```bash
+# Infrastructure only
+npm run docker:up
+
+# App services on host with hot reload
+npm run dev
+```
+
+### Manual installation
 
 ## Development
 
