@@ -5,7 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { ClientProxy } from '@nestjs/microservices';
+import { ClientKafka, ClientProxy } from '@nestjs/microservices';
 import { InjectRepository } from '@nestjs/typeorm';
 import { firstValueFrom } from 'rxjs';
 import { FindOptionsWhere, Repository } from 'typeorm';
@@ -26,6 +26,8 @@ export class NotificationService {
     private readonly notificationRepo: Repository<Notification>,
     @Inject('DEVELOPER_SERVICE')
     private readonly developerService: ClientProxy,
+    @Inject('KAFKA_CLIENT')
+    private readonly kafkaClient: ClientKafka,
   ) {}
 
   async getForViewer(viewer: Viewer, limit = 50) {
@@ -71,7 +73,16 @@ export class NotificationService {
     );
 
     const saved = await this.notificationRepo.save(notifications);
-    return saved.map((notification) => this.map(notification));
+    const mapped = saved.map((notification) => this.map(notification));
+
+    for (const notification of mapped) {
+      this.kafkaClient.emit('notification.created', {
+        key: notification.recipient_user_id || notification.recipient_role || notification.id,
+        value: JSON.stringify({ ...notification, is_read: false }),
+      });
+    }
+
+    return mapped;
   }
 
   async markAsRead(notificationId: string, viewer: Viewer) {

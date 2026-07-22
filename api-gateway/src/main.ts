@@ -1,10 +1,12 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import * as compression from 'compression';
 import helmet from 'helmet';
 import * as express from 'express';
+import { randomUUID } from 'crypto';
 import { join } from 'path';
 import { AppModule } from './app.module';
 
@@ -80,8 +82,16 @@ async function bootstrap() {
     next();
   });
 
-  // Compression
-  app.use(compression());
+  // Compression - bypassed for the SSE notification stream, which must flush
+  // events immediately rather than being buffered for gzip.
+  app.use(
+    compression({
+      filter: (req, res) =>
+        req.path.endsWith('/notifications/stream')
+          ? false
+          : compression.filter(req, res),
+    }),
+  );
 
   // Global validation pipe
   app.useGlobalPipes(
@@ -91,6 +101,26 @@ async function bootstrap() {
       transform: true,
     }),
   );
+
+  // Kafka consumer for realtime notification fan-out. Each instance uses a
+  // unique clientId/groupId so every gateway process receives every
+  // notification.created event instead of Kafka partitioning them across
+  // instances - correctness depends on this since SSE connections are only
+  // known to the instance holding them in memory.
+  const instanceId = randomUUID();
+  app.connectMicroservice<MicroserviceOptions>({
+    transport: Transport.KAFKA,
+    options: {
+      client: {
+        clientId: `api-gateway-${instanceId}`,
+        brokers: (process.env.KAFKA_BROKERS || 'localhost:29092').split(','),
+      },
+      consumer: {
+        groupId: `api-gateway-notifications-${instanceId}`,
+      },
+    },
+  });
+  await app.startAllMicroservices();
 
   const port = process.env.API_GATEWAY_PORT || 3006;
   await app.listen(port);

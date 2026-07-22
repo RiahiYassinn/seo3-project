@@ -23,6 +23,21 @@ import { NotificationService } from './notification.service';
         inject: [ConfigService],
       },
     ]),
+    ClientsModule.register([
+      {
+        name: 'KAFKA_CLIENT',
+        transport: Transport.KAFKA,
+        options: {
+          client: {
+            clientId: 'notification-service-producer',
+            brokers: (process.env.KAFKA_BROKERS || 'localhost:29092').split(','),
+          },
+          producer: {
+            allowAutoTopicCreation: true,
+          },
+        },
+      },
+    ]),
   ],
   controllers: [NotificationController],
   providers: [NotificationService],

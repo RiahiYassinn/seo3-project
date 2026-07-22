@@ -1,5 +1,8 @@
 import api from "@/lib/api";
 
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_GATEWAY || "http://localhost:3006";
+
 export interface AppNotification {
   id: string;
   recipient_user_id: string | null;
@@ -46,3 +49,34 @@ export const notificationsAPI = {
     return response.data;
   },
 };
+
+export function subscribeToNotifications(
+  onNotification: (notification: AppNotification) => void,
+  onError?: (event: Event) => void,
+): () => void {
+  if (typeof window === "undefined" || typeof EventSource === "undefined") {
+    return () => {};
+  }
+
+  const source = new EventSource(
+    `${API_BASE_URL}/api/v1/notifications/stream`,
+    { withCredentials: true },
+  );
+
+  source.addEventListener("notification", (event) => {
+    try {
+      const notification = JSON.parse(
+        (event as MessageEvent).data,
+      ) as AppNotification;
+      onNotification(notification);
+    } catch (parseError) {
+      console.error("Failed to parse notification event", parseError);
+    }
+  });
+
+  if (onError) {
+    source.onerror = onError;
+  }
+
+  return () => source.close();
+}

@@ -35,8 +35,7 @@ interface RecommendationDetailPanelProps {
 const metricCardTone =
   "rounded-3xl border border-border/60 bg-muted/20 p-4 shadow-sm";
 
-const labelMuted =
-  "text-xs uppercase tracking-[0.2em] text-muted-foreground";
+const labelMuted = "text-xs uppercase tracking-[0.2em] text-muted-foreground";
 
 export function RecommendationDetailPanel({
   recommendation,
@@ -88,7 +87,8 @@ export function RecommendationDetailPanel({
                 </Badge>
                 {context?.llmProvider ? (
                   <Badge variant="secondary">
-                    {formatLabel(context.llmProvider)} • {context.llmModel || "model"}
+                    {formatLabel(context.llmProvider)} •{" "}
+                    {context.llmModel || "model"}
                   </Badge>
                 ) : null}
               </div>
@@ -141,7 +141,9 @@ export function RecommendationDetailPanel({
               </div>
             </div>
 
-            {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
+            {actions ? (
+              <div className="flex flex-wrap gap-2">{actions}</div>
+            ) : null}
           </div>
 
           <div
@@ -211,7 +213,9 @@ export function RecommendationDetailPanel({
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
-                        <p className="font-medium text-foreground">{gap.label}</p>
+                        <p className="font-medium text-foreground">
+                          {gap.label}
+                        </p>
                         {gap.evidence?.length ? (
                           <p className="mt-1 text-sm text-muted-foreground">
                             {gap.evidence[0]}
@@ -247,7 +251,9 @@ export function RecommendationDetailPanel({
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
-                        <p className="font-medium text-foreground">{finding.title}</p>
+                        <p className="font-medium text-foreground">
+                          {finding.title}
+                        </p>
                         <p className="mt-1 text-sm text-muted-foreground">
                           {formatLabel(finding.skill)} • {finding.file}
                         </p>
@@ -277,9 +283,12 @@ export function RecommendationDetailPanel({
                     className="rounded-3xl border border-border/60 bg-muted/15 p-4"
                   >
                     <div className="mb-3 flex items-center justify-between gap-3">
-                      <p className="font-medium text-foreground">{match.gapLabel}</p>
+                      <p className="font-medium text-foreground">
+                        {match.gapLabel}
+                      </p>
                       <Badge variant="secondary">
-                        {match.courses.length} course{match.courses.length === 1 ? "" : "s"}
+                        {match.courses.length} course
+                        {match.courses.length === 1 ? "" : "s"}
                       </Badge>
                     </div>
                     <div className="space-y-3">
@@ -326,27 +335,6 @@ export function RecommendationDetailPanel({
                         </a>
                       ))}
                     </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          ) : null}
-
-          {evidence?.successCriteria?.length ? (
-            <Card className="border-border/60 bg-background/85 shadow-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <CheckCircle2 className="h-5 w-5" />
-                  Success criteria
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {evidence.successCriteria.map((criterion, index) => (
-                  <div
-                    key={`${recommendation.id}-criterion-${index}`}
-                    className="rounded-3xl border border-border/60 bg-muted/15 p-4 text-sm text-muted-foreground"
-                  >
-                    {criterion}
                   </div>
                 ))}
               </CardContent>
@@ -404,7 +392,10 @@ export function RecommendationDetailPanel({
                     <p className={labelMuted}>Focus Areas</p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {docsReview.focus_areas.map((area) => (
-                        <Badge key={`${recommendation.id}-docs-${area}`} variant="outline">
+                        <Badge
+                          key={`${recommendation.id}-docs-${area}`}
+                          variant="outline"
+                        >
                           {area}
                         </Badge>
                       ))}
@@ -427,7 +418,9 @@ export function RecommendationDetailPanel({
                         </h3>
                       </div>
                       {item.skill ? (
-                        <Badge variant="secondary">{formatLabel(item.skill)}</Badge>
+                        <Badge variant="secondary">
+                          {formatLabel(item.skill)}
+                        </Badge>
                       ) : null}
                     </div>
                     <p className="mt-3 text-sm text-muted-foreground">
@@ -489,8 +482,8 @@ export function RecommendationDetailPanel({
                       {recommendation.learning_path.overview}
                     </p>
                     <div className="mt-3 flex flex-wrap gap-3 text-sm text-muted-foreground">
-                      {typeof recommendation.learning_path.estimatedTotalHours ===
-                      "number" ? (
+                      {typeof recommendation.learning_path
+                        .estimatedTotalHours === "number" ? (
                         <span>
                           Estimated effort{" "}
                           <span className="font-medium text-foreground">
@@ -521,7 +514,8 @@ export function RecommendationDetailPanel({
                           Step {step.order}
                         </p>
                         <h3 className="mt-1 text-lg font-semibold text-foreground">
-                          {step.title || formatLabel(step.skill || `step_${step.order}`)}
+                          {step.title ||
+                            formatLabel(step.skill || `step_${step.order}`)}
                         </h3>
                       </div>
                       {typeof step.estimated_hours === "number" ? (
@@ -532,7 +526,9 @@ export function RecommendationDetailPanel({
                     <div className="mt-4 space-y-3 text-sm">
                       <div>
                         <p className={labelMuted}>Goal</p>
-                        <p className="mt-1 text-muted-foreground">{step.goal}</p>
+                        <p className="mt-1 text-muted-foreground">
+                          {step.goal}
+                        </p>
                       </div>
                       {step.why_it_matters ? (
                         <div>
@@ -593,7 +589,8 @@ export function RecommendationDetailPanel({
             </Card>
           ) : null}
 
-          {(context?.strengths?.length || context?.commitTopics?.length) && !compact ? (
+          {(context?.strengths?.length || context?.commitTopics?.length) &&
+          !compact ? (
             <Card className="border-border/60 bg-background/85 shadow-sm">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-lg">
@@ -635,8 +632,27 @@ export function RecommendationDetailPanel({
               </CardContent>
             </Card>
           ) : null}
-
-          {decision ? (
+          {evidence?.successCriteria?.length ? (
+            <Card className="border-border/60 bg-background/85 shadow-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <CheckCircle2 className="h-5 w-5" />
+                  Success criteria
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {evidence.successCriteria.map((criterion, index) => (
+                  <div
+                    key={`${recommendation.id}-criterion-${index}`}
+                    className="rounded-3xl border border-border/60 bg-muted/15 p-4 text-sm text-muted-foreground"
+                  >
+                    {criterion}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          ) : null}
+          {/* {decision ? (
             <Card className="border-border/60 bg-background/85 shadow-sm">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-lg">
@@ -675,7 +691,7 @@ export function RecommendationDetailPanel({
                 ) : null}
               </CardContent>
             </Card>
-          ) : null}
+          ) : null} */}
         </div>
       </div>
     </div>

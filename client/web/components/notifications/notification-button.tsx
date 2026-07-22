@@ -7,6 +7,7 @@ import { Bell, CheckCheck, Inbox, Loader2 } from "lucide-react";
 import {
   type AppNotification,
   notificationsAPI,
+  subscribeToNotifications,
 } from "@/lib/notifications";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -57,7 +58,9 @@ export function NotificationButton({ className }: NotificationButtonProps) {
 
   useEffect(() => {
     loadNotifications();
-    const interval = window.setInterval(loadNotifications, 60000);
+    // Realtime updates arrive over SSE; this is just a safety-net refresh
+    // in case a push is missed (e.g. during a reconnect window).
+    const interval = window.setInterval(loadNotifications, 300000);
     return () => window.clearInterval(interval);
   }, [loadNotifications]);
 
@@ -66,6 +69,23 @@ export function NotificationButton({ className }: NotificationButtonProps) {
       loadNotifications();
     }
   }, [loadNotifications, open]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToNotifications((notification) => {
+      setNotifications((current) => {
+        if (current.some((item) => item.id === notification.id)) {
+          return current;
+        }
+        return [notification, ...current];
+      });
+
+      if (!notification.is_read) {
+        setUnreadCount((current) => current + 1);
+      }
+    });
+
+    return unsubscribe;
+  }, []);
 
   const orderedNotifications = useMemo(
     () =>
