@@ -10,6 +10,9 @@ import {
   Shield,
   CheckCircle,
   AlertCircle,
+  Code as Code2,
+  UserCog,
+  Users,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
@@ -404,20 +407,58 @@ export const UsersManagementTable = () => {
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
       case "admin":
-        return "bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400";
+        return "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300";
       case "tech_lead":
-        return "bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-400";
+        return "border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300";
       case "developer":
-        return "bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400";
+        return "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300";
       default:
-        return "bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400";
+        return "border-border/60 bg-muted text-muted-foreground";
     }
   };
 
+  const statTiles = [
+    {
+      label: "Total users",
+      value: stats.total,
+      icon: Users,
+      tone: "bg-primary/10 text-primary",
+    },
+    {
+      label: "Admins",
+      value: stats.admins,
+      icon: Shield,
+      tone: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
+    },
+    {
+      label: "Tech leads",
+      value: stats.tech_leads,
+      icon: UserCog,
+      tone: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
+    },
+    {
+      label: "Developers",
+      value: stats.developers,
+      icon: Code2,
+      tone: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
+    },
+    {
+      label: "Active today",
+      value: stats.active_today,
+      icon: CheckCircle,
+      tone: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+    },
+  ];
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+      <div className="space-y-6">
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+          {[0, 1, 2, 3, 4].map((tile) => (
+            <div key={tile} className="h-24 animate-pulse rounded-xl bg-muted" />
+          ))}
+        </div>
+        <div className="h-[28rem] animate-pulse rounded-xl bg-muted" />
       </div>
     );
   }
@@ -425,111 +466,60 @@ export const UsersManagementTable = () => {
   return (
     <div className="space-y-6">
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-        <div className="p-6 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-              <Shield className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-            </div>
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+        {statTiles.map((tile) => (
+          <div
+            key={tile.label}
+            className="rounded-xl border border-border/60 bg-background/80 p-5 shadow-sm"
+          >
+            <span
+              className={`flex h-9 w-9 items-center justify-center rounded-lg ${tile.tone}`}
+            >
+              <tile.icon className="h-4 w-4" />
+            </span>
+            <p className="mt-3 text-sm text-muted-foreground">{tile.label}</p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums">
+              {tile.value}
+            </p>
           </div>
-          <h3 className="font-medium text-gray-600 dark:text-gray-400 text-sm mb-1">
-            Total Users
-          </h3>
-          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            {stats.total}
-          </p>
-        </div>
-
-        <div className="p-6 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <div className="p-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
-              <Shield className="h-5 w-5 text-red-600 dark:text-red-400" />
-            </div>
-          </div>
-          <h3 className="font-medium text-gray-600 dark:text-gray-400 text-sm mb-1">
-            Admins
-          </h3>
-          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            {stats.admins}
-          </p>
-        </div>
-
-        <div className="p-6 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <div className="p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-              <Shield className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-            </div>
-          </div>
-          <h3 className="font-medium text-gray-600 dark:text-gray-400 text-sm mb-1">
-            Tech Leads
-          </h3>
-          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            {stats.tech_leads}
-          </p>
-        </div>
-
-        <div className="p-6 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-              <Shield className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-            </div>
-          </div>
-          <h3 className="font-medium text-gray-600 dark:text-gray-400 text-sm mb-1">
-            Developers
-          </h3>
-          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            {stats.developers}
-          </p>
-        </div>
-
-        <div className="p-6 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <div className="p-2 bg-green-50 dark:bg-green-900/20 rounded-lg">
-              <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
-            </div>
-          </div>
-          <h3 className="font-medium text-gray-600 dark:text-gray-400 text-sm mb-1">
-            Active Today
-          </h3>
-          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            {stats.active_today}
-          </p>
-        </div>
+        ))}
       </div>
 
       {/* Filters and Search */}
-      <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 shadow-sm">
-        <div className="flex flex-col md:flex-row gap-4 items-center justify-between mb-6">
-          <div className="flex-1 relative w-full md:w-auto">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search users..."
+      <div className="rounded-xl border border-border/60 bg-background/80 shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-border/60 p-4 md:flex-row md:items-center md:justify-between">
+          <div className="relative w-full md:max-w-sm">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Search by name, username, or email"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-4 py-2 w-full border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="pl-9"
+              aria-label="Search users"
             />
           </div>
 
-          <div className="flex gap-3 w-full md:w-auto">
-            <select
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value)}
-              className="px-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="all">All Roles</option>
-              <option value="admin">Admin</option>
-              <option value="tech_lead">Tech Lead</option>
-              <option value="developer">Developer</option>
-            </select>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-muted-foreground">
+              {filteredUsers.length} of {users.length}
+            </span>
+            <Select value={roleFilter} onValueChange={setRoleFilter}>
+              <SelectTrigger className="w-40" aria-label="Filter by role">
+                <SelectValue placeholder="All roles" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All roles</SelectItem>
+                <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="tech_lead">Tech lead</SelectItem>
+                <SelectItem value="developer">Developer</SelectItem>
+              </SelectContent>
+            </Select>
 
-            <button
-              onClick={openAddDialog}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
-            >
+            <Button onClick={openAddDialog} className="gap-2">
               <UserPlus className="h-4 w-4" />
-              Add User
-            </button>
+              Add user
+            </Button>
           </div>
         </div>
 
@@ -537,26 +527,26 @@ export const UsersManagementTable = () => {
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-gray-200 dark:border-gray-700">
-                <th className="text-left py-3 px-4 font-semibold text-sm text-gray-700 dark:text-gray-300">
+              <tr className="border-b border-border/60 bg-muted/30">
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   User
                 </th>
-                <th className="text-left py-3 px-4 font-semibold text-sm text-gray-700 dark:text-gray-300">
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Email
                 </th>
-                <th className="text-left py-3 px-4 font-semibold text-sm text-gray-700 dark:text-gray-300">
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Role
                 </th>
-                <th className="text-left py-3 px-4 font-semibold text-sm text-gray-700 dark:text-gray-300">
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Mentor
                 </th>
-                <th className="text-left py-3 px-4 font-semibold text-sm text-gray-700 dark:text-gray-300">
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Status
                 </th>
-                <th className="text-left py-3 px-4 font-semibold text-sm text-gray-700 dark:text-gray-300">
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Joined
                 </th>
-                <th className="text-right py-3 px-4 font-semibold text-sm text-gray-700 dark:text-gray-300">
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Actions
                 </th>
               </tr>
@@ -565,101 +555,112 @@ export const UsersManagementTable = () => {
               {filteredUsers.map((user) => (
                 <tr
                   key={user.id}
-                  className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+                  className="border-b border-border/50 transition-colors last:border-b-0 hover:bg-muted/40"
                 >
-                  <td className="py-4 px-4">
+                  <td className="px-4 py-3.5">
                     <div className="flex items-center gap-3">
-                      <Avatar className="h-10 w-10">
+                      <Avatar className="h-9 w-9 border border-border/60">
                         <AvatarImage
                           src={resolveAvatarUrl(user.avatar)}
                           alt={`${user.first_name} ${user.last_name}`}
                         />
-                        <AvatarFallback className="bg-gradient-to-br from-blue-500 to-blue-600 text-white font-semibold">
+                        <AvatarFallback className="bg-gradient-to-br from-primary to-cyan-500 text-xs font-semibold text-white">
                           {user.first_name?.[0]}
                           {user.last_name?.[0]}
                         </AvatarFallback>
                       </Avatar>
-                      <div>
-                        <p className="font-medium text-gray-900 dark:text-gray-100">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">
                           {user.first_name} {user.last_name}
+                          {user.id === currentUser?.id ? (
+                            <span className="ml-2 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                              You
+                            </span>
+                          ) : null}
                         </p>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                        <p className="truncate text-sm text-muted-foreground">
                           @{user.username}
                         </p>
                       </div>
                     </div>
                   </td>
-                  <td className="py-4 px-4">
+                  <td className="px-4 py-3.5">
                     <div className="flex items-center gap-2">
-                      <Mail className="h-4 w-4 text-gray-400" />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">
+                      <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate text-sm text-muted-foreground">
                         {user.email}
                       </span>
                     </div>
                   </td>
-                  <td className="py-4 px-4">
+                  <td className="px-4 py-3.5">
                     <span
-                      className={`px-3 py-1 rounded-full text-xs font-medium ${getRoleBadgeColor(user.role)}`}
+                      className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize ${getRoleBadgeColor(user.role)}`}
                     >
-                      {user.role.replace("_", " ").toUpperCase()}
+                      {user.role.replace("_", " ")}
                     </span>
                   </td>
-                  <td className="py-4 px-4">
-                    <span
-                      className={`px-3 py-1 rounded-full text-xs font-medium ${
-                        user.is_mentor
-                          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-400"
-                          : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                      }`}
-                    >
-                      {user.is_mentor ? "Yes" : "No"}
-                    </span>
-                  </td>
-                  <td className="py-4 px-4">
-                    {user.is_email_verified ? (
-                      <div className="flex items-center gap-2">
-                        <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
-                        <span className="text-sm text-green-700 dark:text-green-400">
-                          Verified
-                        </span>
-                      </div>
+                  <td className="px-4 py-3.5">
+                    {user.role === "tech_lead" ? (
+                      <span
+                        className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium ${
+                          user.is_mentor
+                            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                            : "border-border/60 bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {user.is_mentor ? "Available" : "Paused"}
+                      </span>
                     ) : (
-                      <div className="flex items-center gap-2">
-                        <AlertCircle className="h-4 w-4 text-orange-600 dark:text-orange-400" />
-                        <span className="text-sm text-orange-700 dark:text-orange-400">
-                          Pending
-                        </span>
-                      </div>
+                      <span className="text-sm text-muted-foreground">—</span>
                     )}
                   </td>
-                  <td className="py-4 px-4">
-                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                  <td className="px-4 py-3.5">
+                    {user.is_email_verified ? (
+                      <span className="inline-flex items-center gap-1.5 text-sm text-emerald-600 dark:text-emerald-400">
+                        <CheckCircle className="h-3.5 w-3.5" />
+                        Verified
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-sm text-amber-600 dark:text-amber-400">
+                        <AlertCircle className="h-3.5 w-3.5" />
+                        Pending
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3.5">
+                    <span className="text-sm text-muted-foreground">
                       {new Date(user.created_at).toLocaleDateString()}
                     </span>
                   </td>
-                  <td className="py-4 px-4">
-                    <div className="flex items-center justify-end gap-2">
+                  <td className="px-4 py-3.5">
+                    <div className="flex items-center justify-end">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <button className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
-                            <MoreVertical className="h-4 w-4 text-gray-600 dark:text-gray-400" />
-                          </button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            aria-label={`Actions for ${user.username}`}
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-56">
+                        <DropdownMenuContent align="end" className="w-52">
                           <DropdownMenuLabel>Actions</DropdownMenuLabel>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
                             onClick={() => openEditDialog(user)}
+                            className="cursor-pointer"
                           >
-                            <Edit className="h-4 w-4 mr-2" />
-                            Edit User
+                            <Edit className="mr-2 h-4 w-4" />
+                            Edit user
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() => openDeleteDialog(user)}
-                            className="text-red-600 dark:text-red-400"
+                            className="cursor-pointer text-destructive focus:text-destructive"
                           >
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Delete User
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete user
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -671,10 +672,29 @@ export const UsersManagementTable = () => {
           </table>
 
           {filteredUsers.length === 0 && (
-            <div className="text-center py-12">
-              <p className="text-gray-500 dark:text-gray-400">
-                No users found matching your criteria
+            <div className="px-6 py-16 text-center">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+                <Search className="h-5 w-5" />
+              </div>
+              <p className="mt-3 text-sm font-medium">No users found</p>
+              <p className="mx-auto mt-1 max-w-sm text-xs text-muted-foreground">
+                {searchQuery || roleFilter !== "all"
+                  ? "Try a different search term or role filter."
+                  : "Add the first user to get started."}
               </p>
+              {searchQuery || roleFilter !== "all" ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-4"
+                  onClick={() => {
+                    setSearchQuery("");
+                    setRoleFilter("all");
+                  }}
+                >
+                  Clear filters
+                </Button>
+              ) : null}
             </div>
           )}
         </div>
@@ -694,7 +714,7 @@ export const UsersManagementTable = () => {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteUser}
-              className="bg-red-600 hover:bg-red-700"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Delete
             </AlertDialogAction>
@@ -910,7 +930,7 @@ export const UsersManagementTable = () => {
                       }
                     />
                     {addFormErrors.first_name && (
-                      <p className="text-xs text-red-500">
+                      <p className="text-xs text-destructive">
                         {addFormErrors.first_name}
                       </p>
                     )}
@@ -931,7 +951,7 @@ export const UsersManagementTable = () => {
                       }
                     />
                     {addFormErrors.last_name && (
-                      <p className="text-xs text-red-500">
+                      <p className="text-xs text-destructive">
                         {addFormErrors.last_name}
                       </p>
                     )}
@@ -953,7 +973,7 @@ export const UsersManagementTable = () => {
                     className={addFormErrors.email ? "border-red-500" : ""}
                   />
                   {addFormErrors.email && (
-                    <p className="text-xs text-red-500">
+                    <p className="text-xs text-destructive">
                       {addFormErrors.email}
                     </p>
                   )}
@@ -973,7 +993,7 @@ export const UsersManagementTable = () => {
                     className={addFormErrors.username ? "border-red-500" : ""}
                   />
                   {addFormErrors.username && (
-                    <p className="text-xs text-red-500">
+                    <p className="text-xs text-destructive">
                       {addFormErrors.username}
                     </p>
                   )}
@@ -1001,7 +1021,7 @@ export const UsersManagementTable = () => {
                     </SelectContent>
                   </Select>
                   {addFormErrors.role && (
-                    <p className="text-xs text-red-500">{addFormErrors.role}</p>
+                    <p className="text-xs text-destructive">{addFormErrors.role}</p>
                   )}
                 </div>
               </div>
@@ -1012,12 +1032,7 @@ export const UsersManagementTable = () => {
                 >
                   Cancel
                 </Button>
-                <Button
-                  onClick={handleAddUser}
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  Create User
-                </Button>
+                <Button onClick={handleAddUser}>Create user</Button>
               </DialogFooter>
             </>
           )}

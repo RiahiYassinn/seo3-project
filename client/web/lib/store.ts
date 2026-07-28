@@ -19,6 +19,8 @@ interface AuthState {
   hasHydrated: boolean
   setHasHydrated: (value: boolean) => void
   setAuth: (user: User) => void
+  /** Drops the local session without calling the server (anonymous visitors). */
+  clearSession: () => void
   logout: (logoutAllDevices?: boolean) => Promise<void>
   updateUser: (userData: Partial<User>) => void
 }
@@ -31,6 +33,9 @@ export const useAuthStore = create<AuthState>()(
       setHasHydrated: (value) => set({ hasHydrated: value }),
       setAuth: (user) => {
         set({ user, hasHydrated: true })
+      },
+      clearSession: () => {
+        set({ user: null })
       },
       logout: async (logoutAllDevices = false) => {
         try {

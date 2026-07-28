@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Developer } from './entities/developer.entity';
@@ -163,6 +168,74 @@ export class DeveloperService {
     await this.findOne(id);
     await this.developerRepository.update(id, updateDto);
     return this.findOne(id);
+  }
+
+  /**
+   * Self-service profile edit. Only fields a user may change about themselves:
+   * role, email, and activation stay under admin control.
+   */
+  async updateOwnProfile(
+    userId: string,
+    data: {
+      username?: string;
+      firstName?: string;
+      lastName?: string;
+      bio?: string | null;
+      location?: string | null;
+      website?: string | null;
+      avatar?: string | null;
+    },
+  ): Promise<Developer> {
+    const developer = await this.findOne(userId);
+    const updateData: Partial<Developer> = {};
+
+    const requiredText = (value: string | undefined, label: string) => {
+      if (typeof value !== 'string') return undefined;
+      const trimmed = value.trim();
+      if (!trimmed) {
+        throw new BadRequestException(`${label} cannot be empty`);
+      }
+      return trimmed;
+    };
+
+    const optionalText = (value: string | null | undefined) => {
+      if (value === undefined) return undefined;
+      if (value === null) return null;
+      return value.trim() || null;
+    };
+
+    const username = requiredText(data.username, 'Username');
+    if (username && username !== developer.username) {
+      const existing = await this.findByEmailOrUsername(username);
+      if (existing && existing.id !== userId) {
+        throw new ConflictException('That username is already taken');
+      }
+      updateData.username = username;
+    }
+
+    const firstName = requiredText(data.firstName, 'First name');
+    if (firstName) updateData.firstName = firstName;
+
+    const lastName = requiredText(data.lastName, 'Last name');
+    if (lastName) updateData.lastName = lastName;
+
+    for (const field of ['bio', 'location', 'website'] as const) {
+      const value = optionalText(data[field]);
+      if (value !== undefined) {
+        updateData[field] = value as string;
+      }
+    }
+
+    if (data.avatar !== undefined) {
+      updateData.avatar = (data.avatar?.trim() || null) as string;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return developer;
+    }
+
+    await this.developerRepository.update(userId, updateData);
+    return this.findOne(userId);
   }
 
   async remove(id: string): Promise<void> {

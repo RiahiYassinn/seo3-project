@@ -14,6 +14,11 @@ import { firstValueFrom } from 'rxjs';
 import * as bcrypt from 'bcryptjs';
 import { createHash } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
+import {
+  removeStoredAvatar,
+  storeAvatarFile,
+  type UploadedAvatarFile,
+} from '../../common/avatar-storage';
 
 /** Deterministic SHA-256 hash for storing/looking up opaque tokens in the DB. */
 function hashToken(token: string): string {
@@ -288,6 +293,84 @@ export class AuthService {
       this.logger.error(`Get current user failed: ${error.message}`);
       throw error;
     }
+  }
+
+  /** Full profile of the signed-in user, including the self-editable fields. */
+  async getMyProfile(userId: string) {
+    const user = await firstValueFrom(
+      this.developerService.send('find_user_by_id', { id: userId })
+    );
+
+    if (!user || !user.is_active) {
+      throw new UnauthorizedException('User not found or inactive');
+    }
+
+    return this.toProfileResponse(user);
+  }
+
+  async updateMyProfile(
+    userId: string,
+    updates: {
+      username?: string;
+      first_name?: string;
+      last_name?: string;
+      bio?: string | null;
+      location?: string | null;
+      website?: string | null;
+    },
+  ) {
+    try {
+      const updatedUser = await firstValueFrom(
+        this.developerService.send('update_my_profile', {
+          userId,
+          ...updates,
+        })
+      );
+
+      return this.toProfileResponse(updatedUser);
+    } catch (error) {
+      this.logger.error(`Update profile failed: ${error.message}`);
+      throw new BadRequestException(error?.message || 'Failed to update profile');
+    }
+  }
+
+  async updateMyAvatar(userId: string, file: UploadedAvatarFile) {
+    const avatarPath = await storeAvatarFile(file);
+    const currentProfile = await this.getMyProfile(userId);
+
+    const updatedUser = await firstValueFrom(
+      this.developerService.send('update_my_profile', {
+        userId,
+        avatar: avatarPath,
+      })
+    );
+
+    if (currentProfile.avatar !== avatarPath) {
+      await removeStoredAvatar(currentProfile.avatar);
+    }
+
+    return this.toProfileResponse(updatedUser);
+  }
+
+  private toProfileResponse(user: any) {
+    return {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      first_name: user.first_name,
+      last_name: user.last_name,
+      role: user.role,
+      avatar: user.avatar ?? null,
+      bio: user.bio ?? null,
+      location: user.location ?? null,
+      website: user.website ?? null,
+      is_mentor: !!user.is_mentor,
+      is_email_verified: !!user.is_email_verified,
+      is_active: user.is_active !== false,
+      last_login_at: user.last_login_at ?? null,
+      created_at: user.created_at ?? null,
+      updated_at: user.updated_at ?? null,
+    };
   }
 
   async updateMentorAvailability(userId: string, isMentor: boolean) {

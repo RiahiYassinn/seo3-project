@@ -1,0 +1,476 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SEO3 — Global Use Case Diagram</title>
+<style>
+  :root{
+    --bg:#F7F5F1;
+    --panel:#FFFFFF;
+    --panel-border:#E4E0D7;
+    --ink:#1E2129;
+    --ink-2:#5B5F6B;
+    --ink-3:#8A8F9C;
+
+    --visitor:#5B6472;   --visitor-bg:#EEF0F2;
+    --developer:#33548E; --developer-bg:#E8EDF7;
+    --techlead:#2F7A6D;  --techlead-bg:#E5F2EF;
+    --admin:#A65D2E;     --admin-bg:#F6E9DD;
+    --auth:#6B4A9E;      --auth-bg:#EFE7F7;
+
+    --line:#9298A4;
+    --dash:#8A78AE;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#15161B;
+      --panel:#1C1E25;
+      --panel-border:#2C2F38;
+      --ink:#ECEDF1;
+      --ink-2:#B7BAC4;
+      --ink-3:#7A7E8A;
+
+      --visitor:#A9B0BE;   --visitor-bg:#23262E;
+      --developer:#8FADEE; --developer-bg:#1E2A44;
+      --techlead:#79D2C0;  --techlead-bg:#15332D;
+      --admin:#E7A971;     --admin-bg:#3A2A18;
+      --auth:#C3A6EE;      --auth-bg:#2B2140;
+
+      --line:#6B6F7B;
+      --dash:#9C89C9;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#15161B; --panel:#1C1E25; --panel-border:#2C2F38;
+    --ink:#ECEDF1; --ink-2:#B7BAC4; --ink-3:#7A7E8A;
+    --visitor:#A9B0BE; --visitor-bg:#23262E;
+    --developer:#8FADEE; --developer-bg:#1E2A44;
+    --techlead:#79D2C0; --techlead-bg:#15332D;
+    --admin:#E7A971; --admin-bg:#3A2A18;
+    --auth:#C3A6EE; --auth-bg:#2B2140;
+    --line:#6B6F7B; --dash:#9C89C9;
+  }
+  :root[data-theme="light"]{
+    --bg:#F7F5F1; --panel:#FFFFFF; --panel-border:#E4E0D7;
+    --ink:#1E2129; --ink-2:#5B5F6B; --ink-3:#8A8F9C;
+    --visitor:#5B6472; --visitor-bg:#EEF0F2;
+    --developer:#33548E; --developer-bg:#E8EDF7;
+    --techlead:#2F7A6D; --techlead-bg:#E5F2EF;
+    --admin:#A65D2E; --admin-bg:#F6E9DD;
+    --auth:#6B4A9E; --auth-bg:#EFE7F7;
+    --line:#9298A4; --dash:#8A78AE;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    padding:36px 20px 60px;
+  }
+  .page{ max-width:1720px; margin:0 auto; }
+
+  header{ margin-bottom:22px; }
+  .eyebrow{
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:11.5px; letter-spacing:.09em; text-transform:uppercase;
+    color:var(--auth); font-weight:600; margin:0 0 8px;
+  }
+  h1{
+    font-family:Georgia,"Iowan Old Style","Palatino Linotype",serif;
+    font-size:clamp(24px,3vw,32px);
+    font-weight:600; margin:0 0 6px; text-wrap:balance;
+    letter-spacing:.002em;
+  }
+  .sub{ color:var(--ink-2); font-size:14.5px; margin:0; max-width:74ch; line-height:1.55; }
+
+  .legend{
+    display:flex; flex-wrap:wrap; gap:10px 22px; align-items:center;
+    margin:20px 0 26px; padding:14px 18px;
+    background:var(--panel); border:1px solid var(--panel-border); border-radius:10px;
+    font-size:12.5px; color:var(--ink-2);
+  }
+  .legend-group{ display:flex; align-items:center; gap:8px; }
+  .legend-title{ font-weight:600; color:var(--ink); margin-right:4px; }
+  .swatch{ width:13px; height:13px; border-radius:50%; border:1.6px solid; flex:none; }
+  .sw-visitor{ border-color:var(--visitor); background:var(--visitor-bg); }
+  .sw-developer{ border-color:var(--developer); background:var(--developer-bg); }
+  .sw-techlead{ border-color:var(--techlead); background:var(--techlead-bg); }
+  .sw-admin{ border-color:var(--admin); background:var(--admin-bg); }
+  .lineswatch{ width:24px; height:0; border-top:1.6px solid var(--line); flex:none; }
+  .lineswatch.dashed{ border-top:1.6px dashed var(--dash); }
+  .tri{ width:0;height:0; border-left:5px solid transparent; border-right:5px solid transparent; border-bottom:8px solid var(--ink-3); flex:none; }
+
+  .scrollwrap{
+    overflow-x:auto;
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:14px;
+    padding:8px;
+  }
+
+  .diagram{
+    position:relative;
+    min-width:1560px;
+    padding:34px 30px 30px 10px;
+    display:flex;
+    align-items:stretch;
+    gap:36px;
+  }
+
+  .tiers{
+    flex:1 1 auto;
+    display:grid;
+    grid-template-columns:148px 1fr;
+    column-gap:6px;
+    align-content:start;
+  }
+
+  .tier{ display:contents; }
+  .actor-col{
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:6px; padding:10px 4px;
+  }
+  .actor-icon{ color:var(--tier-color); }
+  .actor-label{
+    font-size:12.5px; font-weight:700; color:var(--tier-color);
+    text-align:center; letter-spacing:.01em;
+  }
+  .actor-caption{
+    font-size:10.5px; color:var(--ink-3); text-align:center; line-height:1.3; max-width:120px;
+  }
+
+  .usecases{
+    display:flex; flex-wrap:wrap; align-content:center;
+    gap:11px 13px; padding:16px 8px; max-width:1180px;
+  }
+
+  .uc{
+    --tier-color: var(--ink-3);
+    --tier-bg: var(--panel);
+    position:relative;
+    border:1.5px solid var(--tier-color);
+    background:var(--tier-bg);
+    color:var(--ink);
+    border-radius:50%/50%;
+    padding:10px 18px;
+    font-size:12.6px;
+    font-weight:500;
+    text-align:center;
+    white-space:nowrap;
+    line-height:1.25;
+  }
+
+  .tier[data-tier="visitor"] .uc{ --tier-color:var(--visitor); --tier-bg:var(--visitor-bg); }
+  .tier[data-tier="developer"] .uc{ --tier-color:var(--developer); --tier-bg:var(--developer-bg); }
+  .tier[data-tier="techlead"] .uc{ --tier-color:var(--techlead); --tier-bg:var(--techlead-bg); }
+  .tier[data-tier="admin"] .uc{ --tier-color:var(--admin); --tier-bg:var(--admin-bg); }
+  .tier[data-tier="visitor"] .actor-icon,
+  .tier[data-tier="visitor"] .actor-label{ color:var(--visitor); }
+  .tier[data-tier="developer"] .actor-icon,
+  .tier[data-tier="developer"] .actor-label{ color:var(--developer); }
+  .tier[data-tier="techlead"] .actor-icon,
+  .tier[data-tier="techlead"] .actor-label{ color:var(--techlead); }
+  .tier[data-tier="admin"] .actor-icon,
+  .tier[data-tier="admin"] .actor-label{ color:var(--admin); }
+
+  .connector-row{ display:flex; justify-content:center; padding:2px 0; }
+  .connector-row svg{ color:var(--ink-3); overflow:visible; }
+
+  .hub{
+    flex:none;
+    display:flex; align-items:center; justify-content:center;
+    padding-right:12px;
+  }
+  .auth-bubble{
+    width:172px; height:104px;
+    border-radius:50%;
+    border:2px solid var(--auth);
+    background:var(--auth-bg);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; gap:3px;
+    box-shadow:0 1px 0 rgba(0,0,0,.02);
+  }
+  .auth-bubble .t1{ font-size:14px; font-weight:700; color:var(--auth); }
+  .auth-bubble .t2{
+    font-size:10px; color:var(--ink-3);
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+
+  svg.connectors{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; overflow:visible; }
+  .assoc{ stroke:var(--line); stroke-width:1.1; }
+  .include-line{ stroke:var(--dash); stroke-width:1.1; stroke-dasharray:4 3; }
+  .include-label{
+    font-size:9px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    fill:var(--dash);
+    paint-order:stroke fill;
+    stroke:var(--panel);
+    stroke-width:3.2px;
+    stroke-linejoin:round;
+    text-anchor:middle;
+  }
+
+  footer{ margin-top:18px; color:var(--ink-3); font-size:11.5px; line-height:1.6; max-width:90ch; }
+  footer code{ font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:11px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <p class="eyebrow">SEO3 · Developer Analytics Platform</p>
+    <h1>Global Use Case Diagram</h1>
+    <p class="sub">Actors and system-level use cases derived from the actual role model (<code style="font-family:ui-monospace,monospace">UserRole</code>: admin / tech_lead / developer) and the route structure under <code style="font-family:ui-monospace,monospace">app/dashboard/*</code>. Each authenticated role inherits every use case of the role above it in privilege.</p>
+  </header>
+
+  <div class="legend">
+    <div class="legend-group"><span class="legend-title">Actors</span></div>
+    <div class="legend-group"><span class="swatch sw-visitor"></span>Visitor</div>
+    <div class="legend-group"><span class="swatch sw-developer"></span>Developer</div>
+    <div class="legend-group"><span class="swatch sw-techlead"></span>Tech Lead</div>
+    <div class="legend-group"><span class="swatch sw-admin"></span>Admin</div>
+    <div class="legend-group" style="margin-left:8px"><span class="lineswatch"></span>association</div>
+    <div class="legend-group"><span class="tri"></span>generalization (inherits from)</div>
+    <div class="legend-group"><span class="lineswatch dashed"></span>«include»</div>
+  </div>
+
+  <div class="scrollwrap">
+    <div class="diagram" id="diagram">
+      <svg class="connectors" id="connectors"></svg>
+
+      <div class="tiers">
+
+        <!-- VISITOR -->
+        <div class="tier" data-tier="visitor">
+          <div class="actor-col" style="grid-row:1;grid-column:1">
+            <span class="actor-icon">
+              <svg width="30" height="58" viewBox="0 0 30 58" fill="none">
+                <circle cx="15" cy="9" r="8" stroke="currentColor" stroke-width="2.1"/>
+                <path d="M15 17V38M5 24H25M15 38L6 55M15 38L24 55" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>
+              </svg>
+            </span>
+            <span class="actor-label">Visitor</span>
+            <span class="actor-caption">unauthenticated</span>
+          </div>
+          <div class="usecases" style="grid-row:1;grid-column:2">
+            <div class="uc">View Homepage</div>
+            <div class="uc">Register</div>
+            <div class="uc">Log In (Email / Google)</div>
+            <div class="uc">Recover Password</div>
+            <div class="uc">Verify Email</div>
+          </div>
+        </div>
+
+        <div class="connector-row" style="grid-row:2;grid-column:1">
+          <svg width="20" height="34" viewBox="0 0 20 34" fill="none">
+            <path d="M10 32V10" stroke="currentColor" stroke-width="1.6"/>
+            <path d="M10 2L4 12H16L10 2Z" fill="var(--panel)" stroke="currentColor" stroke-width="1.6"/>
+          </svg>
+        </div>
+
+        <!-- DEVELOPER -->
+        <div class="tier" data-tier="developer">
+          <div class="actor-col" style="grid-row:3;grid-column:1">
+            <span class="actor-icon">
+              <svg width="30" height="58" viewBox="0 0 30 58" fill="none">
+                <circle cx="15" cy="9" r="8" stroke="currentColor" stroke-width="2.1"/>
+                <path d="M15 17V38M5 24H25M15 38L6 55M15 38L24 55" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>
+              </svg>
+            </span>
+            <span class="actor-label">Developer</span>
+            <span class="actor-caption">extends Visitor</span>
+          </div>
+          <div class="usecases" style="grid-row:3;grid-column:2">
+            <div class="uc needs-auth">Manage My Profile</div>
+            <div class="uc needs-auth">View Dashboard Overview</div>
+            <div class="uc needs-auth">Connect GitHub Account</div>
+            <div class="uc needs-auth">View Repository Analysis</div>
+            <div class="uc needs-auth">View My Team</div>
+            <div class="uc needs-auth">View Skill Proficiency</div>
+            <div class="uc needs-auth">View Recommendations</div>
+            <div class="uc needs-auth">View Notifications</div>
+            <div class="uc needs-auth">Log Out</div>
+          </div>
+        </div>
+
+        <div class="connector-row" style="grid-row:4;grid-column:1">
+          <svg width="20" height="34" viewBox="0 0 20 34" fill="none">
+            <path d="M10 32V10" stroke="currentColor" stroke-width="1.6"/>
+            <path d="M10 2L4 12H16L10 2Z" fill="var(--panel)" stroke="currentColor" stroke-width="1.6"/>
+          </svg>
+        </div>
+
+        <!-- TECH LEAD -->
+        <div class="tier" data-tier="techlead">
+          <div class="actor-col" style="grid-row:5;grid-column:1">
+            <span class="actor-icon">
+              <svg width="30" height="58" viewBox="0 0 30 58" fill="none">
+                <circle cx="15" cy="9" r="8" stroke="currentColor" stroke-width="2.1"/>
+                <path d="M15 17V38M5 24H25M15 38L6 55M15 38L24 55" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>
+              </svg>
+            </span>
+            <span class="actor-label">Tech Lead</span>
+            <span class="actor-caption">extends Developer</span>
+          </div>
+          <div class="usecases" style="grid-row:5;grid-column:2">
+            <div class="uc needs-auth">View Team Recommendations</div>
+            <div class="uc needs-auth">View Team Analytics</div>
+          </div>
+        </div>
+
+        <div class="connector-row" style="grid-row:6;grid-column:1">
+          <svg width="20" height="34" viewBox="0 0 20 34" fill="none">
+            <path d="M10 32V10" stroke="currentColor" stroke-width="1.6"/>
+            <path d="M10 2L4 12H16L10 2Z" fill="var(--panel)" stroke="currentColor" stroke-width="1.6"/>
+          </svg>
+        </div>
+
+        <!-- ADMIN -->
+        <div class="tier" data-tier="admin">
+          <div class="actor-col" style="grid-row:7;grid-column:1">
+            <span class="actor-icon">
+              <svg width="30" height="58" viewBox="0 0 30 58" fill="none">
+                <circle cx="15" cy="9" r="8" stroke="currentColor" stroke-width="2.1"/>
+                <path d="M15 17V38M5 24H25M15 38L6 55M15 38L24 55" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>
+              </svg>
+            </span>
+            <span class="actor-label">Admin</span>
+            <span class="actor-caption">extends Tech Lead</span>
+          </div>
+          <div class="usecases" style="grid-row:7;grid-column:2">
+            <div class="uc needs-auth">Manage Users</div>
+            <div class="uc needs-auth">Manage GitHub Integrations</div>
+            <div class="uc needs-auth">View Platform Statistics</div>
+            <div class="uc needs-auth">Manage Recommendations</div>
+            <div class="uc needs-auth">View System Overview</div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="hub">
+        <div class="auth-bubble">
+          <span class="t1">Authentication</span>
+          <span class="t2">JWT session</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Evidence: role enum at <code>api-gateway/src/modules/admin/dto/user.dto.ts</code>, guard at <code>.../auth/guards</code> +
+    <code>RolesGuard</code>; dashboard routing under <code>client/web/app/dashboard/{admin,tech_lead,developer}</code>; public
+    flows under <code>app/{login,register,forgot-password,reset-password,verify-email,auth/google/callback}</code>; domain
+    services: developer-service, skill-service, analysis-service, recommendation-service, notification-service (SSE), nlp-service.
+  </footer>
+</div>
+
+<script>
+(function(){
+  var diagram = document.getElementById('diagram');
+  var svg = document.getElementById('connectors');
+  var NS = 'http://www.w3.org/2000/svg';
+
+  function rectOf(el){ return el.getBoundingClientRect(); }
+
+  function centerOf(el, base){
+    var r = rectOf(el);
+    return { x: r.left - base.left + r.width/2, y: r.top - base.top + r.height/2, rx: r.width/2, ry: r.height/2 };
+  }
+
+  function edgePoint(c, tx, ty){
+    var dx = tx - c.x, dy = ty - c.y;
+    var rx = Math.max(c.rx, 1), ry = Math.max(c.ry, 1);
+    var denom = Math.sqrt((dx/rx)*(dx/rx) + (dy/ry)*(dy/ry));
+    var t = denom === 0 ? 0 : 1/denom;
+    return { x: c.x + t*dx, y: c.y + t*dy };
+  }
+
+  function line(x1,y1,x2,y2,cls,markerId){
+    var el = document.createElementNS(NS,'line');
+    el.setAttribute('x1',x1); el.setAttribute('y1',y1);
+    el.setAttribute('x2',x2); el.setAttribute('y2',y2);
+    el.setAttribute('class',cls);
+    if(markerId) el.setAttribute('marker-end','url(#'+markerId+')');
+    svg.appendChild(el);
+  }
+
+  function label(x,y,text){
+    var el = document.createElementNS(NS,'text');
+    el.setAttribute('x',x); el.setAttribute('y',y);
+    el.setAttribute('class','include-label');
+    el.textContent = text;
+    svg.appendChild(el);
+  }
+
+  function ensureDefs(){
+    var defs = document.createElementNS(NS,'defs');
+    defs.innerHTML =
+      '<marker id="arrow-open" viewBox="0 0 12 12" refX="9" refY="6" markerWidth="9" markerHeight="9" orient="auto-start-reverse">' +
+        '<path d="M1 1 L9 6 L1 11" fill="none" stroke="var(--dash)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '</marker>';
+    svg.appendChild(defs);
+  }
+
+  function layout(){
+    while(svg.firstChild) svg.removeChild(svg.firstChild);
+    ensureDefs();
+
+    var base = rectOf(diagram);
+    svg.setAttribute('width', diagram.scrollWidth);
+    svg.setAttribute('height', diagram.scrollHeight);
+
+    var authBubble = document.querySelector('.auth-bubble');
+    var authC = centerOf(authBubble, base);
+
+    var includeIdx = 0;
+
+    document.querySelectorAll('.tier').forEach(function(tier){
+      var icon = tier.querySelector('.actor-icon');
+      var aC = centerOf(icon, base);
+
+      tier.querySelectorAll('.uc').forEach(function(uc){
+        var uC = centerOf(uc, base);
+        var p1 = edgePoint(uC, aC.x, aC.y);
+        line(aC.x, aC.y, p1.x, p1.y, 'assoc');
+
+        if(uc.classList.contains('needs-auth')){
+          var pStart = edgePoint(uC, authC.x, authC.y);
+          var pEnd = edgePoint(authC, uC.x, uC.y);
+          line(pStart.x, pStart.y, pEnd.x, pEnd.y, 'include-line', 'arrow-open');
+
+          var t = 0.68;
+          var lx = pStart.x + (pEnd.x - pStart.x) * t;
+          var ly = pStart.y + (pEnd.y - pStart.y) * t;
+          var perp = { x: -(pEnd.y - pStart.y), y: (pEnd.x - pStart.x) };
+          var plen = Math.sqrt(perp.x*perp.x + perp.y*perp.y) || 1;
+          var offset = ((includeIdx % 4) - 1.5) * 6;
+          lx += (perp.x/plen) * offset;
+          ly += (perp.y/plen) * offset;
+
+          label(lx, ly, '«include»');
+          includeIdx++;
+        }
+      });
+    });
+  }
+
+  var raf1, raf2;
+  function scheduleLayout(){
+    cancelAnimationFrame(raf1); cancelAnimationFrame(raf2);
+    raf1 = requestAnimationFrame(function(){ raf2 = requestAnimationFrame(layout); });
+  }
+
+  window.addEventListener('load', scheduleLayout);
+  window.addEventListener('resize', scheduleLayout);
+  if(window.ResizeObserver){
+    new ResizeObserver(scheduleLayout).observe(diagram);
+  }
+  scheduleLayout();
+})();
+</script>
+
+</body>
+</html>

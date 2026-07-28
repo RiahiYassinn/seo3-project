@@ -36,6 +36,38 @@ export class NotificationController {
     });
   }
 
+  @Post(':id/unread')
+  async markAsUnread(
+    @Param('id') id: string,
+    @Body() body: { userId: string; role?: string },
+  ) {
+    return this.notificationService.markAsUnread(id, {
+      userId: body.userId,
+      role: body.role,
+    });
+  }
+
+  @Post(':id/dismiss')
+  async dismiss(
+    @Param('id') id: string,
+    @Body() body: { userId: string; role?: string },
+  ) {
+    return this.notificationService.dismiss(id, {
+      userId: body.userId,
+      role: body.role,
+    });
+  }
+
+  @Post('dismiss')
+  async dismissMany(
+    @Body() body: { userId: string; role?: string; ids: string[] },
+  ) {
+    return this.notificationService.dismissMany(body.ids || [], {
+      userId: body.userId,
+      role: body.role,
+    });
+  }
+
   @Post('read-all')
   async markAllAsRead(@Body() body: { userId: string; role?: string }) {
     return this.notificationService.markAllAsRead({

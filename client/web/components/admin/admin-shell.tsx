@@ -143,7 +143,7 @@ export function AdminShell({
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(8,145,178,0.14),transparent_28%),radial-gradient(circle_at_top_right,rgba(249,115,22,0.12),transparent_22%),linear-gradient(180deg,#f8fafc,#eef2f7)] dark:bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.18),transparent_26%),radial-gradient(circle_at_top_right,rgba(249,115,22,0.12),transparent_22%),linear-gradient(180deg,#020617,#0f172a)]">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(13,122,208,0.14),transparent_28%),radial-gradient(circle_at_top_right,rgba(49,82,126,0.12),transparent_22%),linear-gradient(180deg,#f8fafc,#eef2f7)] dark:bg-[radial-gradient(circle_at_top_left,rgba(13,122,208,0.18),transparent_26%),radial-gradient(circle_at_top_right,rgba(49,82,126,0.16),transparent_22%),linear-gradient(180deg,#020617,#0f172a)]">
       <div className="flex min-h-screen">
         <div
           className={cn(
@@ -174,24 +174,23 @@ export function AdminShell({
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br">
                   <Link href="/" className="flex items-center gap-3">
                     <Image
-                      src="/logo.png"
-                      alt="Wevioo Logo"
+                      src={isDark ? "/logoDark.png" : "/logoLight.png"}
+                      alt="Dev.Lab Logo"
                       width={400}
                       height={150}
-                      className="h-8 w-auto"
+                      className="h-10 w-auto"
                     />
                   </Link>
                 </div>
                 {!collapsed && (
                   <div className="min-w-0">
-                    <p
-                      className={cn(
-                        "truncate text-sm font-semibold tracking-wide",
-                        isDark ? "text-white" : "text-slate-900",
-                      )}
-                    >
-                      Wevioo Consulting
-                    </p>
+                    <Image
+                      src={isDark ? "/logoD.png" : "/logoL.png"}
+                      alt="Dev.Lab Logo"
+                      width={400}
+                      height={150}
+                      className="h-6 w-auto"
+                    />
                     <p
                       className={cn(
                         "truncate text-xs",
@@ -313,9 +312,11 @@ export function AdminShell({
                 collapsed && "px-2",
               )}
             >
-              <div
+              <Link
+                href="/dashboard/admin/profile"
+                title="Open my profile"
                 className={cn(
-                  "flex items-center gap-3",
+                  "flex items-center gap-3 rounded-2xl transition-opacity hover:opacity-80",
                   collapsed && "justify-center",
                 )}
               >
@@ -329,7 +330,7 @@ export function AdminShell({
                     src={avatarSrc}
                     alt={`${user.first_name} ${user.last_name}`}
                   />
-                  <AvatarFallback className="bg-gradient-to-br from-cyan-500 to-blue-600 text-white">
+                  <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-white">
                     {initials}
                   </AvatarFallback>
                 </Avatar>
@@ -353,7 +354,7 @@ export function AdminShell({
                     </p>
                   </div>
                 )}
-              </div>
+              </Link>
 
               <div
                 className={cn(

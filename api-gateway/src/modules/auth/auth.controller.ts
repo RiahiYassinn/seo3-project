@@ -10,8 +10,11 @@ import {
   Req,
   Res,
   Ip,
-  Headers
+  Headers,
+  UploadedFile,
+  UseInterceptors
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
@@ -29,6 +32,7 @@ import {
   ResetPasswordDto,
   ChangePasswordDto,
   UpdateMentorAvailabilityDto,
+  UpdateMyProfileDto,
 } from './dto/auth.dto';
 import {
   ApiTags,
@@ -118,6 +122,39 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async getCurrentUser(@Req() req) {
     return this.authService.getCurrentUser(req.user.id);
+  }
+
+  @Get('me/profile')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get the full profile of the current user' })
+  @ApiResponse({ status: 200, description: 'Profile returned successfully' })
+  async getMyProfile(@Req() req) {
+    return this.authService.getMyProfile(req.user.id);
+  }
+
+  @Patch('me/profile')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update the current user profile' })
+  @ApiResponse({ status: 200, description: 'Profile updated successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid profile data' })
+  async updateMyProfile(
+    @Req() req,
+    @Body() updateMyProfileDto: UpdateMyProfileDto,
+  ) {
+    return this.authService.updateMyProfile(req.user.id, updateMyProfileDto);
+  }
+
+  @Post('me/avatar')
+  @UseGuards(AuthGuard('jwt'))
+  @UseInterceptors(FileInterceptor('avatar'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Upload an avatar for the current user' })
+  @ApiResponse({ status: 201, description: 'Avatar uploaded successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid file' })
+  async uploadMyAvatar(@Req() req, @UploadedFile() avatar: any) {
+    return this.authService.updateMyAvatar(req.user.id, avatar);
   }
 
   @Patch('me/mentor-availability')

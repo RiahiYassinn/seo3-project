@@ -256,12 +256,12 @@ export const getContributorAvatarUrl = (
 export const statusTone = (status: string | null) => {
   switch (status) {
     case "completed":
-      return "bg-emerald-500/10 text-emerald-700 border-emerald-500/30";
+      return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30";
     case "failed":
-      return "bg-red-500/10 text-red-700 border-red-500/30";
+      return "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30";
     case "pending":
     case "in_progress":
-      return "bg-sky-500/10 text-sky-700 border-sky-500/30";
+      return "bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/30";
     default:
       return "bg-muted text-muted-foreground";
   }
@@ -278,27 +278,69 @@ export const confidencePercent = (value: number) =>
 export const scorePercent = (value: number) =>
   Math.max(0, Math.min(100, (value / 10) * 100));
 
+/** Severity escalates warm-to-cool so rank is readable without the label. */
 export const severityTone: Record<Severity, string> = {
-  critical: "bg-red-500/15 text-red-700 border-red-500/30",
-  high: "bg-cyan-500/15 text-cyan-700 border-cyan-500/30",
-  medium: "bg-sky-500/15 text-sky-700 border-sky-500/30",
-  low: "bg-blue-500/15 text-blue-700 border-blue-500/30",
+  critical: "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30",
+  high: "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30",
+  medium: "bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30",
+  low: "bg-slate-500/15 text-slate-700 dark:text-slate-300 border-slate-500/30",
 };
 
 export const recommendationTypeTone: Record<RecommendationType, string> = {
-  mentorship: "bg-violet-500/10 text-violet-700 border-violet-500/30",
-  learning_path: "bg-cyan-500/10 text-cyan-700 border-cyan-500/30",
-  docs_review: "bg-emerald-500/10 text-emerald-700 border-emerald-500/30",
+  mentorship:
+    "bg-violet-500/10 text-violet-700 dark:text-violet-300 border-violet-500/30",
+  learning_path:
+    "bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border-cyan-500/30",
+  docs_review:
+    "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30",
+};
+
+/**
+ * Priority bands so a raw score reads as urgency at a glance. Shared by the
+ * developer feed, the mentor queue, and the detail panel so they agree.
+ */
+export const priorityBand = (score: number | null | undefined) => {
+  const value = typeof score === "number" ? score : 0;
+
+  if (value >= 70) {
+    return {
+      label: "High priority",
+      short: "High",
+      badge:
+        "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300",
+      rail: "bg-rose-500",
+      text: "text-rose-600 dark:text-rose-400",
+    };
+  }
+
+  if (value >= 40) {
+    return {
+      label: "Medium priority",
+      short: "Medium",
+      badge:
+        "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+      rail: "bg-amber-500",
+      text: "text-amber-600 dark:text-amber-400",
+    };
+  }
+
+  return {
+    label: "Low priority",
+    short: "Low",
+    badge: "border-border/60 bg-muted text-muted-foreground",
+    rail: "bg-border",
+    text: "text-muted-foreground",
+  };
 };
 
 export const recommendationStatusTone = (status: string | null) => {
   switch (status) {
     case "completed":
-      return "bg-emerald-500/10 text-emerald-700 border-emerald-500/30";
+      return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30";
     case "assigned":
-      return "bg-blue-500/10 text-blue-700 border-blue-500/30";
+      return "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-500/30";
     case "open":
-      return "bg-sky-500/10 text-sky-700 border-sky-500/30";
+      return "bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/30";
     case "dismissed":
       return "bg-muted text-muted-foreground";
     default:

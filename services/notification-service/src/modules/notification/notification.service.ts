@@ -45,9 +45,9 @@ export class NotificationService {
       take: Math.max(1, Math.min(Number(limit) || 50, 100)),
     });
 
-    const mapped = notifications.map((notification) =>
-      this.mapForViewer(notification, viewer.userId),
-    );
+    const mapped = notifications
+      .filter((notification) => !notification.dismissals?.[viewer.userId])
+      .map((notification) => this.mapForViewer(notification, viewer.userId));
 
     return {
       notifications: mapped,
@@ -69,6 +69,7 @@ export class NotificationService {
         metadata: dto.metadata || {},
         readAt: null,
         readReceipts: {},
+        dismissals: {},
       }),
     );
 
@@ -100,6 +101,55 @@ export class NotificationService {
 
     const saved = await this.notificationRepo.save(notification);
     return this.mapForViewer(saved, viewer.userId);
+  }
+
+  async markAsUnread(notificationId: string, viewer: Viewer) {
+    const notification = await this.findVisibleNotification(notificationId, viewer);
+
+    if (notification.recipientUserId) {
+      notification.readAt = null;
+    } else {
+      const receipts = { ...(notification.readReceipts || {}) };
+      delete receipts[viewer.userId];
+      notification.readReceipts = receipts;
+    }
+
+    const saved = await this.notificationRepo.save(notification);
+    return this.mapForViewer(saved, viewer.userId);
+  }
+
+  /**
+   * Personal notifications are deleted outright. Role broadcasts are shared by
+   * every member of that role, so they are only hidden for the current viewer.
+   */
+  async dismiss(notificationId: string, viewer: Viewer) {
+    const notification = await this.findVisibleNotification(notificationId, viewer);
+
+    if (notification.recipientUserId) {
+      await this.notificationRepo.remove(notification);
+    } else {
+      notification.dismissals = {
+        ...(notification.dismissals || {}),
+        [viewer.userId]: new Date().toISOString(),
+      };
+      await this.notificationRepo.save(notification);
+    }
+
+    return { id: notificationId, dismissed: true };
+  }
+
+  async dismissMany(notificationIds: string[], viewer: Viewer) {
+    for (const notificationId of notificationIds || []) {
+      try {
+        await this.dismiss(notificationId, viewer);
+      } catch (error) {
+        if (!(error instanceof NotFoundException)) {
+          throw error;
+        }
+      }
+    }
+
+    return this.getForViewer(viewer, 100);
   }
 
   async markAllAsRead(viewer: Viewer) {
@@ -192,7 +242,7 @@ export class NotificationService {
 
     const notification = await this.notificationRepo.findOne({ where });
 
-    if (!notification) {
+    if (!notification || notification.dismissals?.[viewer.userId]) {
       throw new NotFoundException('Notification not found');
     }
 

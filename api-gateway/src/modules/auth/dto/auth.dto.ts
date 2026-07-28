@@ -131,6 +131,45 @@ export class ChangePasswordDto {
   new_password: string;
 }
 
+export class UpdateMyProfileDto {
+  @ApiPropertyOptional({ description: 'Public username', example: 'maya-dev' })
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(30)
+  username?: string;
+
+  @ApiPropertyOptional({ description: 'First name', example: 'Maya' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  first_name?: string;
+
+  @ApiPropertyOptional({ description: 'Last name', example: 'Ben Ali' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  last_name?: string;
+
+  @ApiPropertyOptional({ description: 'Short bio shown on the profile' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  bio?: string;
+
+  @ApiPropertyOptional({ description: 'Where the user is based', example: 'Tunis, TN' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  location?: string;
+
+  @ApiPropertyOptional({ description: 'Personal or company website' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  website?: string;
+}
+
 export class UpdateMentorAvailabilityDto {
   @ApiProperty({
     description: 'Whether the current tech lead is available for new mentorship assignments',
