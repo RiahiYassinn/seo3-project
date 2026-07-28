@@ -14,6 +14,38 @@ interface LlmResult {
   learningPath: GeneratedLearningPath;
 }
 
+export interface QuizQuestion {
+  prompt: string;
+  options: string[];
+  correctIndex: number;
+  explanation: string;
+  gapKey: string;
+  skill?: string;
+}
+
+export interface QuizResult {
+  provider: 'gemini' | 'groq' | 'fallback';
+  model: string;
+  questions: QuizQuestion[];
+}
+
+export interface QuizSourceGap {
+  key: string;
+  label: string;
+  severity: string;
+  evidence?: string[];
+}
+
+export interface QuizSourceStep {
+  title?: string;
+  goal?: string;
+  whyItMatters?: string;
+  practiceTask?: string;
+  successSignal?: string;
+  gapKeys?: string[];
+  skill?: string;
+}
+
 @Injectable()
 export class LlmClientService {
   private readonly logger = new Logger(LlmClientService.name);
@@ -193,6 +225,285 @@ export class LlmClientService {
       model: 'deterministic-template',
       learningPath: this.buildFallbackLearningPath(params.detectedGaps, params.matches),
     };
+  }
+
+  /**
+   * Builds a validation quiz from the developer's own gaps and the steps that
+   * were recommended to them. Same provider chain as the learning path, with a
+   * deterministic fallback so the feature still works without API keys.
+   */
+  async generateQuiz(params: {
+    developerLabel: string;
+    repoName: string;
+    dominantLanguage: string | null;
+    detectedGaps: QuizSourceGap[];
+    steps: QuizSourceStep[];
+    questionCount: number;
+  }): Promise<QuizResult> {
+    const prompt = this.buildQuizPrompt(params);
+
+    try {
+      const questions = await this.generateQuizWithGemini(prompt);
+      if (questions.length) {
+        return { provider: 'gemini', model: this.geminiModel, questions };
+      }
+      throw new Error('Gemini returned no usable questions');
+    } catch (error) {
+      this.logger.warn(
+        `Gemini quiz generation failed, falling back to Groq: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+    }
+
+    try {
+      const questions = await this.generateQuizWithGroq(prompt);
+      if (questions.length) {
+        return { provider: 'groq', model: this.groqModel, questions };
+      }
+      throw new Error('Groq returned no usable questions');
+    } catch (error) {
+      this.logger.error(
+        `Groq quiz fallback failed, using deterministic quiz: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+    }
+
+    return {
+      provider: 'fallback',
+      model: 'deterministic-template',
+      questions: this.buildFallbackQuiz(params),
+    };
+  }
+
+  private buildQuizPrompt(params: {
+    developerLabel: string;
+    repoName: string;
+    dominantLanguage: string | null;
+    detectedGaps: QuizSourceGap[];
+    steps: QuizSourceStep[];
+    questionCount: number;
+  }) {
+    const gapSection = params.detectedGaps
+      .map(
+        (gap, index) =>
+          `${index + 1}. key=${gap.key} | ${gap.label} | severity=${gap.severity} | evidence=${
+            (gap.evidence || []).join('; ') || 'none'
+          }`,
+      )
+      .join('\n');
+
+    const stepSection = params.steps
+      .map(
+        (step, index) =>
+          `${index + 1}. ${step.title} | goal=${step.goal || 'n/a'} | why=${
+            step.whyItMatters || 'n/a'
+          } | practice=${step.practiceTask || 'n/a'} | success=${
+            step.successSignal || 'n/a'
+          } | gap_keys=${(step.gapKeys || []).join(',') || 'n/a'}`,
+      )
+      .join('\n');
+
+    return `You are an engineering peer writing a short knowledge check for another developer.
+
+Repository: ${params.repoName}
+Developer label: ${params.developerLabel}
+Dominant language: ${params.dominantLanguage || 'unknown'}
+
+Their detected gaps:
+${gapSection || 'none recorded'}
+
+The learning steps they were given:
+${stepSection || 'none recorded'}
+
+Instructions:
+- Return valid JSON only.
+- Produce exactly ${params.questionCount} multiple-choice questions.
+- Every question must test a concept from the gaps or steps above — never generic trivia.
+- Prefer questions about applying the concept in ${params.dominantLanguage || 'their language'} code over definitions.
+- Exactly 4 options per question, exactly one correct.
+- Distractors must be plausible to someone who half-learned the material.
+- correct_index is zero-based.
+- explanation is one or two sentences saying why the answer is right.
+- gap_key must be one of the gap keys above when the question maps to one, otherwise "general".
+
+JSON schema:
+{
+  "questions": [
+    {
+      "prompt": "string",
+      "options": ["string", "string", "string", "string"],
+      "correct_index": 0,
+      "explanation": "string",
+      "gap_key": "string",
+      "skill": "string"
+    }
+  ]
+}`;
+  }
+
+  private async generateQuizWithGemini(prompt: string): Promise<QuizQuestion[]> {
+    if (!this.geminiApiKey) {
+      throw new Error('Gemini API key is missing');
+    }
+
+    const response = await this.requestJson<{
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    }>(
+      'POST',
+      `https://generativelanguage.googleapis.com/v1beta/models/${this.geminiModel}:generateContent?key=${this.geminiApiKey}`,
+      {
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.4,
+          responseMimeType: 'application/json',
+        },
+      },
+    );
+
+    const text =
+      response.candidates?.[0]?.content?.parts
+        ?.map((part) => part.text || '')
+        .join('') || '';
+
+    return this.normalizeQuizQuestions(this.parseJsonText(text));
+  }
+
+  private async generateQuizWithGroq(prompt: string): Promise<QuizQuestion[]> {
+    if (!this.groqApiKey) {
+      throw new Error('Groq API key is missing');
+    }
+
+    const response = await this.requestJson<{
+      choices?: Array<{ message?: { content?: string } }>;
+    }>(
+      'POST',
+      'https://api.groq.com/openai/v1/chat/completions',
+      {
+        model: this.groqModel,
+        temperature: 0.4,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You produce valid JSON only and write precise technical multiple-choice questions.',
+          },
+          { role: 'user', content: prompt },
+        ],
+      },
+      { Authorization: `Bearer ${this.groqApiKey}` },
+    );
+
+    const text = response.choices?.[0]?.message?.content || '';
+    return this.normalizeQuizQuestions(this.parseJsonText(text));
+  }
+
+  /** Drops anything malformed rather than trusting the model's shape. */
+  private normalizeQuizQuestions(parsed: any): QuizQuestion[] {
+    const rawQuestions = Array.isArray(parsed?.questions)
+      ? parsed.questions
+      : Array.isArray(parsed)
+        ? parsed
+        : [];
+
+    const questions: QuizQuestion[] = [];
+
+    for (const raw of rawQuestions) {
+      const prompt = String(raw?.prompt || '').trim();
+      const options = Array.isArray(raw?.options)
+        ? raw.options.map((option: any) => String(option || '').trim()).filter(Boolean)
+        : [];
+      const correctIndex = Number(raw?.correct_index ?? raw?.correctIndex);
+
+      if (
+        !prompt ||
+        options.length < 2 ||
+        !Number.isInteger(correctIndex) ||
+        correctIndex < 0 ||
+        correctIndex >= options.length
+      ) {
+        continue;
+      }
+
+      questions.push({
+        prompt,
+        options,
+        correctIndex,
+        explanation: String(raw?.explanation || '').trim(),
+        gapKey: String(raw?.gap_key || raw?.gapKey || 'general').trim() || 'general',
+        skill: String(raw?.skill || '').trim() || undefined,
+      });
+    }
+
+    return questions;
+  }
+
+  /**
+   * Comprehension check built from the plan itself: match each step to the
+   * outcome it targets, with the other steps' goals as distractors. Weaker than
+   * a model-written quiz, but honest and always available.
+   */
+  private buildFallbackQuiz(params: {
+    detectedGaps: QuizSourceGap[];
+    steps: QuizSourceStep[];
+    questionCount: number;
+  }): QuizQuestion[] {
+    const questions: QuizQuestion[] = [];
+    const usableSteps = params.steps.filter((step) => step.title && step.goal);
+
+    for (const step of usableSteps) {
+      if (questions.length >= params.questionCount) break;
+
+      const distractors = usableSteps
+        .filter((other) => other.title !== step.title && other.goal)
+        .map((other) => other.goal as string)
+        .slice(0, 2);
+
+      const gapDistractor = params.detectedGaps
+        .map((gap) => `Remove all ${gap.label.toLowerCase()} checks from the codebase`)
+        .slice(0, 1);
+
+      const options = [step.goal as string, ...distractors, ...gapDistractor].slice(
+        0,
+        4,
+      );
+
+      if (options.length < 2) continue;
+
+      questions.push({
+        prompt: `In your plan, what is the goal of the step "${step.title}"?`,
+        options,
+        correctIndex: 0,
+        explanation:
+          step.whyItMatters ||
+          `That step was added because of the gaps found in your recent contributions.`,
+        gapKey: step.gapKeys?.[0] || 'general',
+        skill: step.skill,
+      });
+    }
+
+    for (const gap of params.detectedGaps) {
+      if (questions.length >= params.questionCount) break;
+
+      questions.push({
+        prompt: `Which area did the analysis flag in your recent work on this repository?`,
+        options: [
+          gap.label,
+          'Commit message formatting',
+          'Branch naming conventions',
+          'Repository licensing',
+        ],
+        correctIndex: 0,
+        explanation:
+          (gap.evidence || [])[0] ||
+          `${gap.label} was detected as a ${gap.severity} severity gap in your contributions.`,
+        gapKey: gap.key,
+      });
+    }
+
+    return questions;
   }
 
   private buildPrompt(params: {

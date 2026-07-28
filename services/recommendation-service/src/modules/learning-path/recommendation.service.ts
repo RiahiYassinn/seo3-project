@@ -11,7 +11,7 @@ import {
 import { ClientKafka, ClientProxy } from "@nestjs/microservices";
 import { InjectRepository } from "@nestjs/typeorm";
 import { firstValueFrom } from "rxjs";
-import { In, IsNull, Repository } from "typeorm";
+import { FindOptionsWhere, In, IsNull, Repository } from "typeorm";
 import {
   RecommendationCase,
   RecommendationType,
@@ -460,17 +460,12 @@ export class RecommendationService implements OnModuleInit {
   async acknowledgeRecommendation(
     recommendationId: string,
     developerId: string,
+    contributorLogin?: string,
   ) {
-    const recommendation = await this.recommendationRepo.findOne({
-      where: {
-        id: recommendationId,
-        targetDeveloperId: developerId,
-      },
+    const recommendation = await this.findOwnRecommendation(recommendationId, {
+      developerId,
+      contributorLogin,
     });
-
-    if (!recommendation) {
-      throw new BadRequestException("Recommendation not found");
-    }
 
     recommendation.status = "completed";
     recommendation.outcomeStatus = "resolved";
@@ -481,6 +476,299 @@ export class RecommendationService implements OnModuleInit {
 
     const saved = await this.recommendationRepo.save(recommendation);
     return this.mapCase(saved);
+  }
+
+  /* ----------------------------- Validation quiz ----------------------------- */
+
+  private static readonly QUIZ_PASS_PERCENT = 70;
+  private static readonly QUIZ_QUESTION_COUNT = 5;
+
+  /**
+   * A recommendation belongs to the viewer either because it was generated for
+   * their user id, or because it targets their linked GitHub contributor login
+   * — admin-generated cases carry the admin's id in targetDeveloperId, so the
+   * login is what actually ties them to the developer.
+   */
+  private async findOwnRecommendation(
+    recommendationId: string,
+    viewer: { developerId?: string; contributorLogin?: string },
+  ) {
+    const where: FindOptionsWhere<RecommendationCase>[] = [];
+
+    if (viewer.developerId) {
+      where.push({
+        id: recommendationId,
+        targetDeveloperId: viewer.developerId,
+      });
+    }
+
+    const normalizedLogin = this.normalizeContributorLogin(
+      viewer.contributorLogin || "",
+    );
+    if (normalizedLogin) {
+      where.push({ id: recommendationId, contributorLogin: normalizedLogin });
+    }
+
+    if (!where.length) {
+      throw new BadRequestException("Recommendation not found");
+    }
+
+    const recommendation = await this.recommendationRepo.findOne({ where });
+
+    if (!recommendation) {
+      throw new BadRequestException("Recommendation not found");
+    }
+
+    return recommendation;
+  }
+
+  /** Client-facing quiz shape. Answer keys stay on the server until graded. */
+  private toQuizDto(recommendation: RecommendationCase) {
+    const quiz = recommendation.quiz;
+    const attempts = Array.isArray(recommendation.quizAttempts)
+      ? recommendation.quizAttempts
+      : [];
+    const lastAttempt = attempts[attempts.length - 1] || null;
+
+    return {
+      recommendation_id: recommendation.id,
+      status: recommendation.status,
+      pass_percent: RecommendationService.QUIZ_PASS_PERCENT,
+      passed: Boolean(recommendation.quizPassedAt),
+      passed_at: recommendation.quizPassedAt
+        ? new Date(recommendation.quizPassedAt).toISOString()
+        : null,
+      attempt_count: attempts.length,
+      last_attempt: lastAttempt
+        ? {
+            attempted_at: lastAttempt.attemptedAt,
+            score_percent: lastAttempt.scorePercent,
+            correct_count: lastAttempt.correctCount,
+            total: lastAttempt.total,
+            passed: lastAttempt.passed,
+          }
+        : null,
+      quiz: quiz
+        ? {
+            generated_at: quiz.generatedAt,
+            provider: quiz.provider,
+            model: quiz.model,
+            question_count: (quiz.questions || []).length,
+            questions: (quiz.questions || []).map(
+              (question: any, index: number) => ({
+                id: question.id || `q${index + 1}`,
+                prompt: question.prompt,
+                options: question.options,
+                gap_key: question.gapKey,
+                skill: question.skill || null,
+              }),
+            ),
+          }
+        : null,
+    };
+  }
+
+  async getQuiz(
+    recommendationId: string,
+    viewer: { developerId?: string; contributorLogin?: string },
+  ) {
+    const recommendation = await this.findOwnRecommendation(
+      recommendationId,
+      viewer,
+    );
+
+    return this.toQuizDto(recommendation);
+  }
+
+  async generateQuiz(
+    recommendationId: string,
+    viewer: { developerId?: string; contributorLogin?: string },
+    options: { regenerate?: boolean } = {},
+  ) {
+    const recommendation = await this.findOwnRecommendation(
+      recommendationId,
+      viewer,
+    );
+
+    if (recommendation.quiz && !options.regenerate) {
+      return this.toQuizDto(recommendation);
+    }
+
+    const context = (recommendation.contextSnapshot || {}) as Record<string, any>;
+    const detectedGaps = Array.isArray(context.detectedGaps)
+      ? context.detectedGaps.map((gap: any) => ({
+          key: String(gap?.key || "general"),
+          label: String(gap?.label || "Unlabelled gap"),
+          severity: String(gap?.severity || "medium"),
+          evidence: Array.isArray(gap?.evidence) ? gap.evidence : [],
+        }))
+      : [];
+
+    const learningSteps = Array.isArray(recommendation.learningPath?.steps)
+      ? (recommendation.learningPath?.steps as any[])
+      : [];
+    const docsChecklist = Array.isArray(recommendation.docsReview?.checklist)
+      ? (recommendation.docsReview?.checklist as any[])
+      : [];
+
+    const steps = learningSteps.length
+      ? learningSteps.map((step: any) => ({
+          title: String(step?.title || step?.skill || "Step"),
+          goal: String(step?.goal || ""),
+          whyItMatters: step?.why_it_matters
+            ? String(step.why_it_matters)
+            : undefined,
+          practiceTask: step?.practice_task
+            ? String(step.practice_task)
+            : undefined,
+          successSignal: step?.success_signal
+            ? String(step.success_signal)
+            : undefined,
+          gapKeys: Array.isArray(step?.gap_keys) ? step.gap_keys : [],
+          skill: step?.skill ? String(step.skill) : undefined,
+        }))
+      : docsChecklist.map((item: any) => ({
+          title: String(item?.title || "Docs item"),
+          goal: String(item?.note || ""),
+          successSignal: item?.success_criteria
+            ? String(item.success_criteria)
+            : undefined,
+          skill: item?.skill ? String(item.skill) : undefined,
+          gapKeys: [],
+        }));
+
+    if (!detectedGaps.length && !steps.length) {
+      throw new BadRequestException(
+        "This recommendation has no gaps or steps to build a quiz from",
+      );
+    }
+
+    const generated = await this.ragLearningPathService.generateQuiz({
+      developerLabel: recommendation.contributorLogin,
+      repoName: String(context.repoName || "the repository"),
+      dominantLanguage: context.dominantLanguage
+        ? String(context.dominantLanguage)
+        : null,
+      detectedGaps,
+      steps,
+      questionCount: RecommendationService.QUIZ_QUESTION_COUNT,
+    });
+
+    if (!generated.questions.length) {
+      throw new BadRequestException("Could not build a quiz for this recommendation");
+    }
+
+    recommendation.quiz = {
+      generatedAt: new Date().toISOString(),
+      provider: generated.provider,
+      model: generated.model,
+      questions: generated.questions.map((question, index) => ({
+        id: `q${index + 1}`,
+        ...question,
+      })),
+    };
+
+    // A regenerated quiz starts a fresh record; old attempts scored other questions.
+    if (options.regenerate) {
+      recommendation.quizAttempts = [];
+      recommendation.quizPassedAt = null;
+    }
+
+    const saved = await this.recommendationRepo.save(recommendation);
+    return this.toQuizDto(saved);
+  }
+
+  async submitQuiz(
+    recommendationId: string,
+    viewer: { developerId?: string; contributorLogin?: string },
+    answers: Array<{ questionId: string; selectedIndex: number }>,
+  ) {
+    const recommendation = await this.findOwnRecommendation(
+      recommendationId,
+      viewer,
+    );
+
+    const questions = Array.isArray(recommendation.quiz?.questions)
+      ? (recommendation.quiz?.questions as any[])
+      : [];
+
+    if (!questions.length) {
+      throw new BadRequestException("Generate the quiz before submitting answers");
+    }
+
+    const answerMap = new Map(
+      (answers || []).map((answer) => [
+        String(answer?.questionId),
+        Number(answer?.selectedIndex),
+      ]),
+    );
+
+    const results = questions.map((question: any) => {
+      const selectedIndex = answerMap.has(question.id)
+        ? answerMap.get(question.id)!
+        : -1;
+      const correct = selectedIndex === question.correctIndex;
+
+      return {
+        question_id: question.id,
+        prompt: question.prompt,
+        options: question.options,
+        selected_index: selectedIndex,
+        correct_index: question.correctIndex,
+        correct,
+        explanation: question.explanation || "",
+        gap_key: question.gapKey || "general",
+      };
+    });
+
+    const correctCount = results.filter((result) => result.correct).length;
+    const scorePercent = Math.round((correctCount / questions.length) * 100);
+    const passed = scorePercent >= RecommendationService.QUIZ_PASS_PERCENT;
+
+    const attempt = {
+      attemptedAt: new Date().toISOString(),
+      scorePercent,
+      correctCount,
+      total: questions.length,
+      passed,
+      answers: results.map((result) => ({
+        questionId: result.question_id,
+        selectedIndex: result.selected_index,
+        correct: result.correct,
+      })),
+    };
+
+    recommendation.quizAttempts = [
+      ...(Array.isArray(recommendation.quizAttempts)
+        ? recommendation.quizAttempts
+        : []),
+      attempt,
+    ];
+
+    if (passed) {
+      recommendation.quizPassedAt = new Date();
+      recommendation.status = "completed";
+      recommendation.outcomeStatus = "resolved";
+      recommendation.outcomeMetrics = {
+        ...(recommendation.outcomeMetrics || {}),
+        completedAt: attempt.attemptedAt,
+        completedVia: "quiz",
+        quizScorePercent: scorePercent,
+      };
+    }
+
+    const saved = await this.recommendationRepo.save(recommendation);
+
+    return {
+      passed,
+      score_percent: scorePercent,
+      correct_count: correctCount,
+      total: questions.length,
+      pass_percent: RecommendationService.QUIZ_PASS_PERCENT,
+      attempt_count: saved.quizAttempts.length,
+      recommendation_status: saved.status,
+      results,
+    };
   }
 
   async getAvailableMentors() {

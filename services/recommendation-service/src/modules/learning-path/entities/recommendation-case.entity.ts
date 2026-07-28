@@ -103,6 +103,16 @@ export class RecommendationCase {
   @Column({ name: 'feedback', type: 'jsonb', nullable: true })
   feedback: Record<string, any> | null;
 
+  /** Generated validation quiz, including answer keys. Never sent to clients as-is. */
+  @Column({ name: 'quiz', type: 'jsonb', nullable: true })
+  quiz: Record<string, any> | null;
+
+  @Column({ name: 'quiz_attempts', type: 'jsonb', default: () => "'[]'::jsonb" })
+  quizAttempts: Array<Record<string, any>>;
+
+  @Column({ name: 'quiz_passed_at', type: 'timestamp', nullable: true })
+  quizPassedAt: Date | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

@@ -86,20 +86,23 @@ export default function DeveloperRecommendationDetailPage() {
   }, [recommendationId, recommendations]);
 
   /**
-   * The action plan lives inside this report for self-serve work, and back on
-   * the feed for mentorship (that is where the mentor picker is).
+   * This page explains *why*; the plan page is where the work happens. Only
+   * mentorship without a mentor sends them elsewhere — the mentor picker lives
+   * on the feed.
    */
   const developerCta = useMemo(() => {
+    const planHref = `/dashboard/developer/recommendations/${recommendationId}/plan`;
+
     if (!recommendation) {
-      return { label: "View recommendation", href: "#plan", note: "" };
+      return { label: "Open action plan", href: planHref, note: "" };
     }
 
     if (recommendation.recommendation_type === "mentorship") {
       return recommendation.mentor_id
         ? {
-            label: "View mentoring plan",
-            href: "#plan",
-            note: "Your mentor and session details are in the plan section.",
+            label: "Open mentoring plan",
+            href: planHref,
+            note: "See your mentor and session details.",
           }
         : {
             label: "Find a mentor",
@@ -109,10 +112,13 @@ export default function DeveloperRecommendationDetailPage() {
     }
 
     if (recommendation.recommendation_type === "docs_review") {
+      const items = recommendation.docs_review?.checklist?.length || 0;
       return {
         label: "Open docs checklist",
-        href: "#plan",
-        note: "A short, targeted checklist — usually under an hour.",
+        href: planHref,
+        note: items
+          ? `${items} item${items === 1 ? "" : "s"} to work through — usually under an hour.`
+          : "A short, targeted checklist.",
       };
     }
 
@@ -121,14 +127,14 @@ export default function DeveloperRecommendationDetailPage() {
 
     return {
       label: "Start learning path",
-      href: "#plan",
+      href: planHref,
       note: steps
         ? `${steps} step${steps === 1 ? "" : "s"}${
             typeof hours === "number" ? `, about ${hours} hours` : ""
           } built from the gaps above.`
-        : "Your step-by-step plan is in the report.",
+        : "Work through your plan step by step.",
     };
-  }, [recommendation]);
+  }, [recommendation, recommendationId]);
 
   const acknowledgeRecommendation = async () => {
     if (!recommendation) return;

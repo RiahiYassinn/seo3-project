@@ -298,13 +298,89 @@ export class RecommendationController {
   @ApiOperation({
     summary: "Acknowledge recommendation completion for current developer",
   })
-  acknowledgeRecommendation(
+  async acknowledgeRecommendation(
     @Req() req: any,
     @Param("recommendationId") recommendationId: string,
   ) {
     return this.recommendationService.acknowledgeRecommendation(
       recommendationId,
       req.user.id,
+      await this.resolveContributorLogin(req),
+    );
+  }
+
+  /**
+   * Developers own a recommendation through their linked GitHub login, not
+   * through targetDeveloperId (admin-generated cases carry the admin's id).
+   */
+  private async resolveContributorLogin(req: any): Promise<string | undefined> {
+    const normalizedRole = String(req?.user?.role || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[-\s]+/g, "_");
+
+    if (normalizedRole !== "developer") {
+      return undefined;
+    }
+
+    try {
+      const integration = await this.githubService.getIntegration(req.user.id);
+      return String(integration?.github_username || "").trim() || undefined;
+    } catch (error) {
+      if (!(error instanceof NotFoundException)) {
+        throw error;
+      }
+      return undefined;
+    }
+  }
+
+  @Get(":recommendationId/quiz")
+  @ApiOperation({
+    summary: "Get the validation quiz for the current developer (no answer key)",
+  })
+  async getQuiz(
+    @Req() req: any,
+    @Param("recommendationId") recommendationId: string,
+  ) {
+    return this.recommendationService.getQuiz(
+      recommendationId,
+      req.user.id,
+      await this.resolveContributorLogin(req),
+    );
+  }
+
+  @Post(":recommendationId/quiz/generate")
+  @ApiOperation({
+    summary: "Generate (or regenerate) a personalised validation quiz",
+  })
+  async generateQuiz(
+    @Req() req: any,
+    @Param("recommendationId") recommendationId: string,
+    @Body() body: { regenerate?: boolean },
+  ) {
+    return this.recommendationService.generateQuiz(
+      recommendationId,
+      req.user.id,
+      await this.resolveContributorLogin(req),
+      Boolean(body?.regenerate),
+    );
+  }
+
+  @Post(":recommendationId/quiz/submit")
+  @ApiOperation({
+    summary: "Submit quiz answers; passing marks the recommendation completed",
+  })
+  async submitQuiz(
+    @Req() req: any,
+    @Param("recommendationId") recommendationId: string,
+    @Body()
+    body: { answers?: Array<{ questionId: string; selectedIndex: number }> },
+  ) {
+    return this.recommendationService.submitQuiz(
+      recommendationId,
+      req.user.id,
+      await this.resolveContributorLogin(req),
+      body?.answers || [],
     );
   }
 

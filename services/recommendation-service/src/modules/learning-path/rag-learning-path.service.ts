@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { CourseCatalogService } from './course-catalog.service';
-import { LlmClientService } from './llm-client.service';
+import {
+  LlmClientService,
+  type QuizResult,
+  type QuizSourceGap,
+  type QuizSourceStep,
+} from './llm-client.service';
 import {
   AnalysisCompletedEvent,
   AnalysisSummary,
@@ -26,6 +31,18 @@ export class RagLearningPathService {
     private readonly courseCatalogService: CourseCatalogService,
     private readonly llmClientService: LlmClientService,
   ) {}
+
+  /** Validation quiz built from the gaps and steps already on a recommendation. */
+  async generateQuiz(params: {
+    developerLabel: string;
+    repoName: string;
+    dominantLanguage: string | null;
+    detectedGaps: QuizSourceGap[];
+    steps: QuizSourceStep[];
+    questionCount: number;
+  }): Promise<QuizResult> {
+    return this.llmClientService.generateQuiz(params);
+  }
 
   async generateRecommendation(
     payload: AnalysisCompletedEvent,

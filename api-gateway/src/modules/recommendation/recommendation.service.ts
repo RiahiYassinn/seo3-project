@@ -235,11 +235,62 @@ export class RecommendationService {
   async acknowledgeRecommendation(
     recommendationId: string,
     developerId: string,
+    contributorLogin?: string,
   ) {
     try {
       const response = await axios.post(
         `${this.baseUrl}/recommendations/${recommendationId}/acknowledge`,
-        { developerId },
+        { developerId, contributorLogin },
+      );
+      return response.data;
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  async getQuiz(
+    recommendationId: string,
+    developerId: string,
+    contributorLogin?: string,
+  ) {
+    try {
+      const response = await axios.get(
+        `${this.baseUrl}/recommendations/${recommendationId}/quiz/${developerId}`,
+        { params: contributorLogin ? { contributorLogin } : {} },
+      );
+      return response.data;
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  async generateQuiz(
+    recommendationId: string,
+    developerId: string,
+    contributorLogin?: string,
+    regenerate = false,
+  ) {
+    try {
+      const response = await axios.post(
+        `${this.baseUrl}/recommendations/${recommendationId}/quiz/generate`,
+        { developerId, contributorLogin, regenerate },
+      );
+      return response.data;
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  async submitQuiz(
+    recommendationId: string,
+    developerId: string,
+    contributorLogin: string | undefined,
+    answers: Array<{ questionId: string; selectedIndex: number }>,
+  ) {
+    try {
+      const response = await axios.post(
+        `${this.baseUrl}/recommendations/${recommendationId}/quiz/submit`,
+        { developerId, contributorLogin, answers },
       );
       return response.data;
     } catch (error) {

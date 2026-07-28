@@ -208,11 +208,58 @@ export class RecommendationController {
   @Post(":recommendationId/acknowledge")
   async acknowledgeRecommendation(
     @Param("recommendationId") recommendationId: string,
-    @Body() body: { developerId: string },
+    @Body() body: { developerId: string; contributorLogin?: string },
   ) {
     return this.recommendationService.acknowledgeRecommendation(
       recommendationId,
       body.developerId,
+      body.contributorLogin,
+    );
+  }
+
+  @Get(":recommendationId/quiz/:developerId")
+  async getQuiz(
+    @Param("recommendationId") recommendationId: string,
+    @Param("developerId") developerId: string,
+    @Query("contributorLogin") contributorLogin?: string,
+  ) {
+    return this.recommendationService.getQuiz(recommendationId, {
+      developerId,
+      contributorLogin,
+    });
+  }
+
+  @Post(":recommendationId/quiz/generate")
+  async generateQuiz(
+    @Param("recommendationId") recommendationId: string,
+    @Body()
+    body: {
+      developerId: string;
+      contributorLogin?: string;
+      regenerate?: boolean;
+    },
+  ) {
+    return this.recommendationService.generateQuiz(
+      recommendationId,
+      { developerId: body.developerId, contributorLogin: body.contributorLogin },
+      { regenerate: Boolean(body.regenerate) },
+    );
+  }
+
+  @Post(":recommendationId/quiz/submit")
+  async submitQuiz(
+    @Param("recommendationId") recommendationId: string,
+    @Body()
+    body: {
+      developerId: string;
+      contributorLogin?: string;
+      answers: Array<{ questionId: string; selectedIndex: number }>;
+    },
+  ) {
+    return this.recommendationService.submitQuiz(
+      recommendationId,
+      { developerId: body.developerId, contributorLogin: body.contributorLogin },
+      body.answers || [],
     );
   }
 }
