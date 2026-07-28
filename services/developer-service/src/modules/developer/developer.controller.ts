@@ -131,6 +131,47 @@ export class DeveloperController {
     }
   }
 
+  @MessagePattern('send_mentorship_session_email')
+  async handleSendMentorshipSessionEmail(
+    @Payload()
+    data: {
+      kind: 'invite' | 'reminder';
+      to: string;
+      recipientName: string;
+      topic: string;
+      scheduledAt: string;
+      timeZone?: string;
+      mode: 'remote' | 'onsite';
+      location?: string | null;
+      joinUrl?: string | null;
+      note?: string | null;
+      mentorName: string;
+      minutesUntil?: number;
+    },
+  ) {
+    try {
+      if (!data?.to) {
+        return { sent: false, error: 'Recipient email is required' };
+      }
+
+      if (data.kind === 'reminder') {
+        await this.emailService.sendMentorshipSessionReminder({
+          ...data,
+          minutesUntil: data.minutesUntil ?? 15,
+        });
+      } else {
+        await this.emailService.sendMentorshipSessionInvite(data);
+      }
+
+      return { sent: true };
+    } catch (error) {
+      this.logger.error(
+        `Failed to send mentorship ${data?.kind} email to ${data?.to}: ${error.message}`,
+      );
+      return { sent: false, error: error.message };
+    }
+  }
+
   @MessagePattern('send_credentials_email')
   async handleSendCredentialsEmail(
     @Payload() data: { email: string; name: string; username: string; password: string },

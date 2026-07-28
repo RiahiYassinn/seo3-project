@@ -11,6 +11,7 @@ export type RecommendationType = 'mentorship' | 'learning_path' | 'docs_review';
 export type RecommendationStatus = 'open' | 'assigned' | 'completed' | 'dismissed';
 export type RecommendationEffort = 'light' | 'moderate' | 'intensive';
 export type RecommendationOutcomeStatus = 'pending' | 'improving' | 'stalled' | 'resolved';
+export type MentorshipSessionMode = 'remote' | 'onsite';
 
 @Entity('recommendation_cases')
 @Index('idx_recommendation_cases_target_repo', ['targetDeveloperId', 'repositoryId'])
@@ -57,6 +58,36 @@ export class RecommendationCase {
 
   @Column({ name: 'mentorship_session_note', type: 'text', nullable: true })
   mentorshipSessionNote: string | null;
+
+  @Column({
+    name: 'mentorship_session_mode',
+    type: 'varchar',
+    nullable: true,
+  })
+  mentorshipSessionMode: MentorshipSessionMode | null;
+
+  /** Physical meeting point; only meaningful for on-site sessions. */
+  @Column({
+    name: 'mentorship_session_location',
+    type: 'varchar',
+    nullable: true,
+  })
+  mentorshipSessionLocation: string | null;
+
+  /** Teams join URL for remote sessions, when Graph could create one. */
+  @Column({
+    name: 'mentorship_session_join_url',
+    type: 'varchar',
+    nullable: true,
+  })
+  mentorshipSessionJoinUrl: string | null;
+
+  @Column({
+    name: 'mentorship_session_reminder_sent_at',
+    type: 'timestamp',
+    nullable: true,
+  })
+  mentorshipSessionReminderSentAt: Date | null;
 
   @Column({ name: 'context_snapshot', type: 'jsonb', nullable: true })
   contextSnapshot: Record<string, any> | null;

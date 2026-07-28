@@ -15,7 +15,7 @@ import { AuthGuard } from "@nestjs/passport";
 import { RecommendationService } from "./recommendation.service";
 import { GithubService } from "../github/github.service";
 
-import { IsString, IsNotEmpty, IsOptional } from "class-validator";
+import { IsString, IsNotEmpty, IsOptional, IsIn } from "class-validator";
 
 class RequestMentorDto {
   @IsString()
@@ -30,6 +30,14 @@ class ScheduleMentorshipSessionDto {
   @IsString()
   @IsOptional()
   note?: string;
+
+  @IsIn(["remote", "onsite"])
+  @IsOptional()
+  mode?: "remote" | "onsite";
+
+  @IsString()
+  @IsOptional()
+  location?: string;
 }
 
 @ApiTags("recommendations")
@@ -292,6 +300,8 @@ export class RecommendationController {
       req.user.id,
       body.scheduledAt,
       body.note,
+      body.mode,
+      body.location,
     );
   }
   @Post(":recommendationId/acknowledge")

@@ -179,7 +179,14 @@ export class RecommendationController {
   @Post(":recommendationId/schedule-session")
   async scheduleMentorshipSession(
     @Param("recommendationId") recommendationId: string,
-    @Body() body: { mentorId?: string; scheduledAt?: string; note?: string },
+    @Body()
+    body: {
+      mentorId?: string;
+      scheduledAt?: string;
+      note?: string;
+      mode?: "remote" | "onsite";
+      location?: string;
+    },
   ) {
     if (!body?.mentorId) {
       throw new BadRequestException("Mentor id is required");
@@ -194,6 +201,8 @@ export class RecommendationController {
       body.mentorId,
       body.scheduledAt,
       body.note,
+      body.mode,
+      body.location,
     );
   }
   @Post(":recommendationId/regenerate")

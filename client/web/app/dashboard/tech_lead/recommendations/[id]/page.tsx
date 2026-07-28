@@ -11,6 +11,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -24,9 +25,13 @@ import {
   CalendarClock,
   CircleAlert,
   Loader,
+  MapPin,
+  Send,
   UserRoundPlus,
+  Video,
 } from "lucide-react";
 import { type RecommendationCase } from "@/app/dashboard/admin/profiles/profile-types";
+import { cn } from "@/lib/utils";
 
 type MentorQueueRecommendation = RecommendationCase & {
   recommendation_type: "mentorship";
@@ -54,6 +59,8 @@ export default function TechLeadRecommendationDetailPage() {
   const [scheduledAt, setScheduledAt] = useState("");
   const [note, setNote] = useState("");
   const [schedulerOpen, setSchedulerOpen] = useState(false);
+  const [mode, setMode] = useState<"remote" | "onsite">("remote");
+  const [location, setLocation] = useState("");
 
   const loadRecommendation = useCallback(async () => {
     try {
@@ -65,6 +72,8 @@ export default function TechLeadRecommendationDetailPage() {
         toDateTimeLocalValue(data.mentorship_session_scheduled_at),
       );
       setNote(data.mentorship_session_note || "");
+      setMode(data.mentorship_session_mode === "onsite" ? "onsite" : "remote");
+      setLocation(data.mentorship_session_location || "");
       setError("");
     } catch (requestError: any) {
       setError(
@@ -118,6 +127,10 @@ export default function TechLeadRecommendationDetailPage() {
       setError("Choose a date and time for the mentoring session.");
       return;
     }
+    if (mode === "onsite" && !location.trim()) {
+      setError("Add where the on-site session takes place.");
+      return;
+    }
     setScheduling(true);
     setError("");
     try {
@@ -126,6 +139,8 @@ export default function TechLeadRecommendationDetailPage() {
         {
           scheduledAt: new Date(scheduledAt).toISOString(),
           note: note.trim() || undefined,
+          mode,
+          location: mode === "onsite" ? location.trim() : undefined,
         },
       );
       setRecommendation((previous) =>
@@ -135,6 +150,8 @@ export default function TechLeadRecommendationDetailPage() {
         toDateTimeLocalValue(data.mentorship_session_scheduled_at),
       );
       setNote(data.mentorship_session_note || "");
+      setMode(data.mentorship_session_mode === "onsite" ? "onsite" : "remote");
+      setLocation(data.mentorship_session_location || "");
       setSchedulerOpen(false);
     } catch (requestError: any) {
       setError(
@@ -271,7 +288,7 @@ export default function TechLeadRecommendationDetailPage() {
 
       {/* ---------------------------- Session scheduler ---------------------------- */}
       <Dialog open={schedulerOpen} onOpenChange={setSchedulerOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>
               {recommendation.mentorship_session_scheduled_at
@@ -279,17 +296,80 @@ export default function TechLeadRecommendationDetailPage() {
                 : "Schedule mentoring session"}
             </DialogTitle>
             <DialogDescription>
-              The developer is notified as soon as you confirm.
+              {recommendation.contributor_login
+                ? `@${recommendation.contributor_login} is emailed the details as soon as you confirm.`
+                : "The developer is emailed the details as soon as you confirm."}
             </DialogDescription>
           </DialogHeader>
 
           <form
-            className="space-y-4"
+            className="space-y-5"
             onSubmit={(event) => {
               event.preventDefault();
               scheduleSession();
             }}
           >
+            {/* --------------------------- Modality --------------------------- */}
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-medium">How will you meet?</legend>
+              <div className="grid grid-cols-2 gap-2">
+                {(
+                  [
+                    {
+                      value: "remote" as const,
+                      label: "Remote",
+                      hint: "Teams link generated",
+                      icon: Video,
+                    },
+                    {
+                      value: "onsite" as const,
+                      label: "On-site",
+                      hint: "Meet in person",
+                      icon: MapPin,
+                    },
+                  ]
+                ).map((option) => {
+                  const active = mode === option.value;
+
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      disabled={scheduling}
+                      onClick={() => setMode(option.value)}
+                      className={cn(
+                        "flex items-start gap-3 rounded-xl border p-3.5 text-left transition-all",
+                        active
+                          ? "border-primary/45 bg-primary/[0.07] ring-1 ring-primary/15"
+                          : "border-border/60 bg-muted/15 hover:border-primary/30 hover:bg-muted/30",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+                          active
+                            ? "bg-primary/15 text-primary"
+                            : "bg-background text-muted-foreground ring-1 ring-border/60",
+                        )}
+                      >
+                        <option.icon className="h-4 w-4" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold">
+                          {option.label}
+                        </span>
+                        <span className="mt-0.5 block text-xs text-muted-foreground">
+                          {option.hint}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </fieldset>
+
             <div className="space-y-2">
               <Label htmlFor="session-date">Date and time</Label>
               <Input
@@ -302,18 +382,44 @@ export default function TechLeadRecommendationDetailPage() {
               />
             </div>
 
+            {/* Location only matters for on-site sessions. */}
+            {mode === "onsite" ? (
+              <div className="space-y-2">
+                <Label htmlFor="session-location">Where</Label>
+                <Input
+                  id="session-location"
+                  value={location}
+                  onChange={(event) => setLocation(event.target.value)}
+                  placeholder="e.g. Floor 3, Meeting room B"
+                  disabled={scheduling}
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  Included in the invitation email.
+                </p>
+              </div>
+            ) : (
+              <div className="flex items-start gap-2.5 rounded-xl border border-border/60 bg-muted/20 p-3.5">
+                <Video className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                <p className="text-xs leading-5 text-muted-foreground">
+                  A Microsoft Teams meeting is created automatically and the
+                  join link goes out with the invitation. If Teams is not
+                  configured on this environment, the session is still booked
+                  and the email says you will share a link.
+                </p>
+              </div>
+            )}
+
             <div className="space-y-2">
-              <Label htmlFor="session-note">Agenda or meeting link</Label>
-              <Input
+              <Label htmlFor="session-note">Agenda</Label>
+              <Textarea
                 id="session-note"
                 value={note}
                 onChange={(event) => setNote(event.target.value)}
-                placeholder="e.g. Meet link, or the two topics to cover"
+                placeholder="What you plan to cover — shown to the developer in the invite."
                 disabled={scheduling}
+                rows={3}
               />
-              <p className="text-xs text-muted-foreground">
-                Shown to the developer with the session time.
-              </p>
             </div>
 
             <DialogFooter className="gap-2 sm:gap-2">
@@ -329,11 +435,13 @@ export default function TechLeadRecommendationDetailPage() {
                 {scheduling ? (
                   <Loader className="h-4 w-4 animate-spin" />
                 ) : (
-                  <CalendarClock className="h-4 w-4" />
+                  <Send className="h-4 w-4" />
                 )}
-                {recommendation.mentorship_session_scheduled_at
-                  ? "Update session"
-                  : "Confirm session"}
+                {scheduling
+                  ? "Sending invite…"
+                  : recommendation.mentorship_session_scheduled_at
+                    ? "Update and resend"
+                    : "Confirm and send invite"}
               </Button>
             </DialogFooter>
           </form>

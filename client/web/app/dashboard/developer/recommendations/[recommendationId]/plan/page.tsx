@@ -14,6 +14,7 @@ import {
   FileText,
   Lightbulb,
   Loader2,
+  MapPin,
   GraduationCap,
   Sparkles,
   Target,
@@ -21,6 +22,7 @@ import {
   Trophy,
   UserRound,
   Users,
+  Video,
 } from "lucide-react";
 import { Navbar } from "@/components/navbar";
 import api from "@/lib/api";
@@ -280,6 +282,8 @@ export default function DeveloperRecommendationPlanPage() {
   const isMentorship = recommendation.recommendation_type === "mentorship";
   const isCompleted = recommendation.status === "completed";
   const quizPassed = Boolean(quizState?.passed);
+  const isOnsiteSession =
+    recommendation.mentorship_session_mode === "onsite";
   const repoName =
     repositories[recommendation.repository_id] ||
     recommendation.context_snapshot?.repoName ||
@@ -412,20 +416,56 @@ export default function DeveloperRecommendationPlanPage() {
 
               {scheduledSession ? (
                 <div className="mt-4 rounded-xl border border-violet-500/25 bg-background/80 p-4">
-                  <p className="inline-flex items-center gap-2 text-sm font-medium">
-                    <CalendarClock className="h-4 w-4 text-violet-600 dark:text-violet-400" />
-                    Session scheduled
-                  </p>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="inline-flex items-center gap-2 text-sm font-medium">
+                      <CalendarClock className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+                      Session scheduled
+                    </p>
+                    <Badge variant="outline" className="gap-1.5">
+                      {isOnsiteSession ? (
+                        <MapPin className="h-3 w-3" />
+                      ) : (
+                        <Video className="h-3 w-3" />
+                      )}
+                      {isOnsiteSession ? "On-site" : "Remote"}
+                    </Badge>
+                  </div>
                   <p className="mt-2 text-sm text-muted-foreground">
                     {scheduledSession.toLocaleString([], {
                       dateStyle: "full",
                       timeStyle: "short",
                     })}
                   </p>
+                  {isOnsiteSession &&
+                  recommendation.mentorship_session_location ? (
+                    <p className="mt-1.5 inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+                      <MapPin className="h-3.5 w-3.5" />
+                      {recommendation.mentorship_session_location}
+                    </p>
+                  ) : null}
                   {recommendation.mentorship_session_note ? (
                     <p className="mt-2 text-sm leading-6 text-muted-foreground">
                       {recommendation.mentorship_session_note}
                     </p>
+                  ) : null}
+                  {!isOnsiteSession ? (
+                    recommendation.mentorship_session_join_url ? (
+                      <Button asChild className="mt-3 gap-2">
+                        <a
+                          href={recommendation.mentorship_session_join_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <Video className="h-4 w-4" />
+                          Join Teams meeting
+                        </a>
+                      </Button>
+                    ) : (
+                      <p className="mt-3 text-xs text-muted-foreground">
+                        Your mentor will share the meeting link before the
+                        session.
+                      </p>
+                    )
                   ) : null}
                 </div>
               ) : (

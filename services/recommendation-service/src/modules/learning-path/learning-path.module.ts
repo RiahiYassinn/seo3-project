@@ -10,6 +10,8 @@ import { MentorRequest } from "./entities/mentor-request.entity";
 import { CourseCatalogService } from "./course-catalog.service";
 import { LlmClientService } from "./llm-client.service";
 import { RagLearningPathService } from "./rag-learning-path.service";
+import { TeamsMeetingService } from "./teams-meeting.service";
+import { SessionReminderScheduler } from "./session-reminder.scheduler";
 
 @Module({
   imports: [
@@ -54,6 +56,8 @@ import { RagLearningPathService } from "./rag-learning-path.service";
     CourseCatalogService,
     LlmClientService,
     RagLearningPathService,
+    TeamsMeetingService,
+    SessionReminderScheduler,
   ],
   exports: [CourseCatalogService],
 })

@@ -13,11 +13,13 @@ import {
   GitBranch,
   Layers3,
   Lightbulb,
+  MapPin,
   ScanSearch,
   Target,
   Timer,
   TrendingUp,
   UserRound,
+  Video,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -187,6 +189,8 @@ export function RecommendationDetailPanel({
       })
     : null;
   const generatedAt = context?.generatedAt;
+  const isOnsiteSession =
+    recommendation.mentorship_session_mode === "onsite";
   const band = priorityBand(recommendation.priority_score);
   const repoLabel =
     repositoryName || context?.repoName || recommendation.repository_id;
@@ -701,17 +705,52 @@ export function RecommendationDetailPanel({
                 </p>
                 {scheduledSessionLabel ? (
                   <div className="rounded-xl border border-violet-500/25 bg-violet-500/[0.07] p-4">
-                    <div className="flex items-center gap-2 text-sm font-medium">
-                      <CalendarClock className="h-4 w-4 text-violet-600 dark:text-violet-400" />
-                      Session scheduled
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 text-sm font-medium">
+                        <CalendarClock className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+                        Session scheduled
+                      </div>
+                      <Badge variant="outline" className="gap-1.5">
+                        {isOnsiteSession ? (
+                          <MapPin className="h-3 w-3" />
+                        ) : (
+                          <Video className="h-3 w-3" />
+                        )}
+                        {isOnsiteSession ? "On-site" : "Remote"}
+                      </Badge>
                     </div>
                     <p className="mt-2 text-sm text-muted-foreground">
                       {scheduledSessionLabel}
                     </p>
+                    {isOnsiteSession &&
+                    recommendation.mentorship_session_location ? (
+                      <p className="mt-1.5 inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+                        <MapPin className="h-3.5 w-3.5" />
+                        {recommendation.mentorship_session_location}
+                      </p>
+                    ) : null}
                     {recommendation.mentorship_session_note ? (
                       <p className="mt-2 text-sm leading-6 text-muted-foreground">
                         {recommendation.mentorship_session_note}
                       </p>
+                    ) : null}
+                    {!isOnsiteSession ? (
+                      recommendation.mentorship_session_join_url ? (
+                        <a
+                          href={recommendation.mentorship_session_join_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-3 inline-flex items-center gap-2 rounded-lg bg-violet-600 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-700"
+                        >
+                          <Video className="h-4 w-4" />
+                          Join Teams meeting
+                        </a>
+                      ) : (
+                        <p className="mt-3 text-xs text-muted-foreground">
+                          The mentor will share the meeting link before the
+                          session.
+                        </p>
+                      )
                     ) : null}
                   </div>
                 ) : (

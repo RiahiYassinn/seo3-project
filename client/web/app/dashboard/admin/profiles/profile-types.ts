@@ -102,6 +102,9 @@ export interface RecommendationCase {
   } | null;
   mentorship_session_scheduled_at?: string | null;
   mentorship_session_note?: string | null;
+  mentorship_session_mode?: "remote" | "onsite" | null;
+  mentorship_session_location?: string | null;
+  mentorship_session_join_url?: string | null;
   context_snapshot?: {
     repoName?: string;
     contributorLogin?: string;

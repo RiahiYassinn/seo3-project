@@ -210,11 +210,13 @@ export class RecommendationService {
     mentorId: string,
     scheduledAt: string,
     note?: string,
+    mode?: "remote" | "onsite",
+    location?: string,
   ) {
     try {
       const response = await axios.post(
         `${this.baseUrl}/recommendations/${recommendationId}/schedule-session`,
-        { mentorId, scheduledAt, note },
+        { mentorId, scheduledAt, note, mode, location },
       );
       return response.data;
     } catch (error) {

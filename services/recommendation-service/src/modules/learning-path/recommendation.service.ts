@@ -11,8 +11,9 @@ import {
 import { ClientKafka, ClientProxy } from "@nestjs/microservices";
 import { InjectRepository } from "@nestjs/typeorm";
 import { firstValueFrom } from "rxjs";
-import { FindOptionsWhere, In, IsNull, Repository } from "typeorm";
+import { Between, FindOptionsWhere, In, IsNull, Repository } from "typeorm";
 import {
+  MentorshipSessionMode,
   RecommendationCase,
   RecommendationType,
 } from "./entities/recommendation-case.entity";
@@ -24,6 +25,7 @@ import {
   RecommendationHistorySnapshot,
 } from "./recommendation-rag.types";
 import { RagLearningPathService } from "./rag-learning-path.service";
+import { TeamsMeetingService } from "./teams-meeting.service";
 
 interface MentorCandidate {
   id: string;
@@ -55,6 +57,7 @@ export class RecommendationService implements OnModuleInit {
     @Inject("RECOMMENDATION_EVENTS_CLIENT")
     private readonly eventClient: ClientKafka,
     private readonly ragLearningPathService: RagLearningPathService,
+    private readonly teamsMeetingService: TeamsMeetingService,
   ) {}
 
   async onModuleInit() {
@@ -424,6 +427,8 @@ export class RecommendationService implements OnModuleInit {
     mentorId: string,
     scheduledAt: string,
     note?: string | null,
+    mode: MentorshipSessionMode = "remote",
+    location?: string | null,
   ) {
     const recommendation = await this.recommendationRepo.findOne({
       where: { id: recommendationId },
@@ -450,12 +455,193 @@ export class RecommendationService implements OnModuleInit {
       throw new BadRequestException("A valid session date and time is required");
     }
 
+    const normalizedMode: MentorshipSessionMode =
+      mode === "onsite" ? "onsite" : "remote";
+    const normalizedLocation = location?.trim() || null;
+
+    if (normalizedMode === "onsite" && !normalizedLocation) {
+      throw new BadRequestException(
+        "On-site sessions need a meeting location",
+      );
+    }
+
     recommendation.mentorshipSessionScheduledAt = parsedScheduledAt;
     recommendation.mentorshipSessionNote = note?.trim() || null;
+    recommendation.mentorshipSessionMode = normalizedMode;
+    recommendation.mentorshipSessionLocation =
+      normalizedMode === "onsite" ? normalizedLocation : null;
+    // A rescheduled session must re-arm the reminder.
+    recommendation.mentorshipSessionReminderSentAt = null;
+
+    if (normalizedMode === "remote") {
+      const meeting = await this.teamsMeetingService.createMeeting({
+        subject: `Mentoring: ${recommendation.title}`,
+        startDateTime: parsedScheduledAt.toISOString(),
+        endDateTime: new Date(
+          parsedScheduledAt.getTime() + 60 * 60 * 1000,
+        ).toISOString(),
+      });
+
+      recommendation.mentorshipSessionJoinUrl = meeting?.joinUrl || null;
+    } else {
+      recommendation.mentorshipSessionJoinUrl = null;
+    }
 
     const saved = await this.recommendationRepo.save(recommendation);
+
     await this.emitMentorshipSessionScheduledNotification(saved);
+    await this.sendMentorshipSessionEmails(saved, "invite");
+
     return this.mapCase(saved);
+  }
+
+  /* ------------------------ Session emails & reminders ------------------------ */
+
+  private async lookupUser(userId?: string | null) {
+    if (!userId) return null;
+
+    try {
+      return await firstValueFrom(
+        this.developerService.send("find_user_by_id", { id: userId }),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Could not load user ${userId} for session email: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+      return null;
+    }
+  }
+
+  private displayName(user: any, fallback: string) {
+    const name = [user?.first_name, user?.last_name].filter(Boolean).join(" ");
+    return name || user?.username || user?.email || fallback;
+  }
+
+  /**
+   * Emails both sides of a session. Failures are logged, never thrown — a mail
+   * outage must not roll back a scheduled session.
+   */
+  private async sendMentorshipSessionEmails(
+    recommendation: RecommendationCase,
+    kind: "invite" | "reminder",
+    minutesUntil = 15,
+  ) {
+    if (!recommendation.mentorshipSessionScheduledAt) {
+      return;
+    }
+
+    const [developer, mentor] = await Promise.all([
+      this.lookupUser(recommendation.targetDeveloperId),
+      this.lookupUser(recommendation.mentorId),
+    ]);
+
+    const mentorName =
+      recommendation.mentorSnapshot?.name ||
+      this.displayName(mentor, "Your mentor");
+
+    const base = {
+      kind,
+      topic: recommendation.title,
+      scheduledAt: new Date(
+        recommendation.mentorshipSessionScheduledAt,
+      ).toISOString(),
+      timeZone: process.env.SESSION_TIME_ZONE || "UTC",
+      mode: recommendation.mentorshipSessionMode || "remote",
+      location: recommendation.mentorshipSessionLocation,
+      joinUrl: recommendation.mentorshipSessionJoinUrl,
+      note: recommendation.mentorshipSessionNote,
+      mentorName,
+      minutesUntil,
+    };
+
+    const recipients: Array<{ to: string; recipientName: string }> = [];
+
+    // Invitations go to the developer; reminders go to both sides.
+    const developerEmail =
+      developer?.email || recommendation.mentorSnapshot?.developerEmail;
+    if (developerEmail) {
+      recipients.push({
+        to: developerEmail,
+        recipientName: this.displayName(developer, recommendation.contributorLogin),
+      });
+    }
+
+    if (kind === "reminder") {
+      const mentorEmail =
+        mentor?.email || recommendation.mentorSnapshot?.email || null;
+      if (mentorEmail) {
+        recipients.push({ to: mentorEmail, recipientName: mentorName });
+      }
+    }
+
+    if (!recipients.length) {
+      this.logger.warn(
+        `No email recipients resolved for session ${recommendation.id} (${kind})`,
+      );
+      return;
+    }
+
+    for (const recipient of recipients) {
+      try {
+        await firstValueFrom(
+          this.developerService.send("send_mentorship_session_email", {
+            ...base,
+            ...recipient,
+          }),
+        );
+      } catch (error) {
+        this.logger.error(
+          `Failed to send ${kind} email to ${recipient.to}: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Sends the pre-session reminder for anything starting inside the window.
+   * `mentorshipSessionReminderSentAt` makes it idempotent across ticks.
+   */
+  async dispatchDueSessionReminders(leadMinutes = 15) {
+    const now = new Date();
+    const windowEnd = new Date(now.getTime() + leadMinutes * 60 * 1000);
+
+    const due = await this.recommendationRepo.find({
+      where: {
+        mentorshipSessionReminderSentAt: IsNull(),
+        mentorshipSessionScheduledAt: Between(now, windowEnd),
+      },
+    });
+
+    if (!due.length) {
+      return { sent: 0 };
+    }
+
+    for (const recommendation of due) {
+      const minutesUntil = Math.max(
+        1,
+        Math.round(
+          (new Date(recommendation.mentorshipSessionScheduledAt!).getTime() -
+            Date.now()) /
+            60000,
+        ),
+      );
+
+      await this.sendMentorshipSessionEmails(
+        recommendation,
+        "reminder",
+        minutesUntil,
+      );
+
+      recommendation.mentorshipSessionReminderSentAt = new Date();
+      await this.recommendationRepo.save(recommendation);
+    }
+
+    this.logger.log(`Sent reminders for ${due.length} upcoming session(s)`);
+    return { sent: due.length };
   }
   async acknowledgeRecommendation(
     recommendationId: string,
@@ -1932,6 +2118,9 @@ export class RecommendationService implements OnModuleInit {
       mentorship_session_scheduled_at:
         record.mentorshipSessionScheduledAt?.toISOString() || null,
       mentorship_session_note: record.mentorshipSessionNote,
+      mentorship_session_mode: record.mentorshipSessionMode,
+      mentorship_session_location: record.mentorshipSessionLocation,
+      mentorship_session_join_url: record.mentorshipSessionJoinUrl,
       context_snapshot: record.contextSnapshot,
       evidence_snapshot: record.evidenceSnapshot,
       target_skills: record.targetSkills,
