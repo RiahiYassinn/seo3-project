@@ -5,33 +5,46 @@ import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { AdminWorkflowBridge } from "@/components/admin/admin-workflow-bridge";
+import { RecommendationDetailPanel } from "@/components/recommendations/recommendation-detail-panel";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   buildAdminWorkflowHref,
   readAdminWorkflowContext,
 } from "@/lib/admin-workflow";
 import {
   ArrowUpRight,
-  BookOpen,
   Bot,
   CircleAlert,
   CircleCheck,
-  ExternalLink,
+  Inbox,
   Loader2,
   RefreshCw,
+  Search,
   Sparkles,
+  X,
 } from "lucide-react";
 import {
   type RecommendationCase,
   type RepositoryRecord,
   formatLabel,
+  priorityBand,
   recommendationKey,
   recommendationStatusTone,
   recommendationTypeTone,
 } from "../profiles/profile-types";
+import { cn } from "@/lib/utils";
 
 const hasAnalysisActivity = (repository: RepositoryRecord) => {
   const contributorProfiles = Object.values(
@@ -72,6 +85,7 @@ export default function AdminRecommendationsPage() {
   const [contributorFilter, setContributorFilter] = useState<string>(
     navigationContext.contributorLogin || "all",
   );
+  const [search, setSearch] = useState("");
 
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
@@ -161,6 +175,8 @@ export default function AdminRecommendationsPage() {
   );
 
   const filteredRecommendations = useMemo(() => {
+    const term = search.trim().toLowerCase();
+
     return recommendations
       .filter((recommendation) => {
         const matchesRepository =
@@ -170,11 +186,32 @@ export default function AdminRecommendationsPage() {
           contributorFilter === "all" ||
           recommendation.contributor_login === contributorFilter;
 
-        return matchesRepository && matchesContributor;
+        if (!matchesRepository || !matchesContributor) {
+          return false;
+        }
+
+        if (!term) return true;
+
+        return [
+          recommendation.title,
+          recommendation.description,
+          recommendation.contributor_login,
+          repositoryNameMap[recommendation.repository_id],
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(term);
       })
       .slice()
       .sort((left, right) => right.priority_score - left.priority_score);
-  }, [contributorFilter, recommendations, repositoryFilter]);
+  }, [
+    contributorFilter,
+    recommendations,
+    repositoryFilter,
+    repositoryNameMap,
+    search,
+  ]);
 
   const selectedRecommendation = useMemo(() => {
     if (filteredRecommendations.length === 0) {
@@ -359,14 +396,30 @@ export default function AdminRecommendationsPage() {
     }
   }, [contributorFilter, contributorFilterOptions, loading]);
 
-  const retrievedCourses =
-    selectedRecommendation?.evidence_snapshot?.retrievedCoursesByGap || [];
-  const learningSteps = selectedRecommendation?.learning_path?.steps || [];
+  const filtersActive =
+    repositoryFilter !== "all" ||
+    contributorFilter !== "all" ||
+    search.trim() !== "";
+
+  const resetFilters = () => {
+    setRepositoryFilter("all");
+    setContributorFilter("all");
+    setSearch("");
+  };
+
+  const selectedProfileId = selectedRecommendation
+    ? profileIdMap[
+        recommendationKey(
+          selectedRecommendation.repository_id,
+          selectedRecommendation.contributor_login,
+        )
+      ]
+    : undefined;
 
   return (
     <AdminShell
       title="Recommendations"
-      subtitle="Only the queue, the recommendation itself, and the suggested courses."
+      subtitle="Review what the engine produced for each contributor, then complete or regenerate it."
       actions={
         <Button
           type="button"
@@ -387,8 +440,16 @@ export default function AdminRecommendationsPage() {
       {error ? (
         <Alert className="mb-6 border-destructive/40 bg-destructive/10">
           <CircleAlert className="h-4 w-4" />
-          <AlertDescription className="text-destructive">
-            {error}
+          <AlertDescription className="flex items-center justify-between gap-3 text-destructive">
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={() => setError("")}
+              aria-label="Dismiss"
+              className="shrink-0 opacity-70 transition-opacity hover:opacity-100"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </AlertDescription>
         </Alert>
       ) : null}
@@ -399,48 +460,67 @@ export default function AdminRecommendationsPage() {
         stepStats={workflowStepStats}
       />
 
-      <div className="mb-5 flex flex-col gap-3 lg:flex-row">
-        <select
-          value={repositoryFilter}
-          onChange={(event) => setRepositoryFilter(event.target.value)}
-          className="h-10 rounded-md border border-input bg-background px-3 text-sm lg:w-72"
-        >
-          <option value="all">All repositories</option>
-          {repositoryFilterOptions.map((repository) => (
-            <option key={repository.id} value={repository.id}>
-              {repository.name}
-            </option>
-          ))}
-        </select>
-        <select
-          value={contributorFilter}
-          onChange={(event) => setContributorFilter(event.target.value)}
-          className="h-10 rounded-md border border-input bg-background px-3 text-sm lg:w-72"
-        >
-          <option value="all">All contributors</option>
-          {contributorFilterOptions.map((contributorLogin) => (
-            <option key={contributorLogin} value={contributorLogin}>
-              @{contributorLogin}
-            </option>
-          ))}
-        </select>
-        <Button
-          type="button"
-          variant="default"
-          onClick={() => {
-            setRepositoryFilter("all");
-            setContributorFilter("all");
-          }}
-        >
-          Reset
-        </Button>
+      {/* ------------------------------ Toolbar ------------------------------ */}
+      <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="relative sm:w-64">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search recommendations"
+            className="pl-9"
+            aria-label="Search recommendations"
+          />
+        </div>
+
+        <Select value={repositoryFilter} onValueChange={setRepositoryFilter}>
+          <SelectTrigger className="sm:w-56" aria-label="Filter by repository">
+            <SelectValue placeholder="All repositories" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All repositories</SelectItem>
+            {repositoryFilterOptions.map((repository) => (
+              <SelectItem key={repository.id} value={repository.id}>
+                {repository.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={contributorFilter} onValueChange={setContributorFilter}>
+          <SelectTrigger className="sm:w-52" aria-label="Filter by contributor">
+            <SelectValue placeholder="All contributors" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All contributors</SelectItem>
+            {contributorFilterOptions.map((contributorLogin) => (
+              <SelectItem key={contributorLogin} value={contributorLogin}>
+                @{contributorLogin}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {filtersActive ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={resetFilters}
+            className="gap-1.5 text-muted-foreground"
+          >
+            <X className="h-3.5 w-3.5" />
+            Clear
+          </Button>
+        ) : null}
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)]">
-        <Card className="border-border/60 bg-background/90 shadow-sm xl:sticky xl:top-6 xl:h-[calc(100vh-12rem)]">
+      <div className="grid gap-6 xl:grid-cols-[20rem_minmax(0,1fr)] xl:items-start">
+        {/* ------------------------------- Queue ------------------------------- */}
+        <Card className="border-border/60 bg-background/90 shadow-sm xl:sticky xl:top-6">
           <CardHeader className="border-b border-border/50 pb-4">
             <div className="flex items-center justify-between gap-3">
-              <CardTitle className="text-lg">Queue</CardTitle>
+              <CardTitle className="text-base">Queue</CardTitle>
               <Badge variant="secondary">
                 {filteredRecommendations.length}
               </Badge>
@@ -448,293 +528,212 @@ export default function AdminRecommendationsPage() {
           </CardHeader>
           <CardContent className="p-0">
             {loading ? (
-              <div className="flex min-h-[20rem] items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <div className="space-y-2 p-3">
+                {[0, 1, 2, 3].map((row) => (
+                  <div
+                    key={row}
+                    className="h-20 animate-pulse rounded-xl bg-muted"
+                  />
+                ))}
               </div>
             ) : filteredRecommendations.length === 0 ? (
               <div className="p-8 text-center">
-                <Bot className="mx-auto h-8 w-8 text-muted-foreground" />
-                <p className="mt-3 text-sm text-muted-foreground">
-                  No recommendations found.
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+                  {filtersActive ? (
+                    <Inbox className="h-5 w-5" />
+                  ) : (
+                    <Bot className="h-5 w-5" />
+                  )}
+                </div>
+                <p className="mt-3 text-sm font-medium">
+                  {filtersActive ? "Nothing matches" : "No recommendations"}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {filtersActive
+                    ? "Clear the filters to see everything."
+                    : "Generate one from a contributor profile."}
                 </p>
               </div>
             ) : (
-              <div className="max-h-[calc(100vh-18rem)] overflow-y-auto">
-                {filteredRecommendations.map((recommendation) => {
-                  const selected =
-                    selectedRecommendation?.id === recommendation.id;
+              <ScrollArea className="max-h-[calc(100vh-20rem)]">
+                <div className="p-2">
+                  {filteredRecommendations.map((recommendation) => {
+                    const selected =
+                      selectedRecommendation?.id === recommendation.id;
+                    const band = priorityBand(recommendation.priority_score);
 
-                  return (
-                    <button
-                      key={recommendation.id}
-                      type="button"
-                      onClick={() =>
-                        setSelectedRecommendationId(recommendation.id)
-                      }
-                      className={`w-full border-b border-border/40 px-4 py-4 text-left transition last:border-b-0 ${
-                        selected ? "bg-cyan-500/8" : "hover:bg-muted/30"
-                      }`}
-                    >
-                      <p className="line-clamp-2 text-sm font-semibold text-foreground">
-                        {recommendation.title}
-                      </p>
-                      <p className="mt-2 text-sm text-muted-foreground">
-                        @{recommendation.contributor_login}
-                      </p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Badge
-                          variant="outline"
-                          className={
-                            recommendationTypeTone[
-                              recommendation.recommendation_type
-                            ]
-                          }
-                        >
-                          {formatLabel(recommendation.recommendation_type)}
-                        </Badge>
-                        <Badge
-                          variant="outline"
-                          className={recommendationStatusTone(
-                            recommendation.status,
+                    return (
+                      <button
+                        key={recommendation.id}
+                        type="button"
+                        aria-current={selected ? "true" : undefined}
+                        onClick={() =>
+                          setSelectedRecommendationId(recommendation.id)
+                        }
+                        className={cn(
+                          "relative mb-1 w-full overflow-hidden rounded-xl px-3.5 py-3 pl-4 text-left transition-colors",
+                          selected
+                            ? "bg-primary/[0.07] ring-1 ring-primary/25"
+                            : "hover:bg-muted/50",
+                        )}
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={cn(
+                            "absolute inset-y-2 left-0 w-0.5 rounded-full",
+                            band.rail,
                           )}
-                        >
-                          {formatLabel(recommendation.status)}
-                        </Badge>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+                        />
+                        <p className="line-clamp-2 text-sm font-semibold">
+                          {recommendation.title}
+                        </p>
+                        <p className="mt-1 truncate text-xs text-muted-foreground">
+                          @{recommendation.contributor_login} ·{" "}
+                          {repositoryNameMap[recommendation.repository_id] ||
+                            "Unknown repo"}
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "text-[11px]",
+                              recommendationTypeTone[
+                                recommendation.recommendation_type
+                              ],
+                            )}
+                          >
+                            {formatLabel(recommendation.recommendation_type)}
+                          </Badge>
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "text-[11px]",
+                              recommendationStatusTone(recommendation.status),
+                            )}
+                          >
+                            {formatLabel(recommendation.status)}
+                          </Badge>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </ScrollArea>
             )}
           </CardContent>
         </Card>
 
-        <div className="space-y-6">
-          {selectedRecommendation ? (
-            <>
-              <Card className="border-border/60 bg-background/92 shadow-sm">
-                <CardHeader className="border-b border-border/50">
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="space-y-3">
-                      <div className="flex flex-wrap gap-2">
-                        <Badge
-                          variant="outline"
-                          className={
-                            recommendationTypeTone[
-                              selectedRecommendation.recommendation_type
-                            ]
-                          }
-                        >
-                          {formatLabel(
-                            selectedRecommendation.recommendation_type,
-                          )}
-                        </Badge>
-                        <Badge
-                          variant="outline"
-                          className={recommendationStatusTone(
-                            selectedRecommendation.status,
-                          )}
-                        >
-                          {formatLabel(selectedRecommendation.status)}
-                        </Badge>
-                      </div>
-                      <div>
-                        <CardTitle className="text-2xl leading-tight">
-                          {selectedRecommendation.title}
-                        </CardTitle>
-                        <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
-                          {selectedRecommendation.description}
-                        </p>
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        {repositoryNameMap[
-                          selectedRecommendation.repository_id
-                        ] || selectedRecommendation.repository_id}{" "}
-                        • @{selectedRecommendation.contributor_login}
-                      </p>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      {profileIdMap[
-                        recommendationKey(
-                          selectedRecommendation.repository_id,
-                          selectedRecommendation.contributor_login,
+        {/* ------------------------------ Detail ------------------------------ */}
+        <div className="min-w-0">
+          {loading ? (
+            <div className="space-y-6">
+              <div className="h-56 animate-pulse rounded-2xl bg-muted" />
+              <div className="h-72 animate-pulse rounded-2xl bg-muted" />
+            </div>
+          ) : selectedRecommendation ? (
+            <RecommendationDetailPanel
+              recommendation={selectedRecommendation}
+              repositoryName={
+                repositoryNameMap[selectedRecommendation.repository_id]
+              }
+              actions={
+                <>
+                  {selectedProfileId ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="gap-2"
+                      onClick={() =>
+                        router.push(
+                          buildAdminWorkflowHref(
+                            `/dashboard/admin/profiles/${encodeURIComponent(
+                              selectedProfileId,
+                            )}`,
+                            workflowContext,
+                          ),
                         )
-                      ] ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="gap-2"
-                          onClick={() =>
-                            router.push(
-                              buildAdminWorkflowHref(
-                                `/dashboard/admin/profiles/${encodeURIComponent(
-                                  profileIdMap[
-                                    recommendationKey(
-                                      selectedRecommendation.repository_id,
-                                      selectedRecommendation.contributor_login,
-                                    )
-                                  ],
-                                )}`,
-                                workflowContext,
-                              ),
-                            )
-                          }
-                        >
-                          Open profile
-                          <ArrowUpRight className="h-4 w-4" />
-                        </Button>
-                      ) : null}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="gap-2"
-                        disabled={regeneratingId === selectedRecommendation.id}
-                        onClick={() =>
-                          regenerateRecommendation(selectedRecommendation.id)
-                        }
-                      >
-                        {regeneratingId === selectedRecommendation.id ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <RefreshCw className="h-4 w-4" />
-                        )}
-                        Regenerate
-                      </Button>
-                      <Button
-                        type="button"
-                        className="gap-2"
-                        variant={
-                          selectedRecommendation.status === "completed"
-                            ? "outline"
-                            : "default"
-                        }
-                        disabled={
-                          selectedRecommendation.status === "completed" ||
-                          ackLoadingId === selectedRecommendation.id
-                        }
-                        onClick={() =>
-                          acknowledgeRecommendation(selectedRecommendation.id)
-                        }
-                      >
-                        {ackLoadingId === selectedRecommendation.id ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : selectedRecommendation.status === "completed" ? (
-                          <CircleCheck className="h-4 w-4" />
-                        ) : null}
-                        {selectedRecommendation.status === "completed"
-                          ? "Completed"
-                          : "Mark completed"}
-                      </Button>
-                    </div>
-                  </div>
-                </CardHeader>
-
-                {selectedRecommendation.recommendation_type ===
-                  "learning_path" && learningSteps.length ? (
-                  <CardContent className="space-y-5 p-6">
-                    <div className="flex items-center gap-2">
-                      <BookOpen className="h-5 w-5 text-cyan-600" />
-                      <p className="text-sm font-medium text-foreground">
-                        Learning path
-                      </p>
-                    </div>
-                    <div className="space-y-4">
-                      {learningSteps.map((step) => (
-                        <div
-                          key={`${selectedRecommendation.id}-step-${step.order}`}
-                          className="rounded-2xl border border-border/60 bg-muted/10 p-4"
-                        >
-                          <p className="text-sm font-semibold text-foreground">
-                            Step {step.order}
-                            {step.title ? ` • ${step.title}` : ""}
-                          </p>
-                          <p className="mt-2 text-sm text-muted-foreground">
-                            {step.goal}
-                          </p>
-                          {step.practice_task ? (
-                            <p className="mt-2 text-sm text-foreground/85">
-                              {step.practice_task}
-                            </p>
-                          ) : null}
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                ) : null}
-              </Card>
-
-              {selectedRecommendation.recommendation_type ===
-              "learning_path" ? (
-                <Card className="border-border/60 bg-background/92 shadow-sm">
-                  <CardHeader className="border-b border-border/50">
-                    <CardTitle className="text-lg">Suggested courses</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-5 p-6">
-                    {retrievedCourses.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">
-                        No retrieved courses were attached to this
-                        recommendation.
-                      </p>
+                      }
+                    >
+                      Open profile
+                      <ArrowUpRight className="h-4 w-4" />
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="gap-2"
+                    disabled={regeneratingId === selectedRecommendation.id}
+                    onClick={() =>
+                      regenerateRecommendation(selectedRecommendation.id)
+                    }
+                  >
+                    {regeneratingId === selectedRecommendation.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
-                      retrievedCourses.map((match) => (
-                        <div
-                          key={`${selectedRecommendation.id}-${match.gapKey}`}
-                          className="space-y-3"
-                        >
-                          <p className="text-sm font-semibold text-foreground">
-                            {match.gapLabel}
-                          </p>
-                          <div className="space-y-3">
-                            {match.courses.map((course) => (
-                              <a
-                                key={`${match.gapKey}-${course.courseId}`}
-                                href={course.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="block rounded-2xl border border-border/60 bg-muted/10 p-4 transition hover:border-primary/40"
-                              >
-                                <div className="flex items-start justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <p className="font-medium text-foreground">
-                                      {course.title}
-                                    </p>
-                                    <p className="mt-1 text-sm text-muted-foreground">
-                                      {course.partner || "Coursera"} •{" "}
-                                      {course.type || "course"}
-                                    </p>
-                                  </div>
-                                  <ExternalLink className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                                </div>
-                                {course.description ? (
-                                  <p className="mt-3 text-sm text-muted-foreground">
-                                    {course.description}
-                                  </p>
-                                ) : null}
-                                <p className="mt-3 text-sm font-medium text-primary">
-                                  Open Coursera course
-                                </p>
-                              </a>
-                            ))}
-                          </div>
-                        </div>
-                      ))
+                      <RefreshCw className="h-4 w-4" />
                     )}
-                  </CardContent>
-                </Card>
-              ) : null}
-            </>
+                    Regenerate
+                  </Button>
+                  <Button
+                    type="button"
+                    className="gap-2"
+                    variant={
+                      selectedRecommendation.status === "completed"
+                        ? "outline"
+                        : "default"
+                    }
+                    disabled={
+                      selectedRecommendation.status === "completed" ||
+                      ackLoadingId === selectedRecommendation.id
+                    }
+                    onClick={() =>
+                      acknowledgeRecommendation(selectedRecommendation.id)
+                    }
+                  >
+                    {ackLoadingId === selectedRecommendation.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : selectedRecommendation.status === "completed" ? (
+                      <CircleCheck className="h-4 w-4" />
+                    ) : null}
+                    {selectedRecommendation.status === "completed"
+                      ? "Completed"
+                      : "Mark completed"}
+                  </Button>
+                </>
+              }
+            />
           ) : (
             <Card className="border-dashed border-border/60 bg-background/85">
               <CardContent className="p-12 text-center">
-                <Bot className="mx-auto h-8 w-8 text-muted-foreground" />
-                <p className="mt-4 text-lg font-semibold text-foreground">
-                  Select a recommendation
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+                  <Bot className="h-6 w-6" />
+                </div>
+                <h3 className="mt-4 text-lg font-semibold">
+                  {recommendations.length === 0
+                    ? "No recommendations yet"
+                    : "Select a recommendation"}
+                </h3>
+                <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+                  {recommendations.length === 0
+                    ? "Generate one from a contributor profile and it will appear in this queue."
+                    : "Choose an item from the queue to see its gaps, evidence, and generated plan."}
                 </p>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Choose an item from the queue to see the recommendation and,
-                  for learning paths, the retrieved courses only.
-                </p>
+                {recommendations.length === 0 ? (
+                  <Button
+                    variant="outline"
+                    className="mt-5"
+                    onClick={() =>
+                      router.push(
+                        buildAdminWorkflowHref(
+                          "/dashboard/admin/profiles",
+                          workflowContext,
+                        ),
+                      )
+                    }
+                  >
+                    Go to profiles
+                  </Button>
+                ) : null}
               </CardContent>
             </Card>
           )}

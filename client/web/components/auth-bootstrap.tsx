@@ -8,7 +8,8 @@ import { authAPI } from "@/lib/auth";
 export function AuthBootstrap() {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, setHasHydrated, setAuth, updateUser, logout } = useAuthStore();
+  const { user, setHasHydrated, setAuth, updateUser, logout, clearSession } =
+    useAuthStore();
 
   const shouldSkipBootstrap =
     pathname === "/login" ||
@@ -32,9 +33,10 @@ export function AuthBootstrap() {
         try {
           const refreshedSession = await authAPI.refreshToken();
           setAuth(refreshedSession.user);
-        } catch (error) {
-          console.error("Failed to sync current user:", error);
-          await logout();
+        } catch {
+          // No valid session: stay anonymous instead of bouncing to /login,
+          // so public pages keep rendering for logged-out visitors.
+          clearSession();
         }
       } finally {
         setHasHydrated(true);
@@ -42,7 +44,7 @@ export function AuthBootstrap() {
     };
 
     syncAuth();
-  }, [logout, setAuth, setHasHydrated, shouldSkipBootstrap, updateUser]);
+  }, [clearSession, setAuth, setHasHydrated, shouldSkipBootstrap]);
 
   useEffect(() => {
     if (user?.is_first_login && pathname !== "/reset-password") {

@@ -44,6 +44,9 @@ export class Notification {
   @Column({ name: 'read_receipts', type: 'jsonb', default: () => "'{}'::jsonb" })
   readReceipts: Record<string, string>;
 
+  @Column({ name: 'dismissals', type: 'jsonb', default: () => "'{}'::jsonb" })
+  dismissals: Record<string, string>;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

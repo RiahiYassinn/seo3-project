@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import api from "@/lib/api";
 import { AdminShell } from "@/components/admin/admin-shell";
@@ -14,29 +15,31 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { readAdminWorkflowContext } from "@/lib/admin-workflow";
+import {
+  buildAdminWorkflowHref,
+  readAdminWorkflowContext,
+} from "@/lib/admin-workflow";
 import { cn } from "@/lib/utils";
 import {
   ArrowUpRight,
-  Bot,
   CircleAlert,
   CircleCheck,
   ExternalLink,
   GitBranch,
   Github,
+  GitFork,
   Loader2,
   RefreshCw,
   Search,
-  ShieldAlert,
   Sparkles,
+  Star,
   Unlink,
+  Users,
 } from "lucide-react";
 import {
   formatLabel,
   getContributorAvatarUrl,
   getInitials,
-  normalizeContributorAnalysisSummary,
-  severityTone,
   statusTone,
 } from "../profiles/profile-types";
 
@@ -191,6 +194,34 @@ const sortRepositoriesForExplorer = (repositories: RepositoryRecord[]) =>
     return left.repo_name.localeCompare(right.repo_name);
   });
 
+/** Numbered heading that ties each page section back to the pipeline stage. */
+function StageHeading({
+  step,
+  title,
+  description,
+  action,
+}: {
+  step: number;
+  title: string;
+  description: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-start gap-3">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary ring-1 ring-primary/20">
+          {step}
+        </span>
+        <div>
+          <h2 className="text-lg font-semibold leading-tight">{title}</h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
+        </div>
+      </div>
+      {action}
+    </div>
+  );
+}
+
 export default function AdminGithubPage() {
   const searchParams = useSearchParams();
   const [integration, setIntegration] = useState<GitHubIntegration | null>(
@@ -299,16 +330,6 @@ export default function AdminGithubPage() {
     [profilesWithContributorData, selectedProfileId],
   );
 
-  const selectedProfileSummary = useMemo(
-    () =>
-      normalizeContributorAnalysisSummary(
-        selectedProfile?.analysisSummary ??
-          selectedProfile?.metadata?.analysisSummary ??
-          null,
-      ),
-    [selectedProfile],
-  );
-
   const selectedBatchState =
     selectedRepository?.analysis_metadata?.contributorAnalysis ?? null;
   const repositoryFailureReason =
@@ -341,6 +362,9 @@ export default function AdminGithubPage() {
   const failedProfileCount = profilesWithContributorData.filter(
     (profile) => profile.status === "failed",
   ).length;
+  const isAnalysisRunning =
+    selectedRepository?.analysis_status === "pending" ||
+    selectedRepository?.analysis_status === "in_progress";
   const focusedContributorLogin = useMemo(() => {
     if (filteredContributors.length === 1) {
       return filteredContributors[0]?.login || undefined;
@@ -768,7 +792,7 @@ export default function AdminGithubPage() {
       {success && (
         <Alert className="mb-6 border-emerald-500/40 bg-emerald-500/10">
           <CircleCheck className="h-4 w-4 text-emerald-600" />
-          <AlertDescription className="text-emerald-700">
+          <AlertDescription className="text-emerald-700 dark:text-emerald-300">
             {success}
           </AlertDescription>
         </Alert>
@@ -779,12 +803,24 @@ export default function AdminGithubPage() {
           <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-primary" />
         </div>
       ) : !integration ? (
-        <Card className="mx-auto max-w-4xl border-border/60 bg-background/80 shadow-sm">
+        <Card className="mx-auto max-w-3xl overflow-hidden border-border/60 bg-background/80 shadow-sm">
+          <div
+            aria-hidden="true"
+            className="h-1 w-full bg-gradient-to-r from-primary via-cyan-500 to-primary/20"
+          />
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Github className="h-5 w-5" />
-              Link the admin GitHub account
-            </CardTitle>
+            <div className="flex items-start gap-3">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                <Github className="h-5 w-5" />
+              </span>
+              <div>
+                <CardTitle>Link the admin GitHub account</CardTitle>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  This starts the pipeline: repositories sync first, then you
+                  choose which contributors get analyzed.
+                </p>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <form
@@ -792,8 +828,11 @@ export default function AdminGithubPage() {
               className="grid gap-4 md:grid-cols-2"
             >
               <div className="space-y-2">
-                <label className="text-sm font-medium">GitHub username</label>
+                <label htmlFor="github-username" className="text-sm font-medium">
+                  GitHub username
+                </label>
                 <Input
+                  id="github-username"
                   value={username}
                   onChange={(event) => setUsername(event.target.value)}
                   placeholder="octocat"
@@ -801,10 +840,11 @@ export default function AdminGithubPage() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">
+                <label htmlFor="github-token" className="text-sm font-medium">
                   Personal access token
                 </label>
                 <Input
+                  id="github-token"
                   type="password"
                   value={token}
                   onChange={(event) => setToken(event.target.value)}
@@ -833,73 +873,217 @@ export default function AdminGithubPage() {
             stepStats={workflowStepStats}
           />
 
-          <section className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <Card className="border-border/60 bg-background/80 shadow-sm">
-              <CardContent className="p-5">
-                <p className="text-sm text-muted-foreground">
-                  Connected account
-                </p>
-                <p className="mt-2 text-2xl font-semibold">
-                  @{integration.github_username}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Admin-owned GitHub integration
-                </p>
-              </CardContent>
-            </Card>
-            <Card className="border-border/60 bg-background/80 shadow-sm">
-              <CardContent className="p-5">
-                <p className="text-sm text-muted-foreground">Repositories</p>
-                <p className="mt-2 text-2xl font-semibold">
-                  {repositories.length}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {filteredRepositories.length} visible in the current search
-                </p>
-              </CardContent>
-            </Card>
-            <Card className="border-border/60 bg-background/80 shadow-sm">
-              <CardContent className="p-5">
-                <p className="text-sm text-muted-foreground">
-                  Contributors in repo
-                </p>
-                <p className="mt-2 text-2xl font-semibold">
-                  {selectedRepository ? contributors.length : "--"}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {selectedContributorCount} selected for the next run
-                </p>
-              </CardContent>
-            </Card>
-            <Card className="border-border/60 bg-background/80 shadow-sm">
-              <CardContent className="p-5">
-                <p className="text-sm text-muted-foreground">
-                  Analysis results
-                </p>
-                <p className="mt-2 text-2xl font-semibold">
-                  {selectedRepository
-                    ? profilesWithContributorData.length
-                    : "--"}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {completedProfileCount} completed, {failedProfileCount} failed
-                </p>
-              </CardContent>
-            </Card>
-          </section>
+          {/* --------------------------- Context bar --------------------------- */}
+          <Card className="mb-8 border-border/60 bg-background/80 shadow-sm">
+            <CardContent className="grid gap-px overflow-hidden bg-border/60 p-0 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="flex items-center gap-3 bg-background/95 p-4">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Github className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground">
+                    Connected account
+                  </p>
+                  <p className="truncate text-sm font-semibold">
+                    @{integration.github_username}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 bg-background/95 p-4">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cyan-500/10 text-cyan-600 dark:text-cyan-400">
+                  <GitBranch className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground">Repositories</p>
+                  <p className="text-sm font-semibold">
+                    {repositories.length}
+                    <span className="ml-1.5 font-normal text-muted-foreground">
+                      · {filteredRepositories.length} shown
+                    </span>
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 bg-background/95 p-4">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400">
+                  <Users className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground">Contributors</p>
+                  <p className="text-sm font-semibold">
+                    {selectedRepository ? contributors.length : "--"}
+                    <span className="ml-1.5 font-normal text-muted-foreground">
+                      · {selectedContributorCount} selected
+                    </span>
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 bg-background/95 p-4">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                  <Sparkles className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground">Profiles built</p>
+                  <p className="text-sm font-semibold">
+                    {selectedRepository
+                      ? profilesWithContributorData.length
+                      : "--"}
+                    <span className="ml-1.5 font-normal text-muted-foreground">
+                      · {completedProfileCount} ok, {failedProfileCount} failed
+                    </span>
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
-          <section className="space-y-4">
-            <Card className="border-border/60 bg-background/80 shadow-sm">
-              <CardHeader>
-                <CardTitle>Selected repository</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {selectedRepository ? (
-                  <>
-                    <div className="rounded-[1.5rem] border border-border/60 bg-muted/15 p-5">
-                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          {/* ----------------------- Stage 1: repository ----------------------- */}
+          <section className="mb-10">
+            <StageHeading
+              step={1}
+              title="Choose a repository"
+              description="Pick the repository whose contributors you want to analyze."
+            />
+
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] xl:items-start">
+              <Card className="min-w-0 border-border/60 bg-background/80 shadow-sm">
+                <CardHeader className="pb-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <CardTitle className="text-base">
+                      Repository explorer
+                    </CardTitle>
+                    <Badge variant="outline" className="w-fit shrink-0">
+                      {filteredRepositories.length} of {repositories.length}
+                    </Badge>
+                  </div>
+                  <div className="relative pt-2">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={repoSearchQuery}
+                      onChange={(event) =>
+                        setRepoSearchQuery(event.target.value)
+                      }
+                      placeholder="Search by name, language, or status"
+                      className="pl-10"
+                      aria-label="Search repositories"
+                    />
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <ScrollArea className="h-[30rem]">
+                    <div className="space-y-2 pr-3">
+                      {filteredRepositories.map((repository) => {
+                        const isSelected = repository.id === selectedRepoId;
+                        const progress = repository.analysis_progress || 0;
+                        const isRunning =
+                          repository.analysis_status === "in_progress" ||
+                          repository.analysis_status === "pending";
+
+                        return (
+                          <button
+                            key={repository.id}
+                            type="button"
+                            aria-pressed={isSelected}
+                            onClick={() => setSelectedRepoId(repository.id)}
+                            className={cn(
+                              "w-full rounded-xl border p-4 text-left transition-all",
+                              isSelected
+                                ? "border-primary/45 bg-primary/[0.06] shadow-sm ring-1 ring-primary/15"
+                                : "border-border/60 bg-muted/10 hover:border-primary/30 hover:bg-muted/25",
+                            )}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex min-w-0 items-start gap-2.5">
+                                <span
+                                  className={cn(
+                                    "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+                                    isSelected
+                                      ? "bg-primary/15 text-primary"
+                                      : "bg-background text-muted-foreground ring-1 ring-border/60",
+                                  )}
+                                >
+                                  <Github className="h-4 w-4" />
+                                </span>
+                                <div className="min-w-0">
+                                  <p className="break-words text-sm font-semibold [overflow-wrap:anywhere]">
+                                    {repository.repo_name}
+                                  </p>
+                                  <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">
+                                    {repository.repo_description ||
+                                      "No description provided."}
+                                  </p>
+                                </div>
+                              </div>
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  "shrink-0 text-[11px]",
+                                  statusTone(repository.analysis_status),
+                                )}
+                              >
+                                {getRepositoryStatusLabel(
+                                  repository.analysis_status,
+                                )}
+                              </Badge>
+                            </div>
+
+                            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 pl-[2.625rem] text-xs text-muted-foreground">
+                              <span className="inline-flex items-center gap-1.5">
+                                <GitBranch className="h-3.5 w-3.5" />
+                                {repository.language || "Unknown"}
+                              </span>
+                              <span className="inline-flex items-center gap-1.5">
+                                <Star className="h-3.5 w-3.5" />
+                                {typeof repository.stars === "number"
+                                  ? repository.stars
+                                  : 0}
+                              </span>
+                              <span className="inline-flex items-center gap-1.5">
+                                <GitFork className="h-3.5 w-3.5" />
+                                {typeof repository.forks === "number"
+                                  ? repository.forks
+                                  : 0}
+                              </span>
+                            </div>
+
+                            {isRunning || progress > 0 ? (
+                              <div className="mt-3 pl-[2.625rem]">
+                                <Progress value={progress} className="h-1.5" />
+                                <p className="mt-1.5 text-[11px] text-muted-foreground">
+                                  {progress}% analyzed
+                                </p>
+                              </div>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+
+                      {filteredRepositories.length === 0 && (
+                        <div className="rounded-xl border border-dashed border-border/60 p-8 text-center">
+                          <p className="text-sm font-medium">
+                            No repositories match this search
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Try another term, or sync repositories again.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+
+              <Card className="min-w-0 border-border/60 bg-background/80 shadow-sm">
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-base">
+                    Selected repository
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {selectedRepository ? (
+                    <>
+                      <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-muted/15 p-4 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0">
-                          <p className="text-xl font-semibold">
+                          <p className="break-words text-lg font-semibold [overflow-wrap:anywhere]">
                             {selectedRepository.repo_name}
                           </p>
                           <p className="mt-1 text-sm text-muted-foreground">
@@ -926,333 +1110,236 @@ export default function AdminGithubPage() {
                           </div>
                         </div>
 
-                        <Button asChild variant="outline" className="gap-2">
+                        <Button
+                          asChild
+                          variant="outline"
+                          size="sm"
+                          className="shrink-0 gap-2"
+                        >
                           <a
                             href={selectedRepository.repo_url}
                             target="_blank"
                             rel="noopener noreferrer"
                           >
-                            <ExternalLink className="h-4 w-4" />
-                            Open repository
+                            <ExternalLink className="h-3.5 w-3.5" />
+                            Open
                           </a>
                         </Button>
                       </div>
-                    </div>
 
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-[1.5rem] border border-border/60 bg-background p-4">
-                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                          Batch progress
-                        </p>
-                        <p className="mt-2 text-3xl font-semibold">
-                          {selectedRepository.analysis_progress || 0}%
-                        </p>
+                      <div className="rounded-xl border border-border/60 bg-background p-4">
+                        <div className="flex items-baseline justify-between gap-3">
+                          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                            Batch progress
+                          </p>
+                          <p className="text-2xl font-semibold tabular-nums">
+                            {selectedRepository.analysis_progress || 0}%
+                          </p>
+                        </div>
                         <Progress
                           value={selectedRepository.analysis_progress || 0}
-                          className="mt-3 h-2.5"
+                          className="mt-3 h-2"
                         />
                         <p className="mt-2 text-xs text-muted-foreground">
                           {selectedRepository.analysis_current_stage ||
-                            "Select contributors to start a new analysis batch."}
+                            "Select contributors below to start a new batch."}
                         </p>
                       </div>
 
-                      <div className="rounded-[1.5rem] border border-border/60 bg-background p-4">
-                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                          Queue telemetry
-                        </p>
-                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                          <div>
-                            <p className="text-2xl font-semibold">
-                              {selectedBatchState?.total ??
-                                profilesWithContributorData.length}
+                      <div className="grid grid-cols-2 gap-2">
+                        {[
+                          {
+                            label: "In batch",
+                            value:
+                              selectedBatchState?.total ??
+                              profilesWithContributorData.length,
+                            tone: "text-foreground",
+                          },
+                          {
+                            label: "Processed",
+                            value:
+                              selectedBatchState?.processed.length ??
+                              completedProfileCount,
+                            tone: "text-emerald-600 dark:text-emerald-400",
+                          },
+                          {
+                            label: "Queued",
+                            value: selectedBatchState?.queue.length ?? 0,
+                            tone: "text-foreground",
+                          },
+                          {
+                            label: "Failed",
+                            value:
+                              selectedBatchState?.failed.length ??
+                              failedProfileCount,
+                            tone: "text-destructive",
+                          },
+                        ].map((tile) => (
+                          <div
+                            key={tile.label}
+                            className="rounded-xl border border-border/60 bg-muted/10 px-3 py-2.5"
+                          >
+                            <p
+                              className={cn(
+                                "text-xl font-semibold tabular-nums",
+                                tile.tone,
+                              )}
+                            >
+                              {tile.value}
                             </p>
-                            <p className="text-xs text-muted-foreground">
-                              Total in batch
+                            <p className="mt-0.5 text-[11px] uppercase tracking-wide text-muted-foreground">
+                              {tile.label}
                             </p>
                           </div>
-                          <div>
-                            <p className="text-2xl font-semibold">
-                              {selectedBatchState?.failed.length ??
-                                failedProfileCount}
+                        ))}
+                      </div>
+
+                      {selectedBatchState?.activeContributor ? (
+                        <div className="flex items-center gap-3 rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-4">
+                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-cyan-600 dark:text-cyan-400" />
+                          <div className="min-w-0 text-sm">
+                            <p className="font-semibold text-cyan-800 dark:text-cyan-200">
+                              Analyzing @{selectedBatchState.activeContributor}
                             </p>
-                            <p className="text-xs text-muted-foreground">
-                              Failed
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-2xl font-semibold">
-                              {selectedBatchState?.processed.length ??
-                                completedProfileCount}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              Processed
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-2xl font-semibold">
-                              {selectedBatchState?.queue.length ?? 0}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              Still queued
+                            <p className="mt-0.5 text-xs text-cyan-700/90 dark:text-cyan-300/90">
+                              This page refreshes itself every few seconds.
                             </p>
                           </div>
                         </div>
-                      </div>
-                    </div>
+                      ) : null}
 
-                    {selectedBatchState?.activeContributor ? (
-                      <div className="rounded-[1.5rem] border border-cyan-500/30 bg-cyan-500/10 p-4 text-sm">
-                        <p className="font-semibold text-cyan-800">
-                          Active contributor
-                        </p>
-                        <p className="mt-1 text-cyan-700">
-                          @{selectedBatchState.activeContributor} is currently
-                          being analyzed.
-                        </p>
+                      {repositoryFailureReason ? (
+                        <Alert className="border-destructive/40 bg-destructive/10">
+                          <CircleAlert className="h-4 w-4" />
+                          <AlertDescription className="text-destructive">
+                            {repositoryFailureReason}
+                          </AlertDescription>
+                        </Alert>
+                      ) : null}
+                    </>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-border/60 p-8 text-center">
+                      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+                        <GitBranch className="h-5 w-5" />
                       </div>
-                    ) : null}
-
-                    {repositoryFailureReason ? (
-                      <Alert className="border-destructive/40 bg-destructive/10">
-                        <CircleAlert className="h-4 w-4" />
-                        <AlertDescription className="text-destructive">
-                          {repositoryFailureReason}
-                        </AlertDescription>
-                      </Alert>
-                    ) : null}
-                  </>
-                ) : (
-                  <div className="rounded-[1.5rem] border border-dashed border-border/60 p-6 text-sm text-muted-foreground">
-                    Sync repositories and select one to inspect its contributors
-                    and analysis history.
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(22rem,0.8fr)] xl:items-start">
-              <Card className="min-w-0 border-border/60 bg-background/80 shadow-sm">
-                <CardHeader>
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <CardTitle>Repository explorer</CardTitle>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        Filter repositories by name, language, or status instead
-                        of scrolling through a long dropdown.
+                      <p className="mt-3 text-sm font-medium">
+                        No repository selected
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Sync repositories, then pick one on the left to see its
+                        analysis history.
                       </p>
                     </div>
-                    <Badge variant="outline" className="w-fit shrink-0">
-                      {filteredRepositories.length}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="relative">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      value={repoSearchQuery}
-                      onChange={(event) =>
-                        setRepoSearchQuery(event.target.value)
-                      }
-                      placeholder="Search repositories"
-                      className="pl-10"
-                    />
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Completed and failed repositories stay pinned above queued
-                    work.
-                  </p>
-
-                  <ScrollArea className="h-[28rem]">
-                    <div className="space-y-3 pr-4 sm:pr-5">
-                      {filteredRepositories.map((repository) => {
-                        const isSelected = repository.id === selectedRepoId;
-
-                        return (
-                          <button
-                            key={repository.id}
-                            type="button"
-                            onClick={() => setSelectedRepoId(repository.id)}
-                            className={cn(
-                              "w-full rounded-[1.5rem] border p-4 text-left transition",
-                              isSelected
-                                ? "border-cyan-500/40 bg-cyan-500/10 shadow-sm"
-                                : "border-border/60 bg-muted/15 hover:border-primary/30 hover:bg-muted/30",
-                            )}
-                          >
-                            <div className="flex flex-col gap-4">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-2">
-                                    <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border border-border/60 bg-background/80">
-                                      <Github className="h-4 w-4 text-muted-foreground" />
-                                    </span>
-                                    <div className="min-w-0">
-                                      <p className="text-base font-semibold break-words [overflow-wrap:anywhere]">
-                                        {repository.repo_name}
-                                      </p>
-                                      <p className="mt-0.5 text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                                        Repository
-                                      </p>
-                                    </div>
-                                  </div>
-                                  <p className="mt-3 line-clamp-2 text-sm text-muted-foreground">
-                                    {repository.repo_description ||
-                                      "No repository description provided."}
-                                  </p>
-                                </div>
-                                <Badge
-                                  variant="outline"
-                                  className={cn(
-                                    "shrink-0 self-start",
-                                    statusTone(repository.analysis_status),
-                                  )}
-                                >
-                                  {getRepositoryStatusLabel(
-                                    repository.analysis_status,
-                                  )}
-                                </Badge>
-                              </div>
-
-                              <div className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-4">
-                                <div className="rounded-xl border border-border/60 bg-background/70 px-3 py-2">
-                                  <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-                                    Stack
-                                  </p>
-                                  <p className="mt-1 inline-flex items-center gap-1 text-sm font-medium">
-                                    <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
-                                    <span className="break-words [overflow-wrap:anywhere]">
-                                      {repository.language || "Unknown"}
-                                    </span>
-                                  </p>
-                                </div>
-                                <div className="rounded-xl border border-border/60 bg-background/70 px-3 py-2">
-                                  <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-                                    Progress
-                                  </p>
-                                  <p className="mt-1 text-sm font-medium">
-                                    {repository.analysis_progress || 0}% done
-                                  </p>
-                                </div>
-                                <div className="rounded-xl border border-border/60 bg-background/70 px-3 py-2">
-                                  <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-                                    Stars
-                                  </p>
-                                  <p className="mt-1 text-sm font-medium">
-                                    {typeof repository.stars === "number"
-                                      ? repository.stars
-                                      : 0}
-                                  </p>
-                                </div>
-                                <div className="rounded-xl border border-border/60 bg-background/70 px-3 py-2">
-                                  <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-                                    Forks
-                                  </p>
-                                  <p className="mt-1 text-sm font-medium">
-                                    {typeof repository.forks === "number"
-                                      ? repository.forks
-                                      : 0}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          </button>
-                        );
-                      })}
-
-                      {filteredRepositories.length === 0 && (
-                        <div className="rounded-[1.5rem] border border-dashed border-border/60 p-6 text-sm text-muted-foreground">
-                          No repositories match this search yet.
-                        </div>
-                      )}
-                    </div>
-                  </ScrollArea>
+                  )}
                 </CardContent>
               </Card>
-              <Card className="min-w-0 border-border/60 bg-background/80 shadow-sm">
-                <CardHeader>
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div>
-                      <CardTitle>Contributors and batch control</CardTitle>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        Pick the contributors whose commits should feed the
-                        generated developer profiles.
-                      </p>
-                    </div>
+            </div>
+          </section>
+
+          {/* ---------------------- Stage 2: contributors ---------------------- */}
+          <section>
+            <StageHeading
+              step={2}
+              title="Select contributors and run the analysis"
+              description="Their commits and reviews become the generated developer profiles."
+              action={
+                <Button
+                  type="button"
+                  onClick={handleRunAnalysis}
+                  disabled={
+                    running ||
+                    !selectedRepoId ||
+                    selectedContributors.length === 0 ||
+                    isAnalysisRunning
+                  }
+                  className="gap-2 sm:min-w-[15rem]"
+                >
+                  {running || isAnalysisRunning ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  {isAnalysisRunning
+                    ? "Analysis in progress"
+                    : selectedContributorCount > 0
+                      ? `Run analysis on ${selectedContributorCount} contributor${
+                          selectedContributorCount === 1 ? "" : "s"
+                        }`
+                      : "Run analysis"}
+                </Button>
+              }
+            />
+
+            <Card className="border-border/60 bg-background/80 shadow-sm">
+              <CardHeader className="pb-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="relative w-full lg:max-w-sm">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={contributorSearchQuery}
+                      onChange={(event) => {
+                        setHasClearedContributorFocus(false);
+                        setContributorSearchQuery(event.target.value);
+                      }}
+                      placeholder="Search contributors"
+                      className="pl-10"
+                      disabled={!selectedRepoId}
+                      aria-label="Search contributors"
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {selectedContributorCount > 0 ? (
+                      <Badge
+                        variant="outline"
+                        className="border-primary/30 bg-primary/10 text-primary"
+                      >
+                        {selectedContributorCount} selected
+                      </Badge>
+                    ) : null}
+                    {contributorSearchQuery ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setHasClearedContributorFocus(true);
+                          setContributorSearchQuery("");
+                        }}
+                      >
+                        Show all
+                      </Button>
+                    ) : null}
                     <Button
                       type="button"
-                      onClick={handleRunAnalysis}
-                      disabled={
-                        running ||
-                        !selectedRepoId ||
-                        selectedContributors.length === 0 ||
-                        selectedRepository?.analysis_status === "pending" ||
-                        selectedRepository?.analysis_status === "in_progress"
-                      }
-                      className="gap-2 lg:min-w-[180px]"
+                      variant="outline"
+                      size="sm"
+                      onClick={selectAllVisibleContributors}
+                      disabled={!filteredContributors.length}
                     >
-                      {running ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Sparkles className="h-4 w-4" />
-                      )}
-                      Run analysis
+                      Select visible
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={clearSelectedContributors}
+                      disabled={!selectedContributors.length}
+                    >
+                      Clear
                     </Button>
                   </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="relative w-full lg:max-w-sm">
-                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        value={contributorSearchQuery}
-                        onChange={(event) => {
-                          setHasClearedContributorFocus(false);
-                          setContributorSearchQuery(event.target.value);
-                        }}
-                        placeholder="Search contributors"
-                        className="pl-10"
-                        disabled={!selectedRepoId}
-                      />
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      {contributorSearchQuery ? (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setHasClearedContributorFocus(true);
-                            setContributorSearchQuery("");
-                          }}
-                        >
-                          Show all contributors
-                        </Button>
-                      ) : null}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={selectAllVisibleContributors}
-                        disabled={!filteredContributors.length}
-                      >
-                        Select visible
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={clearSelectedContributors}
-                        disabled={!selectedContributors.length}
-                      >
-                        Clear selection
-                      </Button>
-                    </div>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0">
+                {repositoryContextLoading && !contributors.length ? (
+                  <div className="flex min-h-[16rem] items-center justify-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading contributors
                   </div>
-
-                  <ScrollArea className="h-[26rem] pr-3">
-                    <div className="space-y-3">
+                ) : (
+                  <ScrollArea className="h-[32rem]">
+                    <div className="grid gap-3 pr-3 sm:grid-cols-2 2xl:grid-cols-3">
                       {filteredContributors.map((contributor) => {
                         const checked = selectedContributors.includes(
                           contributor.login,
@@ -1267,103 +1354,93 @@ export default function AdminGithubPage() {
                         return (
                           <div
                             key={contributor.login}
+                            role="checkbox"
+                            tabIndex={0}
+                            aria-checked={checked}
+                            onClick={() =>
+                              toggleContributorSelection(contributor.login)
+                            }
+                            onKeyDown={(event) => {
+                              if (event.key === " " || event.key === "Enter") {
+                                event.preventDefault();
+                                toggleContributorSelection(contributor.login);
+                              }
+                            }}
                             className={cn(
-                              "rounded-[1.5rem] border p-4 transition",
+                              "cursor-pointer rounded-xl border p-4 outline-none transition-all focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                               checked
-                                ? "border-cyan-500/40 bg-cyan-500/10"
-                                : "border-border/60 bg-muted/15 hover:border-primary/30 hover:bg-muted/30",
+                                ? "border-primary/45 bg-primary/[0.06] shadow-sm ring-1 ring-primary/15"
+                                : "border-border/60 bg-muted/10 hover:border-primary/30 hover:bg-muted/25",
                             )}
                           >
                             <div className="flex items-start gap-3">
                               <Checkbox
                                 checked={checked}
-                                onCheckedChange={(nextChecked) =>
-                                  toggleContributorSelection(
-                                    contributor.login,
-                                    Boolean(nextChecked),
-                                  )
-                                }
-                                className="mt-1"
+                                aria-hidden="true"
+                                tabIndex={-1}
+                                className="pointer-events-none mt-1"
                               />
 
                               <div className="min-w-0 flex-1">
-                                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                                  <div className="flex min-w-0 items-center gap-3">
-                                    <Avatar className="h-11 w-11 border border-border/60">
-                                      <AvatarImage
-                                        src={getContributorAvatarUrl(
-                                          contributor.login,
-                                          contributor.avatar_url,
-                                        )}
-                                        alt={`${contributor.display_name} GitHub avatar`}
-                                      />
-                                      <AvatarFallback className="bg-primary/10 text-primary">
-                                        {getInitials(contributor.display_name)}
-                                      </AvatarFallback>
-                                    </Avatar>
-                                    <div className="min-w-0">
-                                      <p className="truncate font-semibold">
-                                        @{contributor.display_name}
-                                      </p>
-                                      <p className="text-sm text-muted-foreground">
-                                        {contributor.contributions}{" "}
-                                        contributions
-                                      </p>
-                                    </div>
-                                  </div>
-
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <Badge
-                                      variant="outline"
-                                      className={statusTone(
-                                        contributor.analysis_status,
+                                <div className="flex min-w-0 items-center gap-3">
+                                  <Avatar className="h-10 w-10 border border-border/60">
+                                    <AvatarImage
+                                      src={getContributorAvatarUrl(
+                                        contributor.login,
+                                        contributor.avatar_url,
                                       )}
-                                    >
-                                      {getContributorStatusLabel(
-                                        contributor.analysis_status,
-                                      )}
-                                    </Badge>
-                                    {contributor.quality_score !== null && (
-                                      <Badge variant="secondary">
-                                        Score {contributor.quality_score}/10
-                                      </Badge>
-                                    )}
-                                    {profile ? (
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="sm"
-                                        className="gap-1"
-                                        onClick={() =>
-                                          setSelectedProfileId(
-                                            profile.profileId,
-                                          )
-                                        }
-                                      >
-                                        View run
-                                        <ArrowUpRight className="h-3.5 w-3.5" />
-                                      </Button>
-                                    ) : null}
+                                      alt={`${contributor.display_name} GitHub avatar`}
+                                    />
+                                    <AvatarFallback className="bg-primary/10 text-primary">
+                                      {getInitials(contributor.display_name)}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-semibold">
+                                      {contributor.display_name}
+                                    </p>
+                                    <p className="truncate text-xs text-muted-foreground">
+                                      @{contributor.login} ·{" "}
+                                      {contributor.contributions} commits
+                                    </p>
                                   </div>
                                 </div>
 
-                                <p className="mt-2 text-xs text-muted-foreground">
-                                  Last profile update:{" "}
-                                  {formatDateTime(contributor.last_analyzed_at)}
-                                </p>
+                                <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                                  <Badge
+                                    variant="outline"
+                                    className={cn(
+                                      "text-[11px]",
+                                      statusTone(contributor.analysis_status),
+                                    )}
+                                  >
+                                    {getContributorStatusLabel(
+                                      contributor.analysis_status,
+                                    )}
+                                  </Badge>
+                                  {contributor.quality_score !== null && (
+                                    <Badge
+                                      variant="secondary"
+                                      className="text-[11px]"
+                                    >
+                                      Score {contributor.quality_score}/10
+                                    </Badge>
+                                  )}
+                                </div>
 
                                 {failureReason ? (
-                                  <p className="mt-2 text-xs text-destructive">
+                                  <p className="mt-2.5 line-clamp-2 text-xs text-destructive">
                                     Last failure: {failureReason}
                                   </p>
                                 ) : contributor.top_weaknesses.length ? (
-                                  <div className="mt-3 flex flex-wrap gap-2">
+                                  <div className="mt-2.5 flex flex-wrap gap-1.5">
                                     {contributor.top_weaknesses
-                                      .slice(0, 3)
+                                      .slice(0, 2)
                                       .map((weakness) => (
                                         <Badge
                                           key={`${contributor.login}-${weakness.category}`}
                                           variant="outline"
+                                          className="text-[11px] font-normal"
                                         >
                                           {formatLabel(
                                             weakness.category ||
@@ -1373,6 +1450,40 @@ export default function AdminGithubPage() {
                                       ))}
                                   </div>
                                 ) : null}
+
+                                <div className="mt-3 flex items-center justify-between gap-2 border-t border-border/50 pt-2.5">
+                                  <p className="truncate text-[11px] text-muted-foreground">
+                                    {contributor.last_analyzed_at
+                                      ? `Updated ${formatDateTime(contributor.last_analyzed_at)}`
+                                      : "Never analyzed"}
+                                  </p>
+                                  {profile ? (
+                                    <Button
+                                      asChild
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 shrink-0 gap-1 px-2 text-xs"
+                                    >
+                                      <Link
+                                        href={buildAdminWorkflowHref(
+                                          "/dashboard/admin/profiles",
+                                          {
+                                            repoId: selectedRepoId,
+                                            contributorLogin:
+                                              contributor.login,
+                                            profileId: profile.profileId,
+                                          },
+                                        )}
+                                        onClick={(event) =>
+                                          event.stopPropagation()
+                                        }
+                                      >
+                                        Open profile
+                                        <ArrowUpRight className="h-3 w-3" />
+                                      </Link>
+                                    </Button>
+                                  ) : null}
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -1380,21 +1491,35 @@ export default function AdminGithubPage() {
                       })}
 
                       {selectedRepoId && !filteredContributors.length && (
-                        <div className="rounded-[1.5rem] border border-dashed border-border/60 p-6 text-sm text-muted-foreground">
-                          No contributors match this filter.
+                        <div className="rounded-xl border border-dashed border-border/60 p-8 text-center sm:col-span-2 2xl:col-span-3">
+                          <p className="text-sm font-medium">
+                            No contributors match this filter
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Clear the search to see everyone in this repository.
+                          </p>
                         </div>
                       )}
 
                       {!selectedRepoId && (
-                        <div className="rounded-[1.5rem] border border-dashed border-border/60 p-6 text-sm text-muted-foreground">
-                          Select a repository to load its contributor list.
+                        <div className="rounded-xl border border-dashed border-border/60 p-8 text-center sm:col-span-2 2xl:col-span-3">
+                          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+                            <Users className="h-5 w-5" />
+                          </div>
+                          <p className="mt-3 text-sm font-medium">
+                            Finish stage 1 first
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Select a repository above to load its contributor
+                            list.
+                          </p>
                         </div>
                       )}
                     </div>
                   </ScrollArea>
-                </CardContent>
-              </Card>
-            </div>
+                )}
+              </CardContent>
+            </Card>
           </section>
         </>
       )}

@@ -256,9 +256,9 @@ export default function LoginPage() {
   return (
     <section className="flex max-lg:justify-center h-screen bg-background ">
       {/* Left Side - Logo-inspired gradient */}
-      <span className="flex flex-col justify-center w-1/2 max-lg:hidden overflow-hidden bg-gradient-to-br ">
+      <span className="flex flex-col justify-center w-1/2 max-lg:hidden overflow-hidden bg-gradient-to-br from-primary/10 via-background to-accent/10">
         <Ripple mainCircleSize={200} />
-        <TechOrbitDisplay iconsArray={iconsArray} text="Wevioo Consulting" />
+        <TechOrbitDisplay iconsArray={iconsArray} text="Dev.Lab" />
       </span>
 
       {/* Right Side */}

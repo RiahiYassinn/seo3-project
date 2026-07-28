@@ -149,9 +149,16 @@ export default function TechLeadRecommendationDetailPage() {
     return (
       <div className="min-h-screen bg-background">
         <Navbar />
-        <div className="flex h-[calc(100vh-64px)] items-center justify-center">
-          <Loader className="h-8 w-8 animate-spin text-primary" />
-        </div>
+        <main className="mx-auto max-w-6xl px-4 py-8 lg:px-8">
+          <div className="h-8 w-44 animate-pulse rounded bg-muted" />
+          <div className="mt-4 grid gap-6 lg:grid-cols-3">
+            <div className="space-y-6 lg:col-span-2">
+              <div className="h-56 animate-pulse rounded-2xl bg-muted" />
+              <div className="h-72 animate-pulse rounded-2xl bg-muted" />
+            </div>
+            <div className="h-64 animate-pulse rounded-2xl bg-muted" />
+          </div>
+        </main>
       </div>
     );
   }
@@ -183,12 +190,12 @@ export default function TechLeadRecommendationDetailPage() {
   const unclaimed = !recommendation.mentor_id;
 
   return (
-    <div className="min-h-screen bg-muted/20">
+    <div className="min-h-screen bg-background bg-[radial-gradient(circle_at_top_left,rgba(168,85,247,0.10),transparent_28%),radial-gradient(circle_at_top_right,rgba(6,182,212,0.08),transparent_22%)] dark:bg-[radial-gradient(circle_at_top_left,rgba(168,85,247,0.22),transparent_35%),radial-gradient(circle_at_top_right,rgba(6,182,212,0.18),transparent_30%)]">
       <Navbar />
 
       <main className="mx-auto max-w-6xl px-4 py-8 lg:px-8">
-        {/* Top Breadcrumb Header */}
-        <div className="mb-6">
+        {/* The panel header carries the title, so this stays a breadcrumb. */}
+        <div className="mb-4">
           <Link
             href="/dashboard/tech_lead/recommendations"
             className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
@@ -196,9 +203,6 @@ export default function TechLeadRecommendationDetailPage() {
             <ArrowLeft className="h-4 w-4" />
             Back to mentor queue
           </Link>
-          <h1 className="mt-2 text-2xl font-bold tracking-tight text-foreground">
-            Recommendation Details
-          </h1>
         </div>
 
         {/* Global Error Banner */}
@@ -210,17 +214,14 @@ export default function TechLeadRecommendationDetailPage() {
         )}
 
         {/* Main Content Layout Grid */}
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:items-start">
           {/* Left Column: Data Display (Takes 2/3 width) */}
-          <div className="lg:col-span-2">
-            <div className="rounded-xl border bg-card text-card-foreground shadow-sm p-1">
-              {/* Pass empty or minimal actions if required by component contract */}
-              <RecommendationDetailPanel recommendation={recommendation} />
-            </div>
+          <div className="min-w-0 lg:col-span-2">
+            <RecommendationDetailPanel recommendation={recommendation} />
           </div>
 
           {/* Right Column: Workflow Action Panels (Takes 1/3 width) */}
-          <div className="space-y-6">
+          <div className="space-y-6 lg:sticky lg:top-20">
             {/* Case 1: Unclaimed Mentorship Card */}
             {unclaimed && (
               <Card className="border-primary/20 shadow-sm">
@@ -256,10 +257,18 @@ export default function TechLeadRecommendationDetailPage() {
 
             {/* Case 2: Claimed by Someone Else */}
             {!unclaimed && !claimedByMe && (
-              <Card className="bg-muted/50">
-                <CardContent className="pt-6 text-center text-sm text-muted-foreground">
-                  This mentorship case is currently assigned to another Tech
-                  Lead.
+              <Card className="border-border/60 bg-muted/30">
+                <CardContent className="flex gap-3 p-5 text-sm">
+                  <UserRoundPlus className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div>
+                    <p className="font-medium text-foreground">
+                      Assigned to another mentor
+                    </p>
+                    <p className="mt-1 text-muted-foreground">
+                      You can review the case, but scheduling is handled by the
+                      mentor who claimed it.
+                    </p>
+                  </div>
                 </CardContent>
               </Card>
             )}

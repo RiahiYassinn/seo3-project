@@ -378,6 +378,33 @@ export class DeveloperController {
     return this.developerService.toUserDto(updated);
   }
 
+  @MessagePattern('update_my_profile')
+  async handleUpdateMyProfile(
+    @Payload()
+    data: {
+      userId: string;
+      username?: string;
+      first_name?: string;
+      last_name?: string;
+      bio?: string | null;
+      location?: string | null;
+      website?: string | null;
+      avatar?: string | null;
+    },
+  ) {
+    const updated = await this.developerService.updateOwnProfile(data.userId, {
+      username: data.username,
+      firstName: data.first_name,
+      lastName: data.last_name,
+      bio: data.bio,
+      location: data.location,
+      website: data.website,
+      avatar: data.avatar,
+    });
+
+    return this.developerService.toUserDto(updated);
+  }
+
   @MessagePattern('update_my_mentor_availability')
   async handleUpdateMyMentorAvailability(
     @Payload()

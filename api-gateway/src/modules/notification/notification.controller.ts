@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   MessageEvent,
@@ -98,11 +99,39 @@ export class NotificationController {
     );
   }
 
+  @Post(':id/unread')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Mark notification as unread' })
+  markAsUnread(@Req() req: any, @Param('id') id: string) {
+    return this.notificationService.markAsUnread(id, req.user.id, req.user.role);
+  }
+
   @Post('read-all')
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Mark all current user notifications as read' })
   markAllAsRead(@Req() req: any) {
     return this.notificationService.markAllAsRead(req.user.id, req.user.role);
+  }
+
+  @Post('bulk-delete')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Delete several notifications for the current user' })
+  bulkDelete(@Req() req: any, @Body() body: { ids?: string[] }) {
+    return this.notificationService.dismissMany(
+      body?.ids || [],
+      req.user.id,
+      req.user.role,
+    );
+  }
+
+  @Delete(':id')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Delete a notification for the current user' })
+  remove(@Req() req: any, @Param('id') id: string) {
+    return this.notificationService.dismiss(id, req.user.id, req.user.role);
   }
 }

@@ -19,28 +19,44 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   ArrowRight,
   CalendarClock,
   CircleAlert,
   CircleCheck,
   Clock3,
+  Flame,
   Github,
+  Inbox,
   Link as LinkIcon,
   Loader,
   Loader2,
-  Sparkles,
+  Search,
   Send,
+  Sparkles,
   Target,
   TrendingUp,
   Unlink,
   Users,
+  X,
 } from "lucide-react";
 import {
   formatLabel,
+  priorityBand,
   recommendationStatusTone,
   recommendationTypeTone,
   type RecommendationCase,
 } from "@/app/dashboard/admin/profiles/profile-types";
+import { cn } from "@/lib/utils";
 
 interface GitHubIntegration {
   id: string;
@@ -71,6 +87,9 @@ interface MentorRequestRecord {
   status: "pending" | "accepted" | "declined";
   recommendation?: RecommendationCase | null;
 }
+
+type StatusFilter = "all" | "open" | "assigned" | "completed";
+type SortMode = "priority" | "recent";
 
 const getTopIssue = (recommendation: RecommendationCase) => {
   const gap = recommendation.context_snapshot?.detectedGaps?.[0];
@@ -123,6 +142,7 @@ export default function DeveloperRecommendationsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [linking, setLinking] = useState(false);
   const [unlinking, setUnlinking] = useState(false);
+  const [confirmingUnlink, setConfirmingUnlink] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [integration, setIntegration] = useState<GitHubIntegration | null>(
@@ -148,6 +168,11 @@ export default function DeveloperRecommendationsPage() {
     selectedMentorshipRecommendation,
     setSelectedMentorshipRecommendation,
   ] = useState<string | null>(null);
+
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [sortMode, setSortMode] = useState<SortMode>("priority");
 
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
@@ -245,14 +270,6 @@ export default function DeveloperRecommendationsPage() {
   const handleUnlinkGitHub = async () => {
     if (!integration) return;
 
-    if (
-      !confirm(
-        "Are you sure you want to unlink your GitHub account? Recommendations will no longer map to this account.",
-      )
-    ) {
-      return;
-    }
-
     setError("");
     setSuccess("");
     setUnlinking(true);
@@ -273,6 +290,7 @@ export default function DeveloperRecommendationsPage() {
       );
     } finally {
       setUnlinking(false);
+      setConfirmingUnlink(false);
     }
   };
 
@@ -372,6 +390,61 @@ export default function DeveloperRecommendationsPage() {
     };
   }, [recommendations]);
 
+  const availableTypes = useMemo(
+    () =>
+      Array.from(
+        new Set(recommendations.map((item) => item.recommendation_type)),
+      ),
+    [recommendations],
+  );
+
+  const visibleRecommendations = useMemo(() => {
+    const term = search.trim().toLowerCase();
+
+    const filtered = recommendations.filter((recommendation) => {
+      if (statusFilter !== "all" && recommendation.status !== statusFilter) {
+        return false;
+      }
+
+      if (
+        typeFilter !== "all" &&
+        recommendation.recommendation_type !== typeFilter
+      ) {
+        return false;
+      }
+
+      if (!term) return true;
+
+      return [
+        recommendation.title,
+        recommendation.description,
+        recommendation.contributor_login,
+        repositories[recommendation.repository_id],
+        recommendation.context_snapshot?.repoName,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(term);
+    });
+
+    return filtered.sort((left, right) =>
+      sortMode === "priority"
+        ? right.priority_score - left.priority_score
+        : new Date(right.created_at).getTime() -
+          new Date(left.created_at).getTime(),
+    );
+  }, [recommendations, repositories, search, sortMode, statusFilter, typeFilter]);
+
+  const filtersActive =
+    statusFilter !== "all" || typeFilter !== "all" || search.trim() !== "";
+
+  const resetFilters = () => {
+    setStatusFilter("all");
+    setTypeFilter("all");
+    setSearch("");
+  };
+
   const mentorRequestByRecommendationId = useMemo(() => {
     const map = new Map<string, MentorRequestRecord>();
     for (const request of mentorRequests) {
@@ -382,13 +455,34 @@ export default function DeveloperRecommendationsPage() {
     return map;
   }, [mentorRequests]);
 
+  const statusFilterOptions: Array<{
+    value: StatusFilter;
+    label: string;
+    count: number;
+  }> = [
+    { value: "all", label: "All", count: stats.total },
+    { value: "open", label: "Open", count: stats.open },
+    { value: "assigned", label: "In progress", count: stats.assigned },
+    { value: "completed", label: "Completed", count: stats.completed },
+  ];
+
   if (!hasHydrated || loading) {
     return (
       <div className="min-h-screen bg-background">
         <Navbar />
-        <div className="flex h-[calc(100vh-64px)] items-center justify-center">
-          <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-primary" />
-        </div>
+        <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+          <div className="h-4 w-40 animate-pulse rounded bg-muted" />
+          <div className="mt-4 h-10 w-80 animate-pulse rounded bg-muted" />
+          <div className="mt-8 h-20 animate-pulse rounded-2xl bg-muted" />
+          <div className="mt-6 grid gap-4 lg:grid-cols-2">
+            {[0, 1, 2, 3].map((card) => (
+              <div
+                key={card}
+                className="h-64 animate-pulse rounded-2xl bg-muted"
+              />
+            ))}
+          </div>
+        </main>
       </div>
     );
   }
@@ -398,17 +492,17 @@ export default function DeveloperRecommendationsPage() {
       <Navbar />
 
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <header className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-sm uppercase tracking-[0.25em] text-muted-foreground">
-              Developer Workspace
+              Developer workspace
             </p>
             <h1 className="mt-2 text-4xl font-bold tracking-tight">
-              GitHub recommendations
+              Your recommendations
             </h1>
-            <p className="mt-2 max-w-3xl text-muted-foreground">
-              Link your GitHub account, then review compact recommendation
-              recaps generated from your analyzed developer activity.
+            <p className="mt-2 max-w-2xl text-muted-foreground">
+              What the analysis found in your contributions, ranked by impact —
+              with a learning path or a mentor attached to each one.
             </p>
           </div>
           {integration ? (
@@ -419,102 +513,78 @@ export default function DeveloperRecommendationsPage() {
               className="gap-2"
             >
               {refreshing ? (
-                <>
-                  <Loader className="h-4 w-4 animate-spin" />
-                  Refreshing
-                </>
+                <Loader className="h-4 w-4 animate-spin" />
               ) : (
-                <>
-                  <Sparkles className="h-4 w-4" />
-                  Refresh Recommendations
-                </>
+                <Sparkles className="h-4 w-4" />
               )}
+              {refreshing ? "Refreshing" : "Refresh"}
             </Button>
           ) : null}
-        </div>
+        </header>
 
         {error ? (
           <Alert className="mb-6 border-destructive/40 bg-destructive/10">
             <CircleAlert className="h-4 w-4" />
-            <AlertDescription className="text-destructive">
-              {error}
+            <AlertDescription className="flex items-center justify-between gap-3 text-destructive">
+              <span>{error}</span>
+              <button
+                type="button"
+                onClick={() => setError("")}
+                aria-label="Dismiss"
+                className="shrink-0 opacity-70 transition-opacity hover:opacity-100"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </AlertDescription>
           </Alert>
         ) : null}
 
         {success ? (
           <Alert className="mb-6 border-emerald-500/40 bg-emerald-500/10">
-            <AlertDescription className="text-emerald-700">
-              {success}
+            <CircleCheck className="h-4 w-4 text-emerald-600" />
+            <AlertDescription className="flex items-center justify-between gap-3 text-emerald-700 dark:text-emerald-300">
+              <span>{success}</span>
+              <button
+                type="button"
+                onClick={() => setSuccess("")}
+                aria-label="Dismiss"
+                className="shrink-0 opacity-70 transition-opacity hover:opacity-100"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </AlertDescription>
           </Alert>
         ) : null}
 
-        <Card className="mb-6 border-border/60 bg-background/85 shadow-sm">
-          <CardHeader>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2 text-xl">
+        {!integration ? (
+          /* ---------------------- Not linked: setup only ---------------------- */
+          <Card className="mx-auto max-w-2xl overflow-hidden border-border/60 bg-background/85 shadow-sm">
+            <div
+              aria-hidden="true"
+              className="h-1 w-full bg-gradient-to-r from-primary via-cyan-500 to-primary/20"
+            />
+            <CardHeader>
+              <div className="flex items-start gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                   <Github className="h-5 w-5" />
-                  GitHub account
-                </CardTitle>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  This linked username controls which recommendations appear
-                  below.
-                </p>
-              </div>
-              {integration ? (
-                <Badge
-                  variant="outline"
-                  className="w-fit border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
-                >
-                  Linked
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="w-fit">
-                  Not linked
-                </Badge>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent>
-            {integration ? (
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                </span>
                 <div>
-                  <p className="text-sm text-muted-foreground">
-                    Connected account
-                  </p>
-                  <p className="mt-1 text-2xl font-semibold">
-                    @{integration.github_username}
-                  </p>
+                  <CardTitle>Connect GitHub to get recommendations</CardTitle>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Linked{" "}
-                    {new Date(integration.connected_at).toLocaleDateString()}
+                    Your linked account decides which contributions are
+                    analyzed. Nothing else to install.
                   </p>
                 </div>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  className="gap-2 lg:w-auto"
-                  onClick={handleUnlinkGitHub}
-                  disabled={unlinking}
-                >
-                  {unlinking ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Unlink className="h-4 w-4" />
-                  )}
-                  {unlinking ? "Unlinking..." : "Unlink GitHub"}
-                </Button>
               </div>
-            ) : (
-              <form
-                className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end"
-                onSubmit={handleLinkGitHub}
-              >
+            </CardHeader>
+            <CardContent>
+              <form className="grid gap-4" onSubmit={handleLinkGitHub}>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">GitHub username</label>
+                  <label htmlFor="gh-username" className="text-sm font-medium">
+                    GitHub username
+                  </label>
                   <Input
+                    id="gh-username"
                     value={username}
                     onChange={(event) => setUsername(event.target.value)}
                     placeholder="your-github-username"
@@ -523,8 +593,11 @@ export default function DeveloperRecommendationsPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">GitHub token</label>
+                  <label htmlFor="gh-token" className="text-sm font-medium">
+                    GitHub token
+                  </label>
                   <Input
+                    id="gh-token"
                     type="password"
                     value={token}
                     onChange={(event) => setToken(event.target.value)}
@@ -532,6 +605,10 @@ export default function DeveloperRecommendationsPage() {
                     required
                     disabled={linking}
                   />
+                  <p className="text-xs text-muted-foreground">
+                    A personal access token with read access to the
+                    repositories you contribute to.
+                  </p>
                 </div>
                 <Button type="submit" className="gap-2" disabled={linking}>
                   {linking ? (
@@ -542,76 +619,190 @@ export default function DeveloperRecommendationsPage() {
                   {linking ? "Linking..." : "Link GitHub"}
                 </Button>
               </form>
-            )}
-          </CardContent>
-        </Card>
-
-        {!integration ? (
-          <Card className="border-dashed border-border/60 bg-background/70">
-            <CardContent className="p-10 text-center">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <Sparkles className="h-7 w-7" />
-              </div>
-              <h2 className="mt-4 text-xl font-semibold">
-                Recommendations are waiting on GitHub
-              </h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Link your GitHub account above to load recommendations mapped to
-                your developer activity.
-              </p>
             </CardContent>
           </Card>
         ) : (
           <>
-            <section className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <Card className="border-border/60 bg-background/80 shadow-sm">
-                <CardContent className="p-5">
-                  <p className="text-sm text-muted-foreground">Total</p>
-                  <p className="mt-2 text-3xl font-semibold">{stats.total}</p>
-                </CardContent>
-              </Card>
-              <Card className="border-border/60 bg-background/80 shadow-sm">
-                <CardContent className="p-5">
-                  <p className="text-sm text-muted-foreground">Open</p>
-                  <p className="mt-2 text-3xl font-semibold">{stats.open}</p>
-                </CardContent>
-              </Card>
-              <Card className="border-border/60 bg-background/80 shadow-sm">
-                <CardContent className="p-5">
-                  <p className="text-sm text-muted-foreground">Assigned</p>
-                  <p className="mt-2 text-3xl font-semibold">
-                    {stats.assigned}
+            {/* ------------------- Linked: compact account strip ------------------- */}
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/60 bg-background/70 px-4 py-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Github className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold">
+                    @{integration.github_username}
                   </p>
-                </CardContent>
-              </Card>
-              <Card className="border-border/60 bg-background/80 shadow-sm">
-                <CardContent className="p-5">
-                  <p className="text-sm text-muted-foreground">Completed</p>
-                  <p className="mt-2 text-3xl font-semibold">
-                    {stats.completed}
+                  <p className="text-xs text-muted-foreground">
+                    Linked{" "}
+                    {new Date(integration.connected_at).toLocaleDateString()} ·{" "}
+                    {Object.keys(repositories).length} repositories analyzed
                   </p>
-                </CardContent>
-              </Card>
-            </section>
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="gap-2 text-muted-foreground hover:text-destructive"
+                onClick={() => setConfirmingUnlink(true)}
+                disabled={unlinking}
+              >
+                {unlinking ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Unlink className="h-4 w-4" />
+                )}
+                Unlink
+              </Button>
+            </div>
 
+            {/* ------------------------------ Toolbar ------------------------------ */}
+            <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="inline-flex flex-wrap gap-1 rounded-lg bg-muted p-0.5">
+                {statusFilterOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setStatusFilter(option.value)}
+                    className={cn(
+                      "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                      statusFilter === option.value
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {option.label}
+                    <span
+                      className={cn(
+                        "ml-1.5 text-xs",
+                        statusFilter === option.value
+                          ? "font-semibold text-primary"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      {option.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <div className="relative sm:w-60">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Search recommendations"
+                    className="pl-9"
+                    aria-label="Search recommendations"
+                  />
+                </div>
+
+                {availableTypes.length > 1 ? (
+                  <div className="inline-flex flex-wrap gap-1 rounded-lg bg-muted p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setTypeFilter("all")}
+                      className={cn(
+                        "rounded-md px-2.5 py-1.5 text-xs font-medium capitalize transition-colors",
+                        typeFilter === "all"
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      All types
+                    </button>
+                    {availableTypes.map((type) => (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => setTypeFilter(type)}
+                        className={cn(
+                          "rounded-md px-2.5 py-1.5 text-xs font-medium capitalize transition-colors",
+                          typeFilter === type
+                            ? "bg-background text-foreground shadow-sm"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        {formatLabel(type)}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() =>
+                    setSortMode((current) =>
+                      current === "priority" ? "recent" : "priority",
+                    )
+                  }
+                  title="Change sort order"
+                >
+                  <TrendingUp className="h-3.5 w-3.5" />
+                  {sortMode === "priority" ? "By priority" : "Newest first"}
+                </Button>
+
+                {filtersActive ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={resetFilters}
+                    className="gap-1.5 text-muted-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    Clear
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+
+            {/* ---------------------------- Feed ---------------------------- */}
             {recommendations.length === 0 ? (
               <Card className="border-dashed border-border/60 bg-background/70">
-                <CardContent className="p-10 text-center">
-                  <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
-                    <Sparkles className="h-7 w-7" />
+                <CardContent className="p-12 text-center">
+                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                    <Sparkles className="h-6 w-6" />
                   </div>
                   <h2 className="mt-4 text-xl font-semibold">
                     No recommendations yet
                   </h2>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Recommendations will appear here once analysis is available
-                    for your linked account.
+                  <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+                    Once an admin runs the analysis on a repository you
+                    contribute to, your recommendations will appear here.
                   </p>
+                </CardContent>
+              </Card>
+            ) : visibleRecommendations.length === 0 ? (
+              <Card className="border-dashed border-border/60 bg-background/70">
+                <CardContent className="p-12 text-center">
+                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+                    <Inbox className="h-6 w-6" />
+                  </div>
+                  <h2 className="mt-4 text-xl font-semibold">
+                    Nothing matches these filters
+                  </h2>
+                  <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+                    Try a different search term, or clear the filters to see all{" "}
+                    {stats.total} recommendations.
+                  </p>
+                  <Button
+                    variant="outline"
+                    className="mt-5"
+                    onClick={resetFilters}
+                  >
+                    Clear filters
+                  </Button>
                 </CardContent>
               </Card>
             ) : (
               <div className="grid gap-4 lg:grid-cols-2">
-                {recommendations.map((recommendation) => {
+                {visibleRecommendations.map((recommendation) => {
                   const issue = getTopIssue(recommendation);
                   const recommendationRecap =
                     getRecommendationRecap(recommendation);
@@ -634,14 +825,33 @@ export default function DeveloperRecommendationsPage() {
                         timeStyle: "short",
                       })
                     : null;
+                  const isCompleted = recommendation.status === "completed";
+                  const band = priorityBand(recommendation.priority_score || 0);
+                  const confidence =
+                    typeof recommendation.confidence_score === "number"
+                      ? Math.round(recommendation.confidence_score * 100)
+                      : null;
+
                   return (
                     <Card
                       key={recommendation.id}
-                      className="border-border/70 bg-background/90 shadow-sm transition hover:border-primary/40"
+                      className={cn(
+                        "relative overflow-hidden border-border/70 bg-background/90 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md motion-reduce:hover:translate-y-0",
+                        isCompleted && "opacity-75",
+                      )}
                     >
-                      <CardContent className="flex h-full flex-col p-5">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="flex flex-wrap gap-2">
+                      {/* Priority rail */}
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          "absolute inset-y-0 left-0 w-1",
+                          isCompleted ? "bg-emerald-500" : band.rail,
+                        )}
+                      />
+
+                      <CardContent className="flex h-full flex-col p-5 pl-6">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="flex flex-wrap gap-1.5">
                             <Badge
                               variant="outline"
                               className={
@@ -664,31 +874,34 @@ export default function DeveloperRecommendationsPage() {
                           {recommendation.priority_score ? (
                             <Badge
                               variant="outline"
-                              className="border-cyan-500/30 bg-cyan-500/10 text-cyan-700"
+                              className={cn("gap-1", band.badge)}
+                              title={`Priority score ${Math.round(
+                                recommendation.priority_score,
+                              )}`}
                             >
-                              Priority:{" "}
-                              {Math.round(recommendation.priority_score)}
+                              <Flame className="h-3 w-3" />
+                              {band.label}
                             </Badge>
                           ) : null}
                         </div>
 
-                        <h3 className="mt-4 text-lg font-semibold">
+                        <h3 className="mt-4 text-lg font-semibold leading-6">
                           {recommendation.title}
                         </h3>
-                        <p className="mt-2 text-sm text-muted-foreground">
+                        <p className="mt-1.5 text-sm text-muted-foreground">
                           {repositories[recommendation.repository_id] ||
                             recommendation.context_snapshot?.repoName ||
                             recommendation.repository_id}{" "}
                           · @{recommendation.contributor_login}
                         </p>
 
-                        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                          <div className="rounded-lg border border-border/60 bg-muted/15 p-4">
-                            <div className="flex items-center gap-2 text-sm font-medium">
-                              <Target className="h-4 w-4 text-cyan-600" />
+                        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                          <div className="rounded-xl border border-border/60 bg-muted/20 p-4">
+                            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                              <Target className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
                               Issue found
                             </div>
-                            <p className="mt-2 line-clamp-2 text-sm font-medium">
+                            <p className="mt-2 line-clamp-2 text-sm font-medium leading-5">
                               {issue.title}
                             </p>
                             <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
@@ -696,10 +909,10 @@ export default function DeveloperRecommendationsPage() {
                             </p>
                           </div>
 
-                          <div className="rounded-lg border border-border/60 bg-muted/15 p-4">
-                            <div className="flex items-center gap-2 text-sm font-medium">
-                              <TrendingUp className="h-4 w-4 text-emerald-600" />
-                              Recommendation
+                          <div className="rounded-xl border border-border/60 bg-muted/20 p-4">
+                            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                              <TrendingUp className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                              What to do
                             </div>
                             <p className="mt-2 line-clamp-3 text-sm leading-5 text-muted-foreground">
                               {recommendationRecap}
@@ -708,12 +921,12 @@ export default function DeveloperRecommendationsPage() {
                         </div>
 
                         {isMentorship && scheduledSessionLabel ? (
-                          <div className="mt-4 rounded-lg border border-violet-500/25 bg-violet-500/10 p-4">
-                            <div className="flex items-center gap-2 text-sm font-medium text-violet-700">
+                          <div className="mt-4 rounded-xl border border-violet-500/25 bg-violet-500/10 p-4">
+                            <div className="flex items-center gap-2 text-sm font-medium text-violet-700 dark:text-violet-300">
                               <CalendarClock className="h-4 w-4" />
                               Mentoring session
                             </div>
-                            <p className="mt-2 text-sm text-muted-foreground">
+                            <p className="mt-1.5 text-sm text-muted-foreground">
                               {scheduledSessionLabel}
                             </p>
                             {recommendation.mentorship_session_note ? (
@@ -724,26 +937,29 @@ export default function DeveloperRecommendationsPage() {
                           </div>
                         ) : null}
 
-                        <div className="mt-4 flex flex-wrap gap-3 text-sm text-muted-foreground">
-                          <span>
-                            Confidence{" "}
-                            <span className="font-medium text-foreground">
-                              {typeof recommendation.confidence_score ===
-                              "number"
-                                ? `${Math.round(
-                                    recommendation.confidence_score * 100,
-                                  )}%`
-                                : "--"}
+                        <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
+                          {confidence !== null ? (
+                            <span className="inline-flex items-center gap-2">
+                              Confidence
+                              <span className="h-1.5 w-16 overflow-hidden rounded-full bg-border">
+                                <span
+                                  className="block h-full rounded-full bg-primary"
+                                  style={{ width: `${confidence}%` }}
+                                />
+                              </span>
+                              <span className="font-medium text-foreground">
+                                {confidence}%
+                              </span>
                             </span>
-                          </span>
-                          <span>
-                            Effort{" "}
-                            <span className="font-medium text-foreground">
-                              {recommendation.effort_level
-                                ? formatLabel(recommendation.effort_level)
-                                : "--"}
+                          ) : null}
+                          {recommendation.effort_level ? (
+                            <span>
+                              Effort{" "}
+                              <span className="font-medium capitalize text-foreground">
+                                {formatLabel(recommendation.effort_level)}
+                              </span>
                             </span>
-                          </span>
+                          ) : null}
                           {generatedAt ? (
                             <span className="inline-flex items-center gap-1">
                               <Clock3 className="h-3.5 w-3.5" />
@@ -752,8 +968,8 @@ export default function DeveloperRecommendationsPage() {
                           ) : null}
                         </div>
 
-                        <div className="mt-5 flex flex-col gap-2 sm:mt-auto sm:flex-row sm:items-center sm:justify-between sm:pt-5">
-                          <Button asChild variant="outline" className="gap-2">
+                        <div className="mt-5 flex flex-col gap-2 border-t border-border/60 pt-4 sm:mt-auto sm:flex-row sm:items-center sm:justify-between">
+                          <Button asChild className="gap-2">
                             <Link
                               href={`/dashboard/developer/recommendations/${recommendation.id}`}
                             >
@@ -761,12 +977,14 @@ export default function DeveloperRecommendationsPage() {
                               <ArrowRight className="h-4 w-4" />
                             </Link>
                           </Button>
-                          <div className="flex gap-2">
+
+                          <div className="flex flex-wrap gap-2">
                             {isMentorship && !recommendation.mentor_id ? (
                               <Button
                                 type="button"
-                                variant="secondary"
+                                variant="outline"
                                 className="gap-2"
+                                disabled={Boolean(requestState)}
                                 onClick={() =>
                                   setSelectedMentorshipRecommendation(
                                     recommendation.id,
@@ -774,19 +992,21 @@ export default function DeveloperRecommendationsPage() {
                                 }
                               >
                                 <Users className="h-4 w-4" />
-                                {requestState ? "Pending" : "Select mentor"}
+                                {requestState === "pending"
+                                  ? "Request pending"
+                                  : requestState === "declined"
+                                    ? "Request declined"
+                                    : requestState === "accepted"
+                                      ? "Mentor assigned"
+                                      : "Find a mentor"}
                               </Button>
                             ) : null}
                             <Button
                               type="button"
+                              variant="ghost"
                               className="gap-2"
-                              variant={
-                                recommendation.status === "completed"
-                                  ? "outline"
-                                  : "default"
-                              }
                               disabled={
-                                recommendation.status === "completed" ||
+                                isCompleted ||
                                 ackLoadingId === recommendation.id
                               }
                               onClick={() =>
@@ -795,12 +1015,10 @@ export default function DeveloperRecommendationsPage() {
                             >
                               {ackLoadingId === recommendation.id ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : recommendation.status === "completed" ? (
+                              ) : (
                                 <CircleCheck className="h-4 w-4" />
-                              ) : null}
-                              {recommendation.status === "completed"
-                                ? "Completed"
-                                : "Mark completed"}
+                              )}
+                              {isCompleted ? "Completed" : "Mark done"}
                             </Button>
                           </div>
                         </div>
@@ -814,6 +1032,7 @@ export default function DeveloperRecommendationsPage() {
         )}
       </main>
 
+      {/* --------------------------- Mentor picker --------------------------- */}
       <Dialog
         open={selectedMentorshipRecommendation !== null}
         onOpenChange={(open) => {
@@ -824,13 +1043,13 @@ export default function DeveloperRecommendationsPage() {
       >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Select a mentor</DialogTitle>
+            <DialogTitle>Choose a mentor</DialogTitle>
             <DialogDescription>
-              Choose an available mentor to send a mentorship request
+              They will see the gap and the evidence behind it before deciding.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+          <div className="max-h-[60vh] space-y-2 overflow-y-auto">
             {availableMentors.length > 0 ? (
               availableMentors.map((mentor) => {
                 const mentorName =
@@ -863,15 +1082,16 @@ export default function DeveloperRecommendationsPage() {
                       }
                     }}
                     disabled={isDisabled}
-                    className={`w-full rounded-lg border p-3 text-left transition ${
+                    className={cn(
+                      "w-full rounded-xl border p-3 text-left transition",
                       isDisabled
                         ? "cursor-not-allowed border-border/50 bg-muted/10 opacity-60"
-                        : "border-border/60 bg-muted/10 hover:border-primary/40 hover:bg-muted/30"
-                    }`}
+                        : "border-border/60 bg-muted/10 hover:border-primary/40 hover:bg-muted/30",
+                    )}
                   >
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <p className="font-semibold text-foreground">
+                        <p className="truncate font-semibold text-foreground">
                           {mentorName}
                         </p>
                         <p className="mt-0.5 truncate text-xs text-muted-foreground">
@@ -881,36 +1101,62 @@ export default function DeveloperRecommendationsPage() {
                           <Badge variant="outline" className="text-xs">
                             {formatLabel(mentor.role)}
                           </Badge>
-                          {mentor.last_login_at && (
-                            <Badge variant="outline" className="text-xs">
-                              Active{" "}
-                              {new Date(
-                                mentor.last_login_at,
-                              ).toLocaleDateString()}
+                          {hasExistingRequest ? (
+                            <Badge
+                              variant="outline"
+                              className="border-amber-500/30 bg-amber-500/10 text-xs text-amber-700 dark:text-amber-300"
+                            >
+                              Already requested
                             </Badge>
-                          )}
+                          ) : null}
                         </div>
                       </div>
                       {isRequesting ? (
-                        <Loader2 className="h-5 w-5 flex-shrink-0 animate-spin text-muted-foreground" />
+                        <Loader2 className="h-5 w-5 shrink-0 animate-spin text-muted-foreground" />
                       ) : (
-                        <Send className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
+                        <Send className="h-5 w-5 shrink-0 text-muted-foreground" />
                       )}
                     </div>
                   </button>
                 );
               })
             ) : (
-              <div className="rounded-lg border border-dashed border-border/60 p-6 text-center">
+              <div className="rounded-xl border border-dashed border-border/60 p-8 text-center">
                 <Users className="mx-auto h-8 w-8 text-muted-foreground/50" />
-                <p className="mt-2 text-sm text-muted-foreground">
-                  No mentors are currently available
+                <p className="mt-2 text-sm font-medium">
+                  No mentors are available
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Tech leads appear here once they turn on their mentoring
+                  availability.
                 </p>
               </div>
             )}
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* --------------------------- Unlink confirm --------------------------- */}
+      <AlertDialog open={confirmingUnlink} onOpenChange={setConfirmingUnlink}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unlink your GitHub account?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Recommendations will stop mapping to this account and disappear
+              from this page until you link it again.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleUnlinkGitHub}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Unlink
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -76,9 +76,7 @@ export default function DeveloperRecommendationDetailPage() {
   }, [hasHydrated, loadData, router, user]);
 
   const recommendation = useMemo(() => {
-    return (
-      recommendations.find((item) => item.id === recommendationId) || null
-    );
+    return recommendations.find((item) => item.id === recommendationId) || null;
   }, [recommendationId, recommendations]);
 
   const acknowledgeRecommendation = async () => {
@@ -114,9 +112,12 @@ export default function DeveloperRecommendationDetailPage() {
     return (
       <div className="min-h-screen bg-background">
         <Navbar />
-        <div className="flex h-[calc(100vh-64px)] items-center justify-center">
-          <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-primary" />
-        </div>
+        <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+          <div className="h-8 w-44 animate-pulse rounded bg-muted" />
+          <div className="mt-4 h-56 animate-pulse rounded-2xl bg-muted" />
+          <div className="mt-6 h-40 animate-pulse rounded-2xl bg-muted" />
+          <div className="mt-6 h-72 animate-pulse rounded-2xl bg-muted" />
+        </main>
       </div>
     );
   }
@@ -125,47 +126,15 @@ export default function DeveloperRecommendationDetailPage() {
     <div className="min-h-screen bg-background bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.10),transparent_28%),radial-gradient(circle_at_top_right,rgba(217,70,239,0.08),transparent_22%)] dark:bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.22),transparent_35%),radial-gradient(circle_at_top_right,rgba(217,70,239,0.18),transparent_30%)]">
       <Navbar />
 
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <Button asChild variant="ghost" className="-ml-3 mb-3 gap-2">
-              <Link href="/dashboard/developer/recommendations">
-                <ArrowLeft className="h-4 w-4" />
-                Back to recommendations
-              </Link>
-            </Button>
-            <p className="text-sm uppercase tracking-[0.25em] text-muted-foreground">
-              Recommendation Details
-            </p>
-            <h1 className="mt-2 text-4xl font-bold tracking-tight">
-              Issues and next steps
-            </h1>
-            <p className="mt-2 max-w-3xl text-muted-foreground">
-              Review the issues found in your analysis, then use the generated
-              recommendation to decide what to work on next.
-            </p>
-          </div>
-
-          {recommendation ? (
-            <Button
-              type="button"
-              className="gap-2"
-              variant={
-                recommendation.status === "completed" ? "outline" : "default"
-              }
-              disabled={recommendation.status === "completed" || ackLoading}
-              onClick={acknowledgeRecommendation}
-            >
-              {ackLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : recommendation.status === "completed" ? (
-                <CircleCheck className="h-4 w-4" />
-              ) : null}
-              {recommendation.status === "completed"
-                ? "Completed"
-                : "Mark completed"}
-            </Button>
-          ) : null}
+      <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+        {/* The panel header carries the title, so this stays a breadcrumb. */}
+        <div className="mb-4">
+          <Button asChild variant="ghost" size="sm" className="-ml-3 gap-2">
+            <Link href="/dashboard/developer/recommendations">
+              <ArrowLeft className="h-4 w-4" />
+              Back to recommendations
+            </Link>
+          </Button>
         </div>
 
         {error ? (
@@ -186,8 +155,8 @@ export default function DeveloperRecommendationDetailPage() {
                 Recommendation not found
               </h2>
               <p className="mt-2 text-sm text-muted-foreground">
-                It may have been removed or may not belong to your linked
-                GitHub account.
+                It may have been removed or may not belong to your linked GitHub
+                account.
               </p>
               <Button asChild className="mt-5">
                 <Link href="/dashboard/developer/recommendations">
@@ -200,6 +169,26 @@ export default function DeveloperRecommendationDetailPage() {
           <RecommendationDetailPanel
             recommendation={recommendation}
             repositoryName={repositories[recommendation.repository_id]}
+            actions={
+              <Button
+                type="button"
+                className="gap-2"
+                variant={
+                  recommendation.status === "completed" ? "outline" : "default"
+                }
+                disabled={recommendation.status === "completed" || ackLoading}
+                onClick={acknowledgeRecommendation}
+              >
+                {ackLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : recommendation.status === "completed" ? (
+                  <CircleCheck className="h-4 w-4" />
+                ) : null}
+                {recommendation.status === "completed"
+                  ? "Completed"
+                  : "Mark completed"}
+              </Button>
+            }
           />
         )}
       </main>

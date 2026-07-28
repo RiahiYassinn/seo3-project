@@ -2,6 +2,14 @@ import axios from 'axios'
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_GATEWAY || 'http://localhost:3006'
 
+/** Routes that require a session. Everything else stays reachable logged out. */
+const PROTECTED_PATH_PREFIXES = ['/dashboard']
+
+const isProtectedPath = (pathname: string) =>
+  PROTECTED_PATH_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+  )
+
 const syncStoredUser = (user: unknown) => {
   if (typeof window === 'undefined' || !user) {
     return
@@ -80,7 +88,10 @@ api.interceptors.response.use(
       } catch (refreshError) {
         console.error('Token refresh failed:', refreshError)
         localStorage.removeItem('auth-storage')
-        if (typeof window !== 'undefined') {
+
+        // Anonymous visitors are allowed on public pages, so only send people
+        // back to the login screen when they were inside a protected area.
+        if (typeof window !== 'undefined' && isProtectedPath(window.location.pathname)) {
           window.location.href = '/login'
         }
       }

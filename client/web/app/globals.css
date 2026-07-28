@@ -26,25 +26,25 @@
     --card-foreground: 0 0% 3.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 0 0% 3.9%;
-    --primary: 84 65% 45%;
+    --primary: 206 88% 43%;
     --primary-foreground: 0 0% 98%;
-    --secondary: 24 100% 50%;
+    --secondary: 210 8% 28%;
     --secondary-foreground: 0 0% 98%;
     --muted: 0 0% 96.1%;
     --muted-foreground: 0 0% 45.1%;
-    --accent: 301 88% 42%;
+    --accent: 215 45% 35%;
     --accent-foreground: 0 0% 98%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
-    --border: hsl(220, 20%, 90%);
-    --input: hsl(220, 20%, 90%);
-    --ring: 84 65% 45%;
-    --btn-border: hsl(214deg, 31.8%, 91.4%);
-    --chart-1: 84 65% 45%;
-    --chart-2: 24 100% 50%;
-    --chart-3: 301 88% 42%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
+    --border: hsl(210, 20%, 90%);
+    --input: hsl(210, 20%, 90%);
+    --ring: 206 88% 43%;
+    --btn-border: hsl(210deg, 31.8%, 91.4%);
+    --chart-1: 206 88% 43%;
+    --chart-2: 210 8% 40%;
+    --chart-3: 215 45% 35%;
+    --chart-4: 199 60% 65%;
+    --chart-5: 195 70% 30%;
     --radius: 0.5rem;
   }
   .dark {
@@ -55,30 +55,58 @@
     --card-foreground: 0 0% 98%;
     --popover: 0 0% 3.9%;
     --popover-foreground: 0 0% 98%;
-    --primary: 84 65% 45%;
+    --primary: 206 88% 43%;
     --primary-foreground: 0 0% 98%;
-    --secondary: 24 100% 50%;
+    --secondary: 210 8% 28%;
     --secondary-foreground: 0 0% 98%;
     --muted: 0 0% 14.9%;
     --muted-foreground: 0 0% 63.9%;
-    --accent: 301 88% 42%;
+    --accent: 215 45% 35%;
     --accent-foreground: 0 0% 98%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
-    --border: hsl(220, 20%, 90%);
-    --input: hsl(219, 63%, 16%);
-    --ring: 84 65% 45%;
-    --btn-border: hsl(217deg, 32.6%, 17.5%);
-    --chart-1: 84 65% 45%;
-    --chart-2: 24 100% 50%;
-    --chart-3: 301 88% 42%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
+    --border: hsl(210, 20%, 90%);
+    --input: hsl(210, 63%, 16%);
+    --ring: 206 88% 43%;
+    --btn-border: hsl(210deg, 32.6%, 17.5%);
+    --chart-1: 206 88% 43%;
+    --chart-2: 210 8% 40%;
+    --chart-3: 215 45% 35%;
+    --chart-4: 199 55% 55%;
+    --chart-5: 195 55% 45%;
     --radius: 0.5rem;
   }
   .theme {
     --animate-ripple: ripple 2s ease calc(var(--i, 0) * 0.2s) infinite;
     --animate-orbit: orbit calc(var(--duration) * 1s) linear infinite;
+  }
+
+  /* ---------------------------------------------------------------------
+     Data-visualisation tokens.
+
+     Dark steps are selected for the dark surface, not flipped. Validated
+     with the dataviz palette validator against this app's surfaces
+     (light #ffffff, dark #0f172a): series blue clears the lightness band
+     and 3:1 contrast in both modes; the status steps clear 3:1 on dark and
+     are sub-3:1 on light by design, which is why every severity mark ships
+     with a label + count rather than relying on colour alone.
+     --------------------------------------------------------------------- */
+  :root {
+    --viz-series-1: #2a78d6;
+    --viz-grid: #e2e8f0;
+    --viz-axis: #94a3b8;
+    --viz-neutral: #cbd5e1;
+    --viz-critical: #d03b3b;
+    --viz-serious: #ec835a;
+    --viz-warning: #fab219;
+    --viz-good: #0ca30c;
+  }
+
+  .dark {
+    --viz-series-1: #3987e5;
+    --viz-grid: #1e293b;
+    --viz-axis: #64748b;
+    --viz-neutral: #475569;
   }
 }
 
@@ -88,6 +116,16 @@
   }
 body {
     @apply bg-background text-foreground;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
   }
 }
 

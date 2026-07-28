@@ -5,16 +5,11 @@ import { UpdateUserDto, CreateUserDto } from './dto/user.dto';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
-import { randomUUID } from 'crypto';
-import { mkdir, unlink, writeFile } from 'fs/promises';
-import { join } from 'path';
-
-type UploadedAvatarFile = {
-  mimetype: string;
-  size: number;
-  originalname: string;
-  buffer: Buffer;
-};
+import {
+  removeStoredAvatar,
+  storeAvatarFile,
+  type UploadedAvatarFile,
+} from '../../common/avatar-storage';
 
 @Injectable()
 export class AdminService {
@@ -140,32 +135,7 @@ export class AdminService {
   }
 
   async uploadUserAvatar(userId: string, file: UploadedAvatarFile) {
-    if (!file) {
-      throw new BadRequestException('Avatar file is required');
-    }
-
-    if (!file.mimetype?.startsWith('image/')) {
-      throw new BadRequestException('Only image files are allowed');
-    }
-
-    const maxFileSize = 5 * 1024 * 1024;
-    if (file.size > maxFileSize) {
-      throw new BadRequestException('Avatar size must be less than 5MB');
-    }
-
-    const uploadDir = join(process.cwd(), 'uploads', 'avatars');
-    await mkdir(uploadDir, { recursive: true });
-
-    const extensionFromName = file.originalname?.includes('.')
-      ? file.originalname.split('.').pop()?.toLowerCase()
-      : null;
-    const extension = extensionFromName || file.mimetype.split('/').pop() || 'png';
-    const fileName = `${randomUUID()}.${extension}`;
-    const filePath = join(uploadDir, fileName);
-
-    await writeFile(filePath, file.buffer);
-
-    const avatarPath = `/uploads/avatars/${fileName}`;
+    const avatarPath = await storeAvatarFile(file);
 
     const existingUser = await this.getUserById(userId);
     const previousAvatar = existingUser?.avatar;
@@ -177,20 +147,8 @@ export class AdminService {
       })
     );
 
-    if (
-      typeof previousAvatar === 'string' &&
-      previousAvatar.startsWith('/uploads/avatars/') &&
-      previousAvatar !== avatarPath
-    ) {
-      const previousFileName = previousAvatar.split('/').pop();
-      if (previousFileName) {
-        const previousPath = join(uploadDir, previousFileName);
-        try {
-          await unlink(previousPath);
-        } catch {
-          // Ignore cleanup failures for old files.
-        }
-      }
+    if (previousAvatar !== avatarPath) {
+      await removeStoredAvatar(previousAvatar);
     }
 
     return {

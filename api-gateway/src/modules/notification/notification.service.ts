@@ -56,6 +56,55 @@ export class NotificationService {
     }
   }
 
+  async markAsUnread(notificationId: string, userId: string, role: string) {
+    try {
+      const response = await axios.post(
+        `${this.baseUrl}/notifications/${notificationId}/unread`,
+        {
+          userId,
+          role: this.normalizeRole(role),
+        },
+      );
+
+      return response.data;
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  async dismiss(notificationId: string, userId: string, role: string) {
+    try {
+      const response = await axios.post(
+        `${this.baseUrl}/notifications/${notificationId}/dismiss`,
+        {
+          userId,
+          role: this.normalizeRole(role),
+        },
+      );
+
+      return response.data;
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  async dismissMany(ids: string[], userId: string, role: string) {
+    try {
+      const response = await axios.post(
+        `${this.baseUrl}/notifications/dismiss`,
+        {
+          ids,
+          userId,
+          role: this.normalizeRole(role),
+        },
+      );
+
+      return response.data;
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
   async markAllAsRead(userId: string, role: string) {
     try {
       const response = await axios.post(
