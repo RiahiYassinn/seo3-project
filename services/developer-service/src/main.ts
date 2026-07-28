@@ -1,40 +1,39 @@
+// developer-service/src/main.ts
+import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
-import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  // Create HTTP application
-  const app = await NestFactory.create(AppModule);
-  
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-    }),
-  );
-
-  // Connect to Kafka microservice
-  app.connectMicroservice<MicroserviceOptions>({
-    transport: Transport.KAFKA,
-    options: {
-      client: {
-        clientId: 'developer-service',
-        brokers: (process.env.KAFKA_BROKERS || 'localhost:29092').split(','),
-      },
-      consumer: {
-        groupId: 'developer-service-group',
+  const tcpApp = await NestFactory.createMicroservice<MicroserviceOptions>(
+    AppModule,
+    {
+      transport: Transport.TCP,
+      options: {
+        host: '0.0.0.0',
+        port: parseInt(process.env.DEVELOPER_SERVICE_PORT || '3001'),
       },
     },
-  });
+  );
 
-  await app.startAllMicroservices();
-  
-  const port = process.env.DEVELOPER_SERVICE_PORT || 3001;
-  await app.listen(port);
-  
-  console.log(`🚀 Developer Service is running on: http://localhost:${port}`);
+  const kafkaApp = await NestFactory.createMicroservice<MicroserviceOptions>(
+    AppModule,
+    {
+      transport: Transport.KAFKA,
+      options: {
+        client: {
+          clientId: 'developer-service-kafka',
+          brokers: (process.env.KAFKA_BROKERS || 'localhost:29092').split(','),
+        },
+        consumer: {
+          groupId: 'developer-service-group',
+        },
+      },
+    },
+  );
+
+  await Promise.all([tcpApp.listen(), kafkaApp.listen()]);
+  console.log(`Developer Service TCP microservice listening on port ${process.env.DEVELOPER_SERVICE_PORT || '3001'}`);
+  console.log('Developer Service Kafka consumer listening for analysis result events');
 }
-
 bootstrap();
