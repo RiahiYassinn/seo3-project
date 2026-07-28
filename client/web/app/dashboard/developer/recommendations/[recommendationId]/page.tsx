@@ -3,7 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, CircleCheck, Loader2, Sparkles } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  CircleCheck,
+  Loader2,
+  Sparkles,
+} from "lucide-react";
 import { Navbar } from "@/components/navbar";
 import { RecommendationDetailPanel } from "@/components/recommendations/recommendation-detail-panel";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -78,6 +84,51 @@ export default function DeveloperRecommendationDetailPage() {
   const recommendation = useMemo(() => {
     return recommendations.find((item) => item.id === recommendationId) || null;
   }, [recommendationId, recommendations]);
+
+  /**
+   * The action plan lives inside this report for self-serve work, and back on
+   * the feed for mentorship (that is where the mentor picker is).
+   */
+  const developerCta = useMemo(() => {
+    if (!recommendation) {
+      return { label: "View recommendation", href: "#plan", note: "" };
+    }
+
+    if (recommendation.recommendation_type === "mentorship") {
+      return recommendation.mentor_id
+        ? {
+            label: "View mentoring plan",
+            href: "#plan",
+            note: "Your mentor and session details are in the plan section.",
+          }
+        : {
+            label: "Find a mentor",
+            href: "/dashboard/developer/recommendations",
+            note: "Pick an available mentor to get this moving.",
+          };
+    }
+
+    if (recommendation.recommendation_type === "docs_review") {
+      return {
+        label: "Open docs checklist",
+        href: "#plan",
+        note: "A short, targeted checklist — usually under an hour.",
+      };
+    }
+
+    const hours = recommendation.learning_path?.estimatedTotalHours;
+    const steps = recommendation.learning_path?.steps?.length || 0;
+
+    return {
+      label: "Start learning path",
+      href: "#plan",
+      note: steps
+        ? `${steps} step${steps === 1 ? "" : "s"}${
+            typeof hours === "number" ? `, about ${hours} hours` : ""
+          } built from the gaps above.`
+        : "Your step-by-step plan is in the report.",
+    };
+  }, [recommendation]);
 
   const acknowledgeRecommendation = async () => {
     if (!recommendation) return;
@@ -172,21 +223,28 @@ export default function DeveloperRecommendationDetailPage() {
             actions={
               <Button
                 type="button"
+                variant="outline"
                 className="gap-2"
-                variant={
-                  recommendation.status === "completed" ? "outline" : "default"
-                }
                 disabled={recommendation.status === "completed" || ackLoading}
                 onClick={acknowledgeRecommendation}
               >
                 {ackLoading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
-                ) : recommendation.status === "completed" ? (
+                ) : (
                   <CircleCheck className="h-4 w-4" />
-                ) : null}
+                )}
                 {recommendation.status === "completed"
                   ? "Completed"
                   : "Mark completed"}
+              </Button>
+            }
+            primaryActionNote={developerCta.note}
+            primaryAction={
+              <Button asChild size="lg" className="group gap-2">
+                <Link href={developerCta.href}>
+                  {developerCta.label}
+                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" />
+                </Link>
               </Button>
             }
           />

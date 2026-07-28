@@ -323,7 +323,9 @@ export default function AdminProfileDetailPage() {
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
               <CircleAlert className="h-6 w-6" />
             </div>
-            <h3 className="mt-4 text-lg font-semibold">Profile not available</h3>
+            <h3 className="mt-4 text-lg font-semibold">
+              Profile not available
+            </h3>
             <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
               {error ||
                 "This generated profile is no longer available. It may have been replaced by a newer analysis run."}
@@ -608,40 +610,6 @@ export default function AdminProfileDetailPage() {
               )}
             </CardContent>
           </Card>
-
-          {/* -------------------------- Learning resources -------------------------- */}
-          {resources.length ? (
-            <Card className="border-border/60 bg-background/85 shadow-sm">
-              <CardHeader className="pb-4">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <BookOpen className="h-5 w-5" />
-                  Suggested learning resources
-                  <Badge variant="secondary" className="ml-1">
-                    {resources.length}
-                  </Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {resources.map((resource, index) => (
-                  <a
-                    key={`${resource.url}-${index}`}
-                    href={resource.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-start justify-between gap-3 rounded-xl border border-border/60 bg-muted/15 p-4 transition-colors hover:border-primary/35 hover:bg-muted/30"
-                  >
-                    <div className="min-w-0">
-                      <p className="font-medium">{resource.title}</p>
-                      <p className="mt-1 text-sm capitalize text-muted-foreground">
-                        {formatLabel(resource.skill)} · {resource.type}
-                      </p>
-                    </div>
-                    <ArrowUpRight className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                  </a>
-                ))}
-              </CardContent>
-            </Card>
-          ) : null}
         </div>
 
         {/* ---------------------------- Recommendation ---------------------------- */}
@@ -677,7 +645,9 @@ export default function AdminProfileDetailPage() {
                   </Badge>
                   <Badge
                     variant="outline"
-                    className={priorityBand(recommendation.priority_score).badge}
+                    className={
+                      priorityBand(recommendation.priority_score).badge
+                    }
                     title={`Priority score ${recommendation.priority_score}`}
                   >
                     {priorityBand(recommendation.priority_score).label}

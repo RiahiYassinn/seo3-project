@@ -12,19 +12,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   ArrowLeft,
   CalendarClock,
   CircleAlert,
   Loader,
   UserRoundPlus,
-  CheckCircle2,
 } from "lucide-react";
 import { type RecommendationCase } from "@/app/dashboard/admin/profiles/profile-types";
 
@@ -53,6 +53,7 @@ export default function TechLeadRecommendationDetailPage() {
   const [scheduling, setScheduling] = useState(false);
   const [scheduledAt, setScheduledAt] = useState("");
   const [note, setNote] = useState("");
+  const [schedulerOpen, setSchedulerOpen] = useState(false);
 
   const loadRecommendation = useCallback(async () => {
     try {
@@ -134,6 +135,7 @@ export default function TechLeadRecommendationDetailPage() {
         toDateTimeLocalValue(data.mentorship_session_scheduled_at),
       );
       setNote(data.mentorship_session_note || "");
+      setSchedulerOpen(false);
     } catch (requestError: any) {
       setError(
         requestError?.response?.data?.message ||
@@ -213,148 +215,130 @@ export default function TechLeadRecommendationDetailPage() {
           </Alert>
         )}
 
-        {/* Main Content Layout Grid */}
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:items-start">
-          {/* Left Column: Data Display (Takes 2/3 width) */}
-          <div className="min-w-0 lg:col-span-2">
-            <RecommendationDetailPanel recommendation={recommendation} />
-          </div>
-
-          {/* Right Column: Workflow Action Panels (Takes 1/3 width) */}
-          <div className="space-y-6 lg:sticky lg:top-20">
-            {/* Case 1: Unclaimed Mentorship Card */}
-            {unclaimed && (
-              <Card className="border-primary/20 shadow-sm">
-                <CardHeader>
-                  <CardTitle className="text-lg">Open Recommendation</CardTitle>
-                  <CardDescription>
-                    This case has not been assigned. Claim it to manage the
-                    mentorship and scheduling.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Button
-                    onClick={claim}
-                    disabled={assigning}
-                    className="w-full gap-2 shadow-sm"
-                    size="lg"
-                  >
-                    {assigning ? (
-                      <>
-                        <Loader className="h-4 w-4 animate-spin" />
-                        Claiming Case...
-                      </>
-                    ) : (
-                      <>
-                        <UserRoundPlus className="h-4 w-4" />
-                        Claim Mentorship
-                      </>
-                    )}
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Case 2: Claimed by Someone Else */}
-            {!unclaimed && !claimedByMe && (
-              <Card className="border-border/60 bg-muted/30">
-                <CardContent className="flex gap-3 p-5 text-sm">
-                  <UserRoundPlus className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                  <div>
-                    <p className="font-medium text-foreground">
-                      Assigned to another mentor
-                    </p>
-                    <p className="mt-1 text-muted-foreground">
-                      You can review the case, but scheduling is handled by the
-                      mentor who claimed it.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Case 3: Claimed By Me -> Show Scheduler Form */}
-            {claimedByMe && (
-              <Card className="border-emerald-500/20 shadow-sm">
-                <CardHeader className="pb-3">
-                  <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
-                    <CheckCircle2 className="h-5 w-5" />
-                    <span className="text-xs font-semibold uppercase tracking-wider">
-                      Assigned to You
-                    </span>
-                  </div>
-                  <CardTitle className="text-lg mt-1">
-                    Session Actions
-                  </CardTitle>
-                  <CardDescription>
-                    Set up or update the date and strategy notes for this
-                    session.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <form
-                    className="space-y-4"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      scheduleSession();
-                    }}
-                  >
-                    <div className="space-y-2">
-                      <Label
-                        htmlFor="session-date"
-                        className="text-sm font-medium"
-                      >
-                        Session Date & Time
-                      </Label>
-                      <Input
-                        id="session-date"
-                        type="datetime-local"
-                        value={scheduledAt}
-                        onChange={(event) => setScheduledAt(event.target.value)}
-                        disabled={scheduling}
-                        className="w-full"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label
-                        htmlFor="session-note"
-                        className="text-sm font-medium"
-                      >
-                        Agenda / Meeting Notes
-                      </Label>
-                      <Input
-                        id="session-note"
-                        value={note}
-                        onChange={(event) => setNote(event.target.value)}
-                        placeholder="e.g. Meeting link or focus topics"
-                        disabled={scheduling}
-                        className="w-full"
-                      />
-                    </div>
-
-                    <Button
-                      type="submit"
-                      className="w-full gap-2 mt-2"
-                      disabled={scheduling}
-                      variant="default"
-                    >
-                      {scheduling ? (
-                        <Loader className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <CalendarClock className="h-4 w-4" />
-                      )}
-                      {recommendation.mentorship_session_scheduled_at
-                        ? "Update Session"
-                        : "Schedule Session"}
-                    </Button>
-                  </form>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        </div>
+        {/* One cohesive report; the mentoring action closes it. */}
+        <RecommendationDetailPanel
+          recommendation={recommendation}
+          primaryActionNote={
+            unclaimed
+              ? "Claim this case to schedule a session and become the developer's mentor."
+              : claimedByMe
+                ? recommendation.mentorship_session_scheduled_at
+                  ? `Session set for ${new Date(
+                      recommendation.mentorship_session_scheduled_at,
+                    ).toLocaleString([], {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    })}.`
+                  : "You're mentoring this case — book a time with the developer."
+                : "Another tech lead claimed this case, so scheduling is theirs to run."
+          }
+          primaryAction={
+            unclaimed ? (
+              <Button
+                onClick={claim}
+                disabled={assigning}
+                size="lg"
+                className="gap-2"
+              >
+                {assigning ? (
+                  <Loader className="h-4 w-4 animate-spin" />
+                ) : (
+                  <UserRoundPlus className="h-4 w-4" />
+                )}
+                {assigning ? "Claiming…" : "Claim mentorship"}
+              </Button>
+            ) : claimedByMe ? (
+              <Button
+                size="lg"
+                className="gap-2"
+                onClick={() => setSchedulerOpen(true)}
+              >
+                <CalendarClock className="h-4 w-4" />
+                {recommendation.mentorship_session_scheduled_at
+                  ? "Reschedule mentoring session"
+                  : "Schedule mentoring session"}
+              </Button>
+            ) : (
+              <Button variant="outline" size="lg" asChild>
+                <Link href="/dashboard/tech_lead/recommendations">
+                  Back to queue
+                </Link>
+              </Button>
+            )
+          }
+        />
       </main>
+
+      {/* ---------------------------- Session scheduler ---------------------------- */}
+      <Dialog open={schedulerOpen} onOpenChange={setSchedulerOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {recommendation.mentorship_session_scheduled_at
+                ? "Reschedule mentoring session"
+                : "Schedule mentoring session"}
+            </DialogTitle>
+            <DialogDescription>
+              The developer is notified as soon as you confirm.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              scheduleSession();
+            }}
+          >
+            <div className="space-y-2">
+              <Label htmlFor="session-date">Date and time</Label>
+              <Input
+                id="session-date"
+                type="datetime-local"
+                value={scheduledAt}
+                onChange={(event) => setScheduledAt(event.target.value)}
+                disabled={scheduling}
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="session-note">Agenda or meeting link</Label>
+              <Input
+                id="session-note"
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+                placeholder="e.g. Meet link, or the two topics to cover"
+                disabled={scheduling}
+              />
+              <p className="text-xs text-muted-foreground">
+                Shown to the developer with the session time.
+              </p>
+            </div>
+
+            <DialogFooter className="gap-2 sm:gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setSchedulerOpen(false)}
+                disabled={scheduling}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" className="gap-2" disabled={scheduling}>
+                {scheduling ? (
+                  <Loader className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CalendarClock className="h-4 w-4" />
+                )}
+                {recommendation.mentorship_session_scheduled_at
+                  ? "Update session"
+                  : "Confirm session"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
