@@ -9,7 +9,7 @@ name: CD
 
 on:
   push:
-    branches: [main]
+    branches: [main, prod]
     tags: ["v*.*.*"]
   workflow_dispatch:
     inputs:

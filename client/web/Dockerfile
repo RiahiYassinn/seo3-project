@@ -35,6 +35,7 @@ RUN npm ci
 FROM deps AS builder
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY turbo.json ./
+COPY shared/ shared/
 COPY client/web/ client/web/
 RUN npx turbo run build --filter=nextjs
 
@@ -43,13 +44,16 @@ FROM base AS runner
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
 
 RUN addgroup --system --gid 1001 nodejs \
- && adduser --system --uid 1001 nextjs
+    && adduser --system --uid 1001 nextjs
 
 # Tracing starts at the monorepo root, so the bundle keeps that layout:
 # hoisted node_modules at /app plus the app itself under /app/client/web.
 COPY --from=builder --chown=nextjs:nodejs /app/client/web/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/client/web/.next/static ./client/web/.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/client/web/public ./client/web/public
+
+# Ensure the destination directory exists and safely copy public assets if present
+RUN mkdir -p ./client/web/public
+COPY --from=builder --chown=nextjs:nodejs /app/client/web/public* ./client/web/public/
 
 USER nextjs
 WORKDIR /app/client/web

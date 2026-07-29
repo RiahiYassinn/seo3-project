@@ -122,8 +122,8 @@ jobs:
         include:
           - image: api-gateway
             dockerfile: api-gateway/Dockerfile
-          - image: proder-service
-            dockerfile: services/proder-service/Dockerfile
+          - image: developer-service
+            dockerfile: services/developer-service/Dockerfile
           - image: skill-service
             dockerfile: services/skill-service/Dockerfile
           - image: analysis-service
