@@ -6,7 +6,11 @@
     "build": "nest build",
     "dev": "nest start --watch",
     "start:prod": "node dist/main",
-    "ingest:courses": "node dist/main ingest:courses"
+    "ingest:courses": "node dist/main ingest:courses",
+    "lint": "eslint \"src/**/*.ts\"",
+    "lint:fix": "eslint \"src/**/*.ts\" --fix",
+    "typecheck": "tsc --noEmit",
+    "test": "jest --passWithNoTests"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.0",
@@ -27,5 +31,22 @@
   "devDependencies": {
     "@nestjs/cli": "^10.2.1",
     "typescript": "^5.3.3"
+  },
+  "jest": {
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.(t|j)s$": "ts-jest"
+    },
+    "collectCoverageFrom": [
+      "**/*.(t|j)s"
+    ],
+    "coverageDirectory": "../coverage",
+    "testEnvironment": "node"
   }
 }

@@ -1,0 +1,173 @@
+name: CI
+
+on:
+  push:
+    branches: [main, prod]
+  pull_request:
+    branches: [main, prod]
+  workflow_dispatch:
+
+# A newer push to the same branch makes the in-flight run obsolete.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "20"
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Every TypeScript workspace: lint, typecheck, build, test.
+  # ---------------------------------------------------------------------------
+  node:
+    name: Node workspaces
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      # Turbo skips tasks whose inputs are unchanged; the key rotates per commit
+      # and falls back to the most recent cache on the same branch.
+      - name: Restore turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npx turbo run lint
+
+      - name: Typecheck
+        run: npx turbo run typecheck
+
+      - name: Build
+        run: npx turbo run build
+
+      - name: Test
+        run: npx turbo run test
+
+  # ---------------------------------------------------------------------------
+  # nlp-service is Python and sits outside the turbo task graph.
+  # ---------------------------------------------------------------------------
+  python:
+    name: NLP service (Python)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: services/nlp-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: services/nlp-service/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Security scan (bandit)
+        # Low/medium findings are reported but only high severity blocks a merge.
+        run: bandit -r app main.py --severity-level high
+
+      - name: Import check
+        run: python -c "import main; print('FastAPI app imports OK')"
+
+      - name: Test (pytest)
+        # The repo currently ships manual scripts named test_*.py rather than
+        # real suites, so pytest collects nothing and exits 5. Treat that as a
+        # pass; any actual test failure still fails the job.
+        run: |
+          code=0
+          pytest -q || code=$?
+          if [ "$code" -eq 5 ]; then
+            echo "::warning::No pytest tests collected in services/nlp-service"
+            exit 0
+          fi
+          exit "$code"
+
+  # ---------------------------------------------------------------------------
+  # Prove every image still builds. No registry push happens here.
+  # ---------------------------------------------------------------------------
+  docker:
+    name: Build ${{ matrix.image }} image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [node]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: api-gateway
+            dockerfile: api-gateway/Dockerfile
+          - image: proder-service
+            dockerfile: services/proder-service/Dockerfile
+          - image: skill-service
+            dockerfile: services/skill-service/Dockerfile
+          - image: analysis-service
+            dockerfile: services/analysis-service/Dockerfile
+          - image: recommendation-service
+            dockerfile: services/recommendation-service/Dockerfile
+          - image: notification-service
+            dockerfile: services/notification-service/Dockerfile
+          - image: nlp-service
+            dockerfile: services/nlp-service/Dockerfile
+          - image: web-client
+            dockerfile: client/web/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          # Context is the repo root: this is an npm-workspaces monorepo with a
+          # single root package-lock.json.
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: false
+          load: true
+          tags: seo3/${{ matrix.image }}:ci
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,scope=${{ matrix.image }},mode=max
+
+  # ---------------------------------------------------------------------------
+  # Single required status check, so branch protection needs only one entry.
+  # ---------------------------------------------------------------------------
+  ci-status:
+    name: CI status
+    runs-on: ubuntu-latest
+    needs: [node, python, docker]
+    if: always()
+    steps:
+      - name: Fail if any job did not succeed
+        run: |
+          echo "node:   ${{ needs.node.result }}"
+          echo "python: ${{ needs.python.result }}"
+          echo "docker: ${{ needs.docker.result }}"
+          [ "${{ needs.node.result }}" = "success" ] \
+            && [ "${{ needs.python.result }}" = "success" ] \
+            && [ "${{ needs.docker.result }}" = "success" ]

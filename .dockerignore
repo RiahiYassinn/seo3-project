@@ -1,0 +1,44 @@
+# Dependencies and build output are recreated inside the image.
+**/node_modules
+**/dist
+**/build
+**/.next
+**/out
+**/*.egg-info
+**/__pycache__
+**/*.py[cod]
+
+# Tooling caches
+.turbo
+**/.turbo
+**/coverage
+**/.pytest_cache
+**/tsconfig.tsbuildinfo
+
+# VCS and CI
+.git
+.gitignore
+.github
+
+# Secrets must come from the runtime environment, never baked into a layer.
+.env
+.env.*
+!.env.example
+
+# Local-only noise
+**/*.log
+debug.log
+**/next-dev.log
+**/next-dev.err.log
+.vscode
+.idea
+**/.DS_Store
+Thumbs.db
+
+# Docs and design artifacts that do not belong in an image
+docs
+*.md
+!README.md
+*.docx
+*.html
+api-gateway/uploads

@@ -53,7 +53,6 @@ class RuleEngine:
             loading_state_count = int(
                 observations.get("loading_state_count_in_changed_scope", 0) or 0
             )
-            cleanup_count = int(observations.get("cleanup_count_in_changed_scope", 0) or 0)
             any_count = int(observations.get("explicit_any_count_in_changed_scope", 0) or 0)
 
             if react_fetch_pair_count > 0:

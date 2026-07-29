@@ -31,8 +31,8 @@ cp .env.example .env
 ### 3. Install Dependencies
 
 ```bash
-# Install all service dependencies
-npm run install:all
+# Installs every workspace from the single root lockfile
+npm ci
 ```
 
 ### 4. Run Database Migrations
@@ -49,7 +49,7 @@ npm run migration:run
 
 ```bash
 # Start all services in development mode
-npm run dev:all
+npm run dev
 
 # Or start services individually:
 npm run dev:gateway      # API Gateway on port 3000
@@ -69,32 +69,65 @@ npm run dev:client       # Next.js on port 3000
 
 ## Production Deployment
 
+### Required environment
+
+`docker-compose.prod.yml` reads all credentials from the environment and
+refuses to start if any of these are missing:
+
+| Variable             | Purpose                    |
+| -------------------- | -------------------------- |
+| `POSTGRES_PASSWORD`  | Postgres superuser password |
+| `MONGODB_PASSWORD`   | MongoDB root password       |
+| `JWT_SECRET`         | Access token signing key    |
+| `JWT_REFRESH_SECRET` | Refresh token signing key   |
+
+Everything else falls back to a sensible default — see `.env.example`.
+
 ### Using Docker Compose
 
 ```bash
+cp .env.example .env    # then fill in the secrets above
+
 # Build and start all services
-docker-compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d --build
 
 # View logs
-docker-compose -f docker-compose.prod.yml logs -f
+docker compose -f docker-compose.prod.yml logs -f
 
 # Stop all services
-docker-compose -f docker-compose.prod.yml down
+docker compose -f docker-compose.prod.yml down
+```
+
+To run images published by CI instead of building on the host:
+
+```bash
+export REGISTRY=ghcr.io/riahiyassinn/seo3-project
+export IMAGE_TAG=sha-1a2b3c4        # or a release tag such as 1.4.0
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
 ```
 
 ### Building Individual Services
 
+Every image builds **from the repository root**. This is an npm-workspaces
+monorepo with a single root `package-lock.json`, so `npm ci` cannot run from
+inside a service directory:
+
 ```bash
-# Build API Gateway
-cd api-gateway
-docker build -t seo3/api-gateway:latest .
-
-# Build Developer Service
-cd services/developer-service
-docker build -t seo3/developer-service:latest .
-
-# Similar for other services...
+docker build -f api-gateway/Dockerfile                  -t seo3/api-gateway .
+docker build -f services/developer-service/Dockerfile   -t seo3/developer-service .
+docker build -f services/skill-service/Dockerfile       -t seo3/skill-service .
+docker build -f services/analysis-service/Dockerfile    -t seo3/analysis-service .
+docker build -f services/recommendation-service/Dockerfile -t seo3/recommendation-service .
+docker build -f services/notification-service/Dockerfile   -t seo3/notification-service .
+docker build -f services/nlp-service/Dockerfile         -t seo3/nlp-service .
+docker build -f client/web/Dockerfile                   -t seo3/web-client .
 ```
+
+Each Node image is multi-stage: dependencies are installed once from the root
+lockfile, the workspace is built with `turbo`, then a pruned production-only
+dependency tree is copied into a slim runtime stage that runs as a non-root
+user.
 
 ## Service URLs
 
@@ -237,6 +270,50 @@ docker exec seo3-postgres pg_dump -U seo3_user seo3_db > backup.sql
 docker exec seo3-mongodb mongodump --username seo3_user --password seo3_password --out /backup
 ```
 
-## CI/CD Integration
+## CI/CD
 
-See `.github/workflows` for CI/CD pipeline examples.
+Two workflows live in `.github/workflows`.
+
+### CI — `ci.yml`
+
+Runs on pull requests and on pushes to `main` / `develop`.
+
+| Job                | What it does                                                          |
+| ------------------ | --------------------------------------------------------------------- |
+| **Node workspaces** | `turbo run lint typecheck build test` across all 9 TypeScript packages |
+| **NLP service**     | `ruff` lint, `bandit` scan (fails on high severity), import check, `pytest` |
+| **Docker**          | Builds all 8 images in parallel (no push) to prove the Dockerfiles work |
+| **CI status**       | Aggregates the above into one required check                          |
+
+Turbo's cache is restored from `actions/cache` and Docker layers from the
+GitHub Actions cache, so unchanged packages and layers are skipped.
+
+Point branch protection at the single **CI status** check rather than at each
+job, so the matrix can grow without reconfiguring the branch rules.
+
+### CD — `cd.yml`
+
+Runs on pushes to `main` and on `v*.*.*` tags. It re-runs the full verification,
+then builds and pushes all 8 images to GHCR at
+`ghcr.io/<owner>/<repo>/<service>`:
+
+| Trigger        | Tags produced                      |
+| -------------- | ---------------------------------- |
+| push to `main` | `latest`, `main`, `sha-<short>`    |
+| tag `v1.4.0`   | `1.4.0`, `1.4`, `sha-<short>`      |
+
+Authentication uses the built-in `GITHUB_TOKEN` with `packages: write` — no
+registry secrets to manage.
+
+> **The `deploy` job is a placeholder.** No host is wired up yet, so it only
+> writes the image tag and the exact `docker compose` commands to the run
+> summary. Replace that step with your real deploy (SSH, Helm, ECS, …) and
+> create the `staging` / `production` environments under
+> *Settings → Environments* to gate production behind an approval.
+
+### Running the same checks locally
+
+```bash
+npm run ci          # lint + typecheck + build + test, exactly as CI runs it
+npm run lint:fix    # apply ESLint fixes
+```

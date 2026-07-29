@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 #
 # Build context is the REPOSITORY ROOT, not this directory:
-#   docker build -f api-gateway/Dockerfile -t seo3/api-gateway .
+#   docker build -f services/analysis-service/Dockerfile -t seo3/analysis-service .
 #
 # The repo is an npm-workspaces monorepo with a single root package-lock.json,
 # so `npm ci` can only run from the root with every workspace manifest present.
@@ -35,15 +35,15 @@ RUN npm ci
 # ---------- build ----------
 FROM deps AS builder
 COPY turbo.json ./
-COPY api-gateway/ api-gateway/
-RUN npx turbo run build --filter=api-gateway
+COPY services/analysis-service/ services/analysis-service/
+RUN npx turbo run build --filter=analysis-service
 
 # ---------- production dependencies ----------
 # Rebuilt from the same lockfile but scoped to this one workspace and without
 # dev dependencies, so the runtime image does not carry the whole monorepo.
 FROM deps AS prod-deps
 RUN npm ci --omit=dev \
-      --workspace=api-gateway --include-workspace-root
+      --workspace=analysis-service --include-workspace-root
 
 # ---------- runtime ----------
 FROM base AS runner
@@ -53,14 +53,11 @@ RUN addgroup --system --gid 1001 nodejs \
  && adduser --system --uid 1001 nestjs
 
 COPY --from=prod-deps /app/node_modules ./node_modules
-COPY --from=builder /app/api-gateway/package.json ./api-gateway/package.json
-COPY --from=builder --chown=nestjs:nodejs /app/api-gateway/dist ./api-gateway/dist
-
-# Runtime-writable upload target (mount a volume here in production).
-RUN mkdir -p /app/api-gateway/uploads/avatars && chown -R nestjs:nodejs /app/api-gateway/uploads
+COPY --from=builder /app/services/analysis-service/package.json ./services/analysis-service/package.json
+COPY --from=builder --chown=nestjs:nodejs /app/services/analysis-service/dist ./services/analysis-service/dist
 
 USER nestjs
-WORKDIR /app/api-gateway
+WORKDIR /app/services/analysis-service
 
-EXPOSE 3000
+EXPOSE 3003
 CMD ["node", "dist/main.js"]

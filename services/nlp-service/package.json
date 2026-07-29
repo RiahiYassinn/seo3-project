@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "python main.py",
     "start": "python main.py",
-    "install": "pip install -r requirements.txt",
-    "lint": "echo 'Python linting not configured'",
-    "test": "pytest",
+    "setup:python": "pip install -r requirements.txt",
+    "lint:python": "ruff check .",
+    "test:python": "pytest",
     "clean": "find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true"
   }
 }

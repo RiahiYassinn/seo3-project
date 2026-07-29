@@ -1,5 +1,4 @@
 import logging
-import os
 from contextlib import asynccontextmanager
 from threading import Event, Thread
 from time import time

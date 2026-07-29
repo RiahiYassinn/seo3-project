@@ -18,11 +18,14 @@
         "dev:analysis": "turbo run dev --filter=analysis-service",
         "dev:recommendation": "turbo run dev --filter=recommendation-service",
         "dev:notification": "turbo run dev --filter=notification-service",
-        "dev:client": "turbo run dev --filter=web",
+        "dev:client": "turbo run dev --filter=nextjs",
         "build": "turbo run build",
         "test": "turbo run test",
         "lint": "turbo run lint",
+        "lint:fix": "turbo run lint:fix",
+        "typecheck": "turbo run typecheck",
         "clean": "turbo run clean",
+        "ci": "turbo run lint typecheck build test",
         "docker:up": "docker-compose up -d",
         "docker:down": "docker-compose down",
         "docker:logs": "docker-compose logs -f",
@@ -32,8 +35,14 @@
         "docker:kafka": "docker logs -f seo3-kafka"
     },
     "devDependencies": {
-        "@types/bcryptjs": "^2.4.6",
+        "@types/jest": "^29.5.11",
+        "@types/react": "18.2.22",
+        "@types/react-dom": "18.2.7",
         "concurrently": "^8.2.2",
+        "jest": "^29.7.0",
+        "react": "18.2.0",
+        "react-dom": "18.2.0",
+        "ts-jest": "^29.1.1",
         "turbo": "^2.8.9",
         "typescript": "^5.3.3"
     },
@@ -41,11 +50,5 @@
         "node": ">=18.0.0",
         "npm": ">=9.0.0"
     },
-    "packageManager": "npm@10.2.4",
-    "dependencies": {
-        "bcryptjs": "^3.0.3",
-        "clsx": "^2.1.1",
-        "framer-motion": "^12.34.5",
-        "tailwind-merge": "^3.5.0"
-    }
+    "packageManager": "npm@10.2.4"
 }

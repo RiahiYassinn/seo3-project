@@ -1,218 +1,310 @@
-version: '3.8'
+# Production stack.
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Every application image builds from the repository root because this is an
+# npm-workspaces monorepo with a single root package-lock.json.
+#
+# Credentials come from the environment (see .env.example); nothing sensitive
+# is hardcoded here. `IMAGE_TAG` lets you run images published by CI instead of
+# building locally, e.g. IMAGE_TAG=sha-1a2b3c4 docker compose ... up -d
+#
+# The `${VAR:?...}` form fails fast with a readable message when a required
+# secret is missing, rather than silently starting with a default.
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  networks:
+    - seo3-network
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-kafka-env: &kafka-env
+  KAFKA_BROKERS: kafka:9092
+  KAFKA_CLIENT_ID: ${KAFKA_CLIENT_ID:-seo3-platform}
+  KAFKA_GROUP_ID: ${KAFKA_GROUP_ID:-seo3-group}
 
 services:
-  # Infrastructure Services
+  # ---------------- Infrastructure ----------------
   postgres:
+    <<: *service-defaults
     image: postgres:15-alpine
     container_name: seo3-postgres
     environment:
-      POSTGRES_USER: seo3_user
-      POSTGRES_PASSWORD: seo3_password
-      POSTGRES_DB: seo3_db
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:-seo3_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-seo3_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    networks:
-      - seo3-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U seo3_user -d seo3_db"]
+      test:
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-seo3_user} -d ${POSTGRES_DB:-seo3_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  mongodb:
+    <<: *service-defaults
+    image: mongo:6
+    container_name: seo3-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGODB_USER:-seo3_user}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_PASSWORD:?MONGODB_PASSWORD is required}
+      MONGO_INITDB_DATABASE: ${MONGODB_DATABASE:-seo3_analytics}
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.runCommand({ping:1}).ok' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  redis:
+    <<: *service-defaults
+    image: redis:7-alpine
+    container_name: seo3-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  mongodb:
-    image: mongo:6
-    container_name: seo3-mongodb
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: seo3_user
-      MONGO_INITDB_ROOT_PASSWORD: seo3_password
-      MONGO_INITDB_DATABASE: seo3_analytics
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongodb_data:/data/db
-    networks:
-      - seo3-network
-
-  redis:
-    image: redis:7-alpine
-    container_name: seo3-redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    networks:
-      - seo3-network
-
   zookeeper:
+    <<: *service-defaults
     image: confluentinc/cp-zookeeper:7.5.0
     container_name: seo3-zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
-    ports:
-      - "2181:2181"
-    networks:
-      - seo3-network
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_logs:/var/lib/zookeeper/log
 
   kafka:
+    <<: *service-defaults
     image: confluentinc/cp-kafka:7.5.0
     container_name: seo3-kafka
     depends_on:
-      - zookeeper
-    ports:
-      - "9092:9092"
-      - "29092:29092"
+      zookeeper:
+        condition: service_started
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      # Only the in-network listener is advertised; nothing is published to the
+      # host in production.
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-    networks:
-      - seo3-network
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 45s
 
-  # Application Services
+  # ---------------- Application ----------------
   api-gateway:
+    <<: *service-defaults
+    image: ${REGISTRY:-ghcr.io/riahiyassinn/seo3-project}/api-gateway:${IMAGE_TAG:-latest}
     build:
-      context: ./api-gateway
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: api-gateway/Dockerfile
     container_name: seo3-api-gateway
     ports:
-      - "3000:3000"
+      - "${API_GATEWAY_PORT:-3000}:3000"
     environment:
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://seo3_user:seo3_password@postgres:5432/seo3_db
-      - REDIS_URL=redis://redis:6379
-      - KAFKA_BROKERS=kafka:9092
+      <<: *kafka-env
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-seo3_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-seo3_db}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET is required}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-30d}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3010}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:-}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3010}
+    volumes:
+      - gateway_uploads:/app/api-gateway/uploads
     depends_on:
-      - postgres
-      - redis
-      - kafka
-    networks:
-      - seo3-network
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
 
   developer-service:
+    <<: *service-defaults
+    image: ${REGISTRY:-ghcr.io/riahiyassinn/seo3-project}/developer-service:${IMAGE_TAG:-latest}
     build:
-      context: ./services/developer-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/developer-service/Dockerfile
     container_name: seo3-developer-service
-    ports:
-      - "3001:3001"
     environment:
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://seo3_user:seo3_password@postgres:5432/seo3_db
-      - KAFKA_BROKERS=kafka:9092
+      <<: *kafka-env
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-seo3_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-seo3_db}
+      JWT_SECRET: ${JWT_SECRET}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@seo3-platform.com}
     depends_on:
-      - postgres
-      - kafka
-    networks:
-      - seo3-network
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
 
   skill-service:
+    <<: *service-defaults
+    image: ${REGISTRY:-ghcr.io/riahiyassinn/seo3-project}/skill-service:${IMAGE_TAG:-latest}
     build:
-      context: ./services/skill-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/skill-service/Dockerfile
     container_name: seo3-skill-service
-    ports:
-      - "3002:3002"
     environment:
-      - NODE_ENV=production
-      - MONGODB_URL=mongodb://seo3_user:seo3_password@mongodb:27017/seo3_analytics?authSource=admin
-      - KAFKA_BROKERS=kafka:9092
+      <<: *kafka-env
+      NODE_ENV: production
+      MONGODB_URL: mongodb://${MONGODB_USER:-seo3_user}:${MONGODB_PASSWORD}@mongodb:27017/${MONGODB_DATABASE:-seo3_analytics}?authSource=admin
     depends_on:
-      - mongodb
-      - kafka
-    networks:
-      - seo3-network
+      mongodb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
 
   analysis-service:
+    <<: *service-defaults
+    image: ${REGISTRY:-ghcr.io/riahiyassinn/seo3-project}/analysis-service:${IMAGE_TAG:-latest}
     build:
-      context: ./services/analysis-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/analysis-service/Dockerfile
     container_name: seo3-analysis-service
-    ports:
-      - "3003:3003"
     environment:
-      - NODE_ENV=production
-      - MONGODB_URL=mongodb://seo3_user:seo3_password@mongodb:27017/seo3_analytics?authSource=admin
-      - KAFKA_BROKERS=kafka:9092
+      <<: *kafka-env
+      NODE_ENV: production
+      MONGODB_URL: mongodb://${MONGODB_USER:-seo3_user}:${MONGODB_PASSWORD}@mongodb:27017/${MONGODB_DATABASE:-seo3_analytics}?authSource=admin
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      ANALYSIS_SNAPSHOT_CHUNK_BYTES: ${ANALYSIS_SNAPSHOT_CHUNK_BYTES:-240000}
     depends_on:
-      - mongodb
-      - kafka
-    networks:
-      - seo3-network
+      mongodb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
 
   recommendation-service:
+    <<: *service-defaults
+    image: ${REGISTRY:-ghcr.io/riahiyassinn/seo3-project}/recommendation-service:${IMAGE_TAG:-latest}
     build:
-      context: ./services/recommendation-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/recommendation-service/Dockerfile
     container_name: seo3-recommendation-service
-    ports:
-      - "3004:3004"
     environment:
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://seo3_user:seo3_password@postgres:5432/seo3_db
-      - KAFKA_BROKERS=kafka:9092
+      <<: *kafka-env
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-seo3_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-seo3_db}
+      MONGODB_URL: mongodb://${MONGODB_USER:-seo3_user}:${MONGODB_PASSWORD}@mongodb:27017/${MONGODB_DATABASE:-seo3_analytics}?authSource=admin
     depends_on:
-      - postgres
-      - kafka
-    networks:
-      - seo3-network
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
 
   notification-service:
+    <<: *service-defaults
+    image: ${REGISTRY:-ghcr.io/riahiyassinn/seo3-project}/notification-service:${IMAGE_TAG:-latest}
     build:
-      context: ./services/notification-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/notification-service/Dockerfile
     container_name: seo3-notification-service
-    ports:
-      - "3005:3005"
     environment:
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://seo3_user:seo3_password@postgres:5432/seo3_db
-      - KAFKA_BROKERS=kafka:9092
+      <<: *kafka-env
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-seo3_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-seo3_db}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@seo3-platform.com}
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+      SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET:-}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
     depends_on:
-      - postgres
-      - kafka
-    networks:
-      - seo3-network
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
 
   nlp-service:
+    <<: *service-defaults
+    image: ${REGISTRY:-ghcr.io/riahiyassinn/seo3-project}/nlp-service:${IMAGE_TAG:-latest}
     build:
-      context: ./services/nlp-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/nlp-service/Dockerfile
     container_name: seo3-nlp-service
-    ports:
-      - "8000:8000"
     environment:
-      - MONGODB_URL=mongodb://seo3_user:seo3_password@mongodb:27017/seo3_analytics?authSource=admin
-      - KAFKA_BROKERS=kafka:9092
+      <<: *kafka-env
+      MONGODB_URL: mongodb://${MONGODB_USER:-seo3_user}:${MONGODB_PASSWORD}@mongodb:27017/${MONGODB_DATABASE:-seo3_analytics}?authSource=admin
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      LLM_PRIMARY_PROVIDER: ${LLM_PRIMARY_PROVIDER:-gemini}
+      LLM_FALLBACK_PROVIDER: ${LLM_FALLBACK_PROVIDER:-groq}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
     depends_on:
-      - mongodb
-      - kafka
-    networks:
-      - seo3-network
+      mongodb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
 
   web-client:
+    <<: *service-defaults
+    image: ${REGISTRY:-ghcr.io/riahiyassinn/seo3-project}/web-client:${IMAGE_TAG:-latest}
     build:
-      context: ./client/web
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: client/web/Dockerfile
     container_name: seo3-web-client
     ports:
-      - "3010:3000"
+      - "${WEB_CLIENT_PORT:-3010}:3000"
     environment:
-      - API_GATEWAY_URL=http://api-gateway:3000
+      NODE_ENV: production
+      API_GATEWAY_URL: http://api-gateway:3000
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3000}
     depends_on:
-      - api-gateway
-    networks:
-      - seo3-network
+      api-gateway:
+        condition: service_started
 
 volumes:
   postgres_data:
   mongodb_data:
   redis_data:
+  zookeeper_data:
+  zookeeper_logs:
+  kafka_data:
+  gateway_uploads:
 
 networks:
   seo3-network:
