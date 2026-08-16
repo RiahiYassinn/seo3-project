@@ -19,6 +19,7 @@
         "dev:recommendation": "turbo run dev --filter=recommendation-service",
         "dev:notification": "turbo run dev --filter=notification-service",
         "dev:client": "turbo run dev --filter=web",
+        "ingest:courses": "docker exec -i seo3-mongodb mongoimport -u seo3_user -p seo3_password --authenticationDatabase admin --db seo3_analytics --collection course_catalog --file /dev/stdin --jsonArray < courses.json",
         "build": "turbo run build",
         "test": "turbo run test",
         "lint": "turbo run lint",
