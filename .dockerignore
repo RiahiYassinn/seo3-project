@@ -12,8 +12,16 @@
 .turbo
 **/.turbo
 **/coverage
+**/coverage.xml
+**/.coverage
 **/.pytest_cache
+**/.scannerwork
 **/tsconfig.tsbuildinfo
+
+# Tests never run inside an image.
+**/*.spec.ts
+**/*.spec.tsx
+services/nlp-service/tests
 
 # VCS and CI
 .git

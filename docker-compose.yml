@@ -114,6 +114,84 @@ services:
     networks:
       - devlab-network
 
+  # ---------------------------------------------------------------------------
+  # Code quality. Behind the `sonar` profile, so a plain `docker compose up -d`
+  # still starts only the datastores the app needs.
+  #
+  #   docker compose --profile sonar up -d sonarqube   # http://localhost:9000
+  #   npm run test:cov && npm run test:python:cov      # produce the reports
+  #   docker compose --profile sonar run --rm sonar-scanner
+  #
+  # On Linux hosts SonarQube's embedded Elasticsearch needs
+  # `sysctl -w vm.max_map_count=262144`. Docker Desktop sets this already.
+  # ---------------------------------------------------------------------------
+  sonarqube-db:
+    image: postgres:15-alpine
+    container_name: devlab-sonarqube-db
+    profiles: [sonar]
+    environment:
+      POSTGRES_USER: sonar
+      POSTGRES_PASSWORD: sonar
+      POSTGRES_DB: sonar
+    volumes:
+      - sonarqube_db_data:/var/lib/postgresql/data
+    networks:
+      - devlab-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sonar -d sonar"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  sonarqube:
+    image: sonarqube:10-community
+    container_name: devlab-sonarqube
+    profiles: [sonar]
+    depends_on:
+      sonarqube-db:
+        condition: service_healthy
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://sonarqube-db:5432/sonar
+      SONAR_JDBC_USERNAME: sonar
+      SONAR_JDBC_PASSWORD: sonar
+    ports:
+      - "9000:9000"
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_extensions:/opt/sonarqube/extensions
+      - sonarqube_logs:/opt/sonarqube/logs
+    networks:
+      - devlab-network
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    healthcheck:
+      # First boot takes a couple of minutes while Elasticsearch initialises.
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9000/api/system/status | grep -q '\"status\":\"UP\"'"]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 60s
+
+  # One-shot scanner. Reads sonar-project.properties and whatever coverage
+  # reports the test runs already wrote; it does not run the tests itself.
+  sonar-scanner:
+    image: sonarsource/sonar-scanner-cli:latest
+    container_name: devlab-sonar-scanner
+    profiles: [sonar]
+    depends_on:
+      sonarqube:
+        condition: service_healthy
+    environment:
+      SONAR_HOST_URL: ${SONAR_HOST_URL:-http://sonarqube:9000}
+      SONAR_TOKEN: ${SONAR_TOKEN:-}
+    volumes:
+      - .:/usr/src
+      - sonar_scanner_cache:/opt/sonar-scanner/.sonar/cache
+    networks:
+      - devlab-network
+
 volumes:
   postgres_data:
   mongodb_data:
@@ -121,6 +199,11 @@ volumes:
   zookeeper_data:
   zookeeper_logs:
   kafka_data:
+  sonarqube_db_data:
+  sonarqube_data:
+  sonarqube_extensions:
+  sonarqube_logs:
+  sonar_scanner_cache:
 
 networks:
   devlab-network:

@@ -8,6 +8,7 @@
     "start": "python main.py",
     "setup:python": "pip install -r requirements.txt",
     "lint:python": "ruff check .",
+    "setup:python:dev": "pip install -r requirements-dev.txt",
     "test:python": "pytest",
     "clean": "find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true"
   }

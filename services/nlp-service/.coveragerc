@@ -1,0 +1,12 @@
+# Coverage is measured from the REPOSITORY ROOT so that the paths recorded in
+# coverage.xml are repo-root relative (`services/nlp-service/app/...`). The
+# SonarQube scanner also runs from the repo root; without this the report would
+# name files Sonar cannot resolve and Python coverage would show as 0%.
+#
+# Invoke via `npm run test:python:cov`, not `pytest --cov` from this directory.
+[run]
+relative_files = True
+source = services/nlp-service/app
+omit =
+    */__pycache__/*
+    services/nlp-service/tests/*

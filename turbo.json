@@ -24,6 +24,11 @@
       "dependsOn": ["build"],
       "outputs": []
     },
+    "test:cov": {
+      // Unit tests run straight off the TypeScript sources via ts-jest, so
+      // they do not need a build. Coverage is cached as the task output.
+      "outputs": ["coverage/**"]
+    },
     "clean": {
       "cache": false
     }

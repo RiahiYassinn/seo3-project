@@ -1,0 +1,7 @@
+# Test-only dependencies. Deliberately kept out of requirements.txt so the
+# runtime image (which installs only requirements.txt) stays lean.
+-r requirements.txt
+
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-cov>=5.0.0

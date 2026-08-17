@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "jest --passWithNoTests",
+    "test:cov": "jest --coverage --passWithNoTests"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",

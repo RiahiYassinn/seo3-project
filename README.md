@@ -111,15 +111,35 @@ cd services/nlp-service && python -m uvicorn main:app --reload
 cd client/web && npm run dev
 ```
 
-## Testing
+## Testing and Code Quality
 
 ```bash
-# Run all tests
-npm run test:all
+# Unit tests across every TypeScript workspace
+npm test
 
-# Run tests for specific service
+# ...with coverage (writes <workspace>/coverage/lcov.info)
+npm run test:cov
+
+# NLP service (Python)
+npm run test:python
+npm run test:python:cov
+
+# A single workspace
 cd services/developer-service && npm test
 ```
+
+SonarQube runs from the `sonar` Docker Compose profile, so the default
+`docker compose up -d` is unaffected:
+
+```bash
+npm run sonar:up      # http://localhost:9000
+npm run test:cov && npm run test:python:cov
+npm run sonar:scan
+```
+
+CI runs the same tests, uploads the coverage reports, and scans them on every
+push and pull request. See [Testing and Code Quality](./docs/testing.md) for the
+full setup, including the two repository secrets the SonarQube job needs.
 
 ## Deployment
 

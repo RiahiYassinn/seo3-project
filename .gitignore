@@ -45,9 +45,14 @@ lerna-debug.log*
 
 # Testing
 coverage/
+coverage.xml
 *.coverage
+.coverage
 .nyc_output/
 .pytest_cache/
+
+# SonarQube scanner working directory
+.scannerwork/
 
 # Database
 *.db
