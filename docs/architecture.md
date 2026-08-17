@@ -1,8 +1,8 @@
-# SEO3 Architecture Documentation
+# devlab Architecture Documentation
 
 ## System Overview
 
-The SEO3 Developer Analytics Platform is a microservices-based system designed to analyze developer activity, track skills, and provide personalized learning recommendations.
+The devlab Developer Analytics Platform is a microservices-based system designed to analyze developer activity, track skills, and provide personalized learning recommendations.
 
 ## Architecture Layers
 

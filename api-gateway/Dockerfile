@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 #
 # Build context is the REPOSITORY ROOT, not this directory:
-#   docker build -f api-gateway/Dockerfile -t seo3/api-gateway .
+#   docker build -f api-gateway/Dockerfile -t devlab/api-gateway .
 #
 # The repo is an npm-workspaces monorepo with a single root package-lock.json,
 # so `npm ci` can only run from the root with every workspace manifest present.
@@ -50,7 +50,7 @@ FROM base AS runner
 ENV NODE_ENV=production
 
 RUN addgroup --system --gid 1001 nodejs \
- && adduser --system --uid 1001 nestjs
+      && adduser --system --uid 1001 nestjs
 
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=builder /app/api-gateway/package.json ./api-gateway/package.json

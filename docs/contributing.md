@@ -1,4 +1,4 @@
-# Contributing to SEO3 Developer Platform
+# Contributing to devlab Developer Platform
 
 ## Getting Started
 

@@ -1,7 +1,7 @@
 {
   "name": "recommendation-service",
   "version": "1.0.0",
-  "description": "Recommendation microservice for SEO3 Platform",
+  "description": "Recommendation microservice for devlab Platform",
   "scripts": {
     "build": "nest build",
     "dev": "nest start --watch",

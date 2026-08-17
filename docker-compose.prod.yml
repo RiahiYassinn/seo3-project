@@ -1,21 +1,8 @@
 # Production stack.
-#
-#   docker compose -f docker-compose.prod.yml up -d --build
-#
-# Every application image builds from the repository root because this is an
-# npm-workspaces monorepo with a single root package-lock.json.
-#
-# Credentials come from the environment (see .env.example); nothing sensitive
-# is hardcoded here. `IMAGE_TAG` lets you run images published by CI instead of
-# building locally, e.g. IMAGE_TAG=sha-1a2b3c4 docker compose ... up -d
-#
-# The `${VAR:?...}` form fails fast with a readable message when a required
-# secret is missing, rather than silently starting with a default.
-
 x-service-defaults: &service-defaults
   restart: unless-stopped
   networks:
-    - seo3-network
+    - devlab-network
   logging:
     driver: json-file
     options:
@@ -24,24 +11,73 @@ x-service-defaults: &service-defaults
 
 x-kafka-env: &kafka-env
   KAFKA_BROKERS: kafka:9092
-  KAFKA_CLIENT_ID: ${KAFKA_CLIENT_ID:-seo3-platform}
-  KAFKA_GROUP_ID: ${KAFKA_GROUP_ID:-seo3-group}
+  KAFKA_CLIENT_ID: ${KAFKA_CLIENT_ID:-devlab-platform}
+  KAFKA_GROUP_ID: ${KAFKA_GROUP_ID:-devlab-group}
+
+# Hosts are the compose service names, never taken from .env: the values there
+# (localhost, LAN IPs) are for running services on the host, not in containers.
+# The services read the discrete POSTGRES_*/REDIS_* vars, not the URLs.
+x-postgres-env: &postgres-env
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: 5432
+  POSTGRES_USER: ${POSTGRES_USER:-devlab_user}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+  POSTGRES_DB: ${POSTGRES_DB:-devlab_db}
+  DATABASE_URL: postgresql://${POSTGRES_USER:-devlab_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-devlab_db}
+  # TypeORM entities are the schema source of truth. Run once with DB_SYNC=true
+  # against an empty volume to create the tables, then drop back to false.
+  DB_SYNC: ${DB_SYNC:-false}
+
+x-mongo-env: &mongo-env
+  MONGODB_HOST: mongodb
+  MONGODB_PORT: 27017
+  MONGODB_USER: ${MONGODB_USER:-devlab_user}
+  MONGODB_PASSWORD: ${MONGODB_PASSWORD:?MONGODB_PASSWORD is required}
+  MONGODB_DATABASE: ${MONGODB_DATABASE:-devlab_analytics}
+  MONGODB_URL: mongodb://${MONGODB_USER:-devlab_user}:${MONGODB_PASSWORD}@mongodb:27017/${MONGODB_DATABASE:-devlab_analytics}?authSource=admin
+
+x-redis-env: &redis-env
+  REDIS_HOST: redis
+  REDIS_PORT: 6379
+  REDIS_DB: 0
+  REDIS_URL: redis://redis:6379
+
+# Inter-service addresses. Each service also parses its OWN entry here to pick
+# the port it binds (see the main.ts of each), so these are both the server
+# bind ports and the client dial targets -- keep the two in sync.
+x-service-discovery: &service-discovery
+  DEVELOPER_SERVICE_HOST: developer-service
+  DEVELOPER_SERVICE_PORT: 3001
+  SKILL_SERVICE_URL: tcp://skill-service:3011
+  ANALYSIS_SERVICE_URL: tcp://analysis-service:3003
+  RECOMMENDATION_SERVICE_URL: tcp://recommendation-service:3004
+  NOTIFICATION_SERVICE_URL: tcp://notification-service:3005
+  NLP_SERVICE: http://nlp-service:8000
+
+# Browser-facing URLs, derived from the published host ports below so they stay
+# consistent with the port mappings rather than with .env (which targets host mode).
+x-public-urls: &public-urls
+  CORS_ORIGIN: http://localhost:${WEB_CLIENT_PORT:-3010}
+  FRONTEND_URL: http://localhost:${WEB_CLIENT_PORT:-3010}
+  FRONTEND_LOGIN_URL: http://localhost:${WEB_CLIENT_PORT:-3010}/login
+  FRONTEND_VERIFY_EMAIL_URL: http://localhost:${WEB_CLIENT_PORT:-3010}/verify-email
+  FRONTEND_RESET_PASSWORD_URL: http://localhost:${WEB_CLIENT_PORT:-3010}/reset-password
 
 services:
   # ---------------- Infrastructure ----------------
   postgres:
     <<: *service-defaults
     image: postgres:15-alpine
-    container_name: seo3-postgres
+    container_name: devlab-postgres
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-seo3_user}
+      POSTGRES_USER: ${POSTGRES_USER:-devlab_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-      POSTGRES_DB: ${POSTGRES_DB:-seo3_db}
+      POSTGRES_DB: ${POSTGRES_DB:-devlab_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test:
-        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-seo3_user} -d ${POSTGRES_DB:-seo3_db}"]
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-devlab_user} -d ${POSTGRES_DB:-devlab_db}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -50,11 +86,11 @@ services:
   mongodb:
     <<: *service-defaults
     image: mongo:6
-    container_name: seo3-mongodb
+    container_name: devlab-mongodb
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGODB_USER:-seo3_user}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGODB_USER:-devlab_user}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_PASSWORD:?MONGODB_PASSWORD is required}
-      MONGO_INITDB_DATABASE: ${MONGODB_DATABASE:-seo3_analytics}
+      MONGO_INITDB_DATABASE: ${MONGODB_DATABASE:-devlab_analytics}
     volumes:
       - mongodb_data:/data/db
     healthcheck:
@@ -67,7 +103,7 @@ services:
   redis:
     <<: *service-defaults
     image: redis:7-alpine
-    container_name: seo3-redis
+    container_name: devlab-redis
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
@@ -80,7 +116,7 @@ services:
   zookeeper:
     <<: *service-defaults
     image: confluentinc/cp-zookeeper:7.5.0
-    container_name: seo3-zookeeper
+    container_name: devlab-zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
@@ -91,15 +127,13 @@ services:
   kafka:
     <<: *service-defaults
     image: confluentinc/cp-kafka:7.5.0
-    container_name: seo3-kafka
+    container_name: devlab-kafka
     depends_on:
       zookeeper:
         condition: service_started
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      # Only the in-network listener is advertised; nothing is published to the
-      # host in production.
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
@@ -116,29 +150,32 @@ services:
   # ---------------- Application ----------------
   api-gateway:
     <<: *service-defaults
-    image: ${REGISTRY:-ghcr.io/riahiyassinn/seo3-project}/api-gateway:${IMAGE_TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/riahiyassinn/devlab-project}/api-gateway:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: api-gateway/Dockerfile
-    container_name: seo3-api-gateway
+    container_name: devlab-api-gateway
     ports:
       - "${API_GATEWAY_PORT:-3000}:3000"
     environment:
-      <<: *kafka-env
+      <<: [*kafka-env, *postgres-env, *redis-env, *service-discovery, *public-urls]
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-seo3_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-seo3_db}
-      REDIS_URL: redis://redis:6379
+      # main.ts falls back to 3006, but the image EXPOSEs 3000 and the port
+      # mapping above targets 3000 -- so pin it or nothing answers.
+      API_GATEWAY_PORT: 3000
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET is required}
+      JWT_ACCESS_EXPIRATION: ${JWT_ACCESS_EXPIRATION:-15m}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required}
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-30d}
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3010}
+      BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-10}
+      RATE_LIMIT_TTL: ${RATE_LIMIT_TTL:-60}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-100}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
-      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:-}
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3010}
+      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:-http://localhost:${API_GATEWAY_PORT:-3000}/api/v1/auth/google/callback}
     volumes:
       - gateway_uploads:/app/api-gateway/uploads
     depends_on:
@@ -151,16 +188,19 @@ services:
 
   developer-service:
     <<: *service-defaults
-    image: ${REGISTRY:-ghcr.io/riahiyassinn/seo3-project}/developer-service:${IMAGE_TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/riahiyassinn/devlab-project}/developer-service:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: services/developer-service/Dockerfile
-    container_name: seo3-developer-service
+    container_name: devlab-developer-service
     environment:
-      <<: *kafka-env
+      <<: [*kafka-env, *postgres-env, *service-discovery, *public-urls]
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-seo3_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-seo3_db}
       JWT_SECRET: ${JWT_ACCESS_SECRET}
+      # GithubService encrypts stored OAuth tokens with this at construction
+      # time -- without it the service crashes on boot, and a different value
+      # makes already-stored tokens undecryptable.
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?TOKEN_ENCRYPTION_KEY is required}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
@@ -168,7 +208,7 @@ services:
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      EMAIL_FROM: ${EMAIL_FROM:-noreply@seo3-platform.com}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@devlab-platform.com}
     depends_on:
       postgres:
         condition: service_healthy
@@ -177,15 +217,14 @@ services:
 
   skill-service:
     <<: *service-defaults
-    image: ${REGISTRY:-ghcr.io/riahiyassinn/seo3-project}/skill-service:${IMAGE_TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/riahiyassinn/devlab-project}/skill-service:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: services/skill-service/Dockerfile
-    container_name: seo3-skill-service
+    container_name: devlab-skill-service
     environment:
-      <<: *kafka-env
+      <<: [*kafka-env, *mongo-env, *service-discovery]
       NODE_ENV: production
-      MONGODB_URL: mongodb://${MONGODB_USER:-seo3_user}:${MONGODB_PASSWORD}@mongodb:27017/${MONGODB_DATABASE:-seo3_analytics}?authSource=admin
     depends_on:
       mongodb:
         condition: service_healthy
@@ -194,15 +233,14 @@ services:
 
   analysis-service:
     <<: *service-defaults
-    image: ${REGISTRY:-ghcr.io/riahiyassinn/seo3-project}/analysis-service:${IMAGE_TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/riahiyassinn/devlab-project}/analysis-service:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: services/analysis-service/Dockerfile
-    container_name: seo3-analysis-service
+    container_name: devlab-analysis-service
     environment:
-      <<: *kafka-env
+      <<: [*kafka-env, *mongo-env, *service-discovery]
       NODE_ENV: production
-      MONGODB_URL: mongodb://${MONGODB_USER:-seo3_user}:${MONGODB_PASSWORD}@mongodb:27017/${MONGODB_DATABASE:-seo3_analytics}?authSource=admin
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       ANALYSIS_SNAPSHOT_CHUNK_BYTES: ${ANALYSIS_SNAPSHOT_CHUNK_BYTES:-240000}
@@ -214,16 +252,22 @@ services:
 
   recommendation-service:
     <<: *service-defaults
-    image: ${REGISTRY:-ghcr.io/riahiyassinn/seo3-project}/recommendation-service:${IMAGE_TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/riahiyassinn/devlab-project}/recommendation-service:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: services/recommendation-service/Dockerfile
-    container_name: seo3-recommendation-service
+    container_name: devlab-recommendation-service
     environment:
-      <<: *kafka-env
+      <<: [*kafka-env, *postgres-env, *mongo-env, *service-discovery, *public-urls]
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-seo3_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-seo3_db}
-      MONGODB_URL: mongodb://${MONGODB_USER:-seo3_user}:${MONGODB_PASSWORD}@mongodb:27017/${MONGODB_DATABASE:-seo3_analytics}?authSource=admin
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-huggingface}
+      HF_TOKEN: ${HF_TOKEN:-}
+      HF_EMBEDDING_MODEL: ${HF_EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
+      COURSE_EMBED_BATCH_SIZE: ${COURSE_EMBED_BATCH_SIZE:-24}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
     depends_on:
       postgres:
         condition: service_healthy
@@ -234,20 +278,19 @@ services:
 
   notification-service:
     <<: *service-defaults
-    image: ${REGISTRY:-ghcr.io/riahiyassinn/seo3-project}/notification-service:${IMAGE_TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/riahiyassinn/devlab-project}/notification-service:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: services/notification-service/Dockerfile
-    container_name: seo3-notification-service
+    container_name: devlab-notification-service
     environment:
-      <<: *kafka-env
+      <<: [*kafka-env, *postgres-env, *service-discovery, *public-urls]
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-seo3_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-seo3_db}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      EMAIL_FROM: ${EMAIL_FROM:-noreply@seo3-platform.com}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@devlab-platform.com}
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
       SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET:-}
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
@@ -259,14 +302,13 @@ services:
 
   nlp-service:
     <<: *service-defaults
-    image: ${REGISTRY:-ghcr.io/riahiyassinn/seo3-project}/nlp-service:${IMAGE_TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/riahiyassinn/devlab-project}/nlp-service:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: services/nlp-service/Dockerfile
-    container_name: seo3-nlp-service
+    container_name: devlab-nlp-service
     environment:
-      <<: *kafka-env
-      MONGODB_URL: mongodb://${MONGODB_USER:-seo3_user}:${MONGODB_PASSWORD}@mongodb:27017/${MONGODB_DATABASE:-seo3_analytics}?authSource=admin
+      <<: [*kafka-env, *mongo-env]
       LOG_LEVEL: ${LOG_LEVEL:-info}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
@@ -282,17 +324,22 @@ services:
 
   web-client:
     <<: *service-defaults
-    image: ${REGISTRY:-ghcr.io/riahiyassinn/seo3-project}/web-client:${IMAGE_TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/riahiyassinn/devlab-project}/web-client:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: client/web/Dockerfile
-    container_name: seo3-web-client
+      args:
+        NEXT_PUBLIC_API_GATEWAY: http://localhost:${API_GATEWAY_PORT:-3000}
+    container_name: devlab-web-client
     ports:
       - "${WEB_CLIENT_PORT:-3010}:3000"
     environment:
       NODE_ENV: production
       API_GATEWAY_URL: http://api-gateway:3000
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3000}
+      # Also set at runtime for the server-side half of Next; the browser half
+      # comes from the build arg above.
+      NEXT_PUBLIC_API_GATEWAY: http://localhost:${API_GATEWAY_PORT:-3000}
+      NEXT_PUBLIC_API_GATEWAY_URL: http://localhost:${API_GATEWAY_PORT:-3000}
     depends_on:
       api-gateway:
         condition: service_started
@@ -307,5 +354,5 @@ volumes:
   gateway_uploads:
 
 networks:
-  seo3-network:
+  devlab-network:
     driver: bridge

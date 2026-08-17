@@ -18,7 +18,9 @@ import { MentorMatchingModule } from './modules/mentor-matching/mentor-matching.
       password: process.env.POSTGRES_PASSWORD,
       database: process.env.POSTGRES_DB,
       entities: [__dirname + '/**/*.entity{.ts,.js}'],
-      synchronize: process.env.NODE_ENV === 'development',
+      // Set DB_SYNC=true for the first boot against an empty database.
+      synchronize:
+        process.env.DB_SYNC === 'true' || process.env.NODE_ENV === 'development',
     }),
     LearningPathModule,
     MentorMatchingModule,

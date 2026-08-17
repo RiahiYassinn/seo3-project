@@ -1,8 +1,8 @@
-# SEO3 GitHub Project Sprint Board
+# devlab GitHub Project Sprint Board
 
 ## Project Purpose
 
-SEO3 is a microservices-based developer analytics and learning platform. The product lets developers connect GitHub, sync repositories, analyze contributor code activity, generate weakness profiles with an NLP/code-analysis service, and turn those findings into learning paths, documentation review tasks, or mentorship recommendations. The platform also includes admin user management, role-based dashboards, notifications, and a Docker-based local infrastructure stack.
+devlab is a microservices-based developer analytics and learning platform. The product lets developers connect GitHub, sync repositories, analyze contributor code activity, generate weakness profiles with an NLP/code-analysis service, and turn those findings into learning paths, documentation review tasks, or mentorship recommendations. The platform also includes admin user management, role-based dashboards, notifications, and a Docker-based local infrastructure stack.
 
 Recommended GitHub Project fields:
 
@@ -15,10 +15,10 @@ Recommended GitHub Project fields:
 
 ### Done
 
-#### Card: Establish SEO3 microservices monorepo foundation
+#### Card: Establish devlab microservices monorepo foundation
 
 Description:
-Set up the SEO3 monorepo with an API gateway, Next.js web client, shared TypeScript packages, and separate services for developer accounts, analysis, skills, recommendations, notifications, and NLP. This creates the technical foundation for independent service ownership while keeping local development coordinated through npm workspaces and Turbo.
+Set up the devlab monorepo with an API gateway, Next.js web client, shared TypeScript packages, and separate services for developer accounts, analysis, skills, recommendations, notifications, and NLP. This creates the technical foundation for independent service ownership while keeping local development coordinated through npm workspaces and Turbo.
 
 Acceptance criteria:
 
@@ -536,4 +536,3 @@ Acceptance criteria:
 - Deployment docs match actual scripts and service ports.
 
 Suggested fields: Priority P2, Area Documentation, Status Todo, Sprint Sprint 4
-

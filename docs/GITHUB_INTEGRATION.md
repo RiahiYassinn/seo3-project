@@ -71,13 +71,13 @@ npm run dev
 
 1. Go to [GitHub Settings → Developer settings → Personal access tokens](https://github.com/settings/tokens)
 2. Click "Generate new token (classic)"
-3. Add a note like "SEO3 Integration"
+3. Add a note like "devlab Integration"
 4. Select scopes:
    - `repo` - Full control of private repositories
    - `read:user` - Read user profile data
 5. Click "Generate token"
 6. Copy the token (it won't be shown again!)
-7. Use it in the SEO3 GitHub integration form
+7. Use it in the devlab GitHub integration form
 
 ## Next Steps
 

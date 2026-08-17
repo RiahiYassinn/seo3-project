@@ -150,7 +150,7 @@ jobs:
           file: ${{ matrix.dockerfile }}
           push: false
           load: true
-          tags: seo3/${{ matrix.image }}:ci
+          tags: devlab/${{ matrix.image }}:ci
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,scope=${{ matrix.image }},mode=max
 

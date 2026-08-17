@@ -282,8 +282,7 @@ export default function DeveloperRecommendationPlanPage() {
   const isMentorship = recommendation.recommendation_type === "mentorship";
   const isCompleted = recommendation.status === "completed";
   const quizPassed = Boolean(quizState?.passed);
-  const isOnsiteSession =
-    recommendation.mentorship_session_mode === "onsite";
+  const isOnsiteSession = recommendation.mentorship_session_mode === "onsite";
   const repoName =
     repositories[recommendation.repository_id] ||
     recommendation.context_snapshot?.repoName ||
@@ -368,8 +367,8 @@ export default function DeveloperRecommendationPlanPage() {
                   </p>
                   {remainingHours > 0 ? (
                     <p className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
-                      <Timer className="h-3.5 w-3.5" />
-                      ~{remainingHours}h remaining
+                      <Timer className="h-3.5 w-3.5" />~{remainingHours}h
+                      remaining
                     </p>
                   ) : null}
                 </div>
@@ -732,9 +731,7 @@ export default function DeveloperRecommendationPlanPage() {
                   type="button"
                   size={isMentorship ? "lg" : "default"}
                   className="gap-2 sm:shrink-0"
-                  variant={
-                    isCompleted || !isMentorship ? "outline" : "default"
-                  }
+                  variant={isCompleted || !isMentorship ? "outline" : "default"}
                   disabled={isCompleted || ackLoading}
                   onClick={acknowledgeRecommendation}
                 >

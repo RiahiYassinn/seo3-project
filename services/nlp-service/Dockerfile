@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 #
 # Build context is the REPOSITORY ROOT, so every service builds the same way:
-#   docker build -f services/nlp-service/Dockerfile -t seo3/nlp-service .
+#   docker build -f services/nlp-service/Dockerfile -t devlab/nlp-service .
 
 FROM python:3.11-slim AS base
 
@@ -17,8 +17,8 @@ FROM base AS deps
 
 # Build toolchain is only needed to compile wheels, so keep it out of runtime.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      gcc g++ \
- && rm -rf /var/lib/apt/lists/*
+    gcc g++ \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY services/nlp-service/requirements.txt ./
 RUN pip install --prefix=/install -r requirements.txt

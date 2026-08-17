@@ -702,7 +702,7 @@ export class CourseCatalogService implements OnModuleDestroy {
     this.database = this.mongoClient.db(
       this.configService.get<string>('MONGODB_VECTOR_DATABASE') ||
         this.configService.get<string>('MONGODB_DATABASE') ||
-        'seo3_analytics',
+        'devlab_analytics',
     );
 
     return this.database;

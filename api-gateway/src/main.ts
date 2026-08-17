@@ -33,7 +33,7 @@ async function bootstrap() {
   app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
 
   const config = new DocumentBuilder()
-    .setTitle('SEO3 Developer Platform API')
+    .setTitle('devlab Developer Platform API')
     .setDescription('API Gateway for Developer Analytics Platform')
     .setVersion('1.0')
     .addBearerAuth()

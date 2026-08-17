@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the complete authentication implementation for the SEO3 Developer Platform, including registration, login, and logout functionalities.
+This document describes the complete authentication implementation for the devlab Developer Platform, including registration, login, and logout functionalities.
 
 ## Architecture
 
@@ -152,7 +152,7 @@ POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=postgres
-POSTGRES_DB=seo3_dev
+POSTGRES_DB=devlab_dev
 JWT_SECRET=your-secret-key-change-in-production
 KAFKA_BROKERS=localhost:29092
 ```
@@ -182,7 +182,7 @@ cd ../client/web && npm install
 ```bash
 # The database will be auto-created if you're using Docker
 # Or manually create the database:
-createdb seo3_dev
+createdb devlab_dev
 ```
 
 3. **Start services:**
@@ -349,7 +349,7 @@ const data = response.data;
 ## File Structure
 
 ```
-seo3-project/
+devlab-project/
 ├── api-gateway/
 │   └── src/modules/auth/
 │       ├── auth.controller.ts

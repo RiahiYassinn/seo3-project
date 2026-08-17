@@ -335,7 +335,7 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down Code Analysis Service...")
 
 app = FastAPI(
-    title="SEO3 Code Analysis Service",
+    title="devlab Code Analysis Service",
     description="Code-diff analysis service for developer weakness profiling",
     version="1.0.0",
     lifespan=lifespan,

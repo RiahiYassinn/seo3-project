@@ -1,7 +1,7 @@
 {
   "name": "notification-service",
   "version": "1.0.0",
-  "description": "Notification microservice for SEO3 Platform",
+  "description": "Notification microservice for devlab Platform",
   "scripts": {
     "build": "nest build",
     "dev": "nest start --watch",

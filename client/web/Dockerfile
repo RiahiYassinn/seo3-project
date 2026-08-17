@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 #
 # Build context is the REPOSITORY ROOT, not this directory:
-#   docker build -f client/web/Dockerfile -t seo3/web-client .
+#   docker build -f client/web/Dockerfile -t devlab/web-client .
 #
 # Relies on `output: 'standalone'` in next.config.js, which bundles the server
 # and only the traced runtime dependencies.
@@ -34,6 +34,16 @@ RUN npm ci
 # ---------- build ----------
 FROM deps AS builder
 ENV NEXT_TELEMETRY_DISABLED=1
+
+# NEXT_PUBLIC_* values are inlined into the client bundle at build time, so they
+# have to be build args -- setting them at runtime does not reach the browser.
+# The app reads both spellings (lib/api.ts vs lib/auth.ts); keep them equal.
+# This is the gateway's PUBLISHED host port, since the browser dials it.
+ARG NEXT_PUBLIC_API_GATEWAY=http://localhost:3000
+ARG NEXT_PUBLIC_API_GATEWAY_URL=$NEXT_PUBLIC_API_GATEWAY
+ENV NEXT_PUBLIC_API_GATEWAY=$NEXT_PUBLIC_API_GATEWAY \
+    NEXT_PUBLIC_API_GATEWAY_URL=$NEXT_PUBLIC_API_GATEWAY_URL
+
 COPY turbo.json ./
 COPY shared/ shared/
 COPY client/web/ client/web/

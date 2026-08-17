@@ -1,4 +1,4 @@
-# SEO3 Platform Deployment Guide
+# devlab Platform Deployment Guide
 
 ## Prerequisites
 
@@ -74,8 +74,8 @@ npm run dev:client       # Next.js on port 3000
 `docker-compose.prod.yml` reads all credentials from the environment and
 refuses to start if any of these are missing:
 
-| Variable             | Purpose                    |
-| -------------------- | -------------------------- |
+| Variable             | Purpose                     |
+| -------------------- | --------------------------- |
 | `POSTGRES_PASSWORD`  | Postgres superuser password |
 | `MONGODB_PASSWORD`   | MongoDB root password       |
 | `JWT_SECRET`         | Access token signing key    |
@@ -101,7 +101,7 @@ docker compose -f docker-compose.prod.yml down
 To run images published by CI instead of building on the host:
 
 ```bash
-export REGISTRY=ghcr.io/riahiyassinn/seo3-project
+export REGISTRY=ghcr.io/riahiyassinn/devlab-project
 export IMAGE_TAG=sha-1a2b3c4        # or a release tag such as 1.4.0
 docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
@@ -114,14 +114,14 @@ monorepo with a single root `package-lock.json`, so `npm ci` cannot run from
 inside a service directory:
 
 ```bash
-docker build -f api-gateway/Dockerfile                  -t seo3/api-gateway .
-docker build -f services/developer-service/Dockerfile   -t seo3/developer-service .
-docker build -f services/skill-service/Dockerfile       -t seo3/skill-service .
-docker build -f services/analysis-service/Dockerfile    -t seo3/analysis-service .
-docker build -f services/recommendation-service/Dockerfile -t seo3/recommendation-service .
-docker build -f services/notification-service/Dockerfile   -t seo3/notification-service .
-docker build -f services/nlp-service/Dockerfile         -t seo3/nlp-service .
-docker build -f client/web/Dockerfile                   -t seo3/web-client .
+docker build -f api-gateway/Dockerfile                  -t devlab/api-gateway .
+docker build -f services/developer-service/Dockerfile   -t devlab/developer-service .
+docker build -f services/skill-service/Dockerfile       -t devlab/skill-service .
+docker build -f services/analysis-service/Dockerfile    -t devlab/analysis-service .
+docker build -f services/recommendation-service/Dockerfile -t devlab/recommendation-service .
+docker build -f services/notification-service/Dockerfile   -t devlab/notification-service .
+docker build -f services/nlp-service/Dockerfile         -t devlab/nlp-service .
+docker build -f client/web/Dockerfile                   -t devlab/web-client .
 ```
 
 Each Node image is multi-stage: dependencies are installed once from the root
@@ -187,7 +187,7 @@ View Kafka topics and messages:
 open http://localhost:8080
 
 # Or use Kafka CLI
-docker exec -it seo3-kafka kafka-topics --list --bootstrap-server localhost:9092
+docker exec -it devlab-kafka kafka-topics --list --bootstrap-server localhost:9092
 ```
 
 ## Troubleshooting
@@ -220,10 +220,10 @@ docker exec -it seo3-kafka kafka-topics --list --bootstrap-server localhost:9092
 
    ```bash
    # PostgreSQL
-   docker exec -it seo3-postgres psql -U seo3_user -d seo3_db
+   docker exec -it devlab-postgres psql -U devlab_user -d devlab_db
 
    # MongoDB
-   docker exec -it seo3-mongodb mongosh -u seo3_user -p seo3_password
+   docker exec -it devlab-mongodb mongosh -u devlab_user -p devlab_password
    ```
 
 ### Kafka connection issues
@@ -261,13 +261,13 @@ docker-compose -f docker-compose.prod.yml up -d --scale recommendation-service=3
 ### PostgreSQL Backup
 
 ```bash
-docker exec seo3-postgres pg_dump -U seo3_user seo3_db > backup.sql
+docker exec devlab-postgres pg_dump -U devlab_user devlab_db > backup.sql
 ```
 
 ### MongoDB Backup
 
 ```bash
-docker exec seo3-mongodb mongodump --username seo3_user --password seo3_password --out /backup
+docker exec devlab-mongodb mongodump --username devlab_user --password devlab_password --out /backup
 ```
 
 ## CI/CD
@@ -278,12 +278,12 @@ Two workflows live in `.github/workflows`.
 
 Runs on pull requests and on pushes to `main` / `develop`.
 
-| Job                | What it does                                                          |
-| ------------------ | --------------------------------------------------------------------- |
-| **Node workspaces** | `turbo run lint typecheck build test` across all 9 TypeScript packages |
+| Job                 | What it does                                                                |
+| ------------------- | --------------------------------------------------------------------------- |
+| **Node workspaces** | `turbo run lint typecheck build test` across all 9 TypeScript packages      |
 | **NLP service**     | `ruff` lint, `bandit` scan (fails on high severity), import check, `pytest` |
-| **Docker**          | Builds all 8 images in parallel (no push) to prove the Dockerfiles work |
-| **CI status**       | Aggregates the above into one required check                          |
+| **Docker**          | Builds all 8 images in parallel (no push) to prove the Dockerfiles work     |
+| **CI status**       | Aggregates the above into one required check                                |
 
 Turbo's cache is restored from `actions/cache` and Docker layers from the
 GitHub Actions cache, so unchanged packages and layers are skipped.
@@ -297,10 +297,10 @@ Runs on pushes to `main` and on `v*.*.*` tags. It re-runs the full verification,
 then builds and pushes all 8 images to GHCR at
 `ghcr.io/<owner>/<repo>/<service>`:
 
-| Trigger        | Tags produced                      |
-| -------------- | ---------------------------------- |
-| push to `main` | `latest`, `main`, `sha-<short>`    |
-| tag `v1.4.0`   | `1.4.0`, `1.4`, `sha-<short>`      |
+| Trigger        | Tags produced                   |
+| -------------- | ------------------------------- |
+| push to `main` | `latest`, `main`, `sha-<short>` |
+| tag `v1.4.0`   | `1.4.0`, `1.4`, `sha-<short>`   |
 
 Authentication uses the built-in `GITHUB_TOKEN` with `packages: write` — no
 registry secrets to manage.
@@ -309,7 +309,7 @@ registry secrets to manage.
 > writes the image tag and the exact `docker compose` commands to the run
 > summary. Replace that step with your real deploy (SSH, Helm, ECS, …) and
 > create the `staging` / `production` environments under
-> *Settings → Environments* to gate production behind an approval.
+> _Settings → Environments_ to gate production behind an approval.
 
 ### Running the same checks locally
 
