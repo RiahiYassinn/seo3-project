@@ -1,7 +1,7 @@
 {
   "name": "skill-service",
   "version": "1.0.0",
-  "description": "Skill Management microservice for SEO3 Platform",
+  "description": "Skill Management microservice for devlab Platform",
   "scripts": {
     "build": "nest build",
     "dev": "nest start --watch",

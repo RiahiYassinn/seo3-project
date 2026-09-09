@@ -1,6 +1,6 @@
-# SEO3 - Technical Skill Intelligence System
+# devlab - Technical Skill Intelligence System
 
-A modern authentication system built with Next.js, Supabase, and beautiful animated UI components for the SEO3 platform.
+A modern authentication system built with Next.js, Supabase, and beautiful animated UI components for the devlab platform.
 
 ## Features
 
@@ -78,24 +78,28 @@ The project uses colors inspired by the Wevioo logo:
 ## Key Components
 
 ### Landing Page (/)
+
 - Hero section with animated gradient text
 - Feature showcase
 - How it works section
 - Call-to-action sections
 
 ### Login Page (/login)
+
 - Email and password authentication
 - Animated form fields with hover effects
 - Link to registration page
 - Decorative animated icons
 
 ### Register Page (/register)
+
 - User registration with email/password
 - Password confirmation
 - Animated form with validation
 - Link to login page
 
 ### Navbar
+
 - Logo display
 - Navigation links
 - User avatar with dropdown menu

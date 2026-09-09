@@ -306,15 +306,28 @@ export class RecommendationController {
   }
   @Post(":recommendationId/acknowledge")
   @ApiOperation({
-    summary: "Acknowledge recommendation completion for current developer",
+    summary:
+      "Mark a recommendation as completed — the owning developer, the assigned tech lead on a mentorship case, or an admin",
   })
   async acknowledgeRecommendation(
     @Req() req: any,
     @Param("recommendationId") recommendationId: string,
   ) {
+    const normalizedRole = String(req?.user?.role || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[-\s]+/g, "_");
+
+    if (!["developer", "tech_lead", "admin"].includes(normalizedRole)) {
+      throw new ForbiddenException(
+        "Only the developer, the assigned mentor, or an admin can mark a recommendation completed",
+      );
+    }
+
     return this.recommendationService.acknowledgeRecommendation(
       recommendationId,
       req.user.id,
+      normalizedRole,
       await this.resolveContributorLogin(req),
     );
   }
@@ -432,4 +445,3 @@ export class RecommendationController {
     );
   }
 }
-

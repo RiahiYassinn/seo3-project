@@ -1,4 +1,4 @@
-# SEO3 Developer Analytics Platform
+# devlab Developer Analytics Platform
 
 A microservices-based platform for analyzing developer activity, skill tracking, and personalized learning recommendations.
 
@@ -48,7 +48,7 @@ A microservices-based platform for analyzing developer activity, skill tracking,
 ## Project Structure
 
 ```
-seo3-project/
+devlab-project/
 ├── api-gateway/           # NestJS API Gateway
 ├── services/
 │   ├── developer-service/ # Developer microservice
@@ -81,7 +81,7 @@ seo3-project/
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd seo3-project
+cd devlab-project
 
 # Install dependencies for all services
 npm run install:all

@@ -4,61 +4,61 @@ services:
   # Infrastructure Services
   postgres:
     image: postgres:15-alpine
-    container_name: seo3-postgres
+    container_name: devlab-postgres
     environment:
-      POSTGRES_USER: seo3_user
-      POSTGRES_PASSWORD: seo3_password
-      POSTGRES_DB: seo3_db
+      POSTGRES_USER: devlab_user
+      POSTGRES_PASSWORD: devlab_password
+      POSTGRES_DB: devlab_db
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - seo3-network
+      - devlab-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U seo3_user -d seo3_db"]
+      test: ["CMD-SHELL", "pg_isready -U devlab_user -d devlab_db"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   mongodb:
     image: mongo:6
-    container_name: seo3-mongodb
+    container_name: devlab-mongodb
     environment:
-      MONGO_INITDB_ROOT_USERNAME: seo3_user
-      MONGO_INITDB_ROOT_PASSWORD: seo3_password
-      MONGO_INITDB_DATABASE: seo3_analytics
+      MONGO_INITDB_ROOT_USERNAME: devlab_user
+      MONGO_INITDB_ROOT_PASSWORD: devlab_password
+      MONGO_INITDB_DATABASE: devlab_analytics
     ports:
       - "27017:27017"
     volumes:
       - mongodb_data:/data/db
     networks:
-      - seo3-network
+      - devlab-network
 
   redis:
     image: redis:7-alpine
-    container_name: seo3-redis
+    container_name: devlab-redis
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
     networks:
-      - seo3-network
+      - devlab-network
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
-    container_name: seo3-zookeeper
+    container_name: devlab-zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
     ports:
       - "2181:2181"
     networks:
-      - seo3-network
+      - devlab-network
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
-    container_name: seo3-kafka
+    container_name: devlab-kafka
     depends_on:
       - zookeeper
     ports:
@@ -72,19 +72,19 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     networks:
-      - seo3-network
+      - devlab-network
 
   # Application Services
   api-gateway:
     build:
       context: ./api-gateway
       dockerfile: Dockerfile
-    container_name: seo3-api-gateway
+    container_name: devlab-api-gateway
     ports:
       - "3000:3000"
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://seo3_user:seo3_password@postgres:5432/seo3_db
+      - DATABASE_URL=postgresql://devlab_user:devlab_password@postgres:5432/devlab_db
       - REDIS_URL=redis://redis:6379
       - KAFKA_BROKERS=kafka:9092
     depends_on:
@@ -92,114 +92,114 @@ services:
       - redis
       - kafka
     networks:
-      - seo3-network
+      - devlab-network
 
   developer-service:
     build:
       context: .
       dockerfile: services/developer-service/Dockerfile
-    container_name: seo3-developer-service
+    container_name: devlab-developer-service
     ports:
       - "3001:3001"
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://seo3_user:seo3_password@postgres:5432/seo3_db
+      - DATABASE_URL=postgresql://devlab_user:devlab_password@postgres:5432/devlab_db
       - KAFKA_BROKERS=kafka:9092
     depends_on:
       - postgres
       - kafka
     networks:
-      - seo3-network
+      - devlab-network
 
   skill-service:
     build:
       context: ./services/skill-service
       dockerfile: Dockerfile
-    container_name: seo3-skill-service
+    container_name: devlab-skill-service
     ports:
       - "3002:3002"
     environment:
       - NODE_ENV=production
-      - MONGODB_URL=mongodb://seo3_user:seo3_password@mongodb:27017/seo3_analytics?authSource=admin
+      - MONGODB_URL=mongodb://devlab_user:devlab_password@mongodb:27017/devlab_analytics?authSource=admin
       - KAFKA_BROKERS=kafka:9092
     depends_on:
       - mongodb
       - kafka
     networks:
-      - seo3-network
+      - devlab-network
 
   analysis-service:
     build:
       context: ./services/analysis-service
       dockerfile: Dockerfile
-    container_name: seo3-analysis-service
+    container_name: devlab-analysis-service
     ports:
       - "3003:3003"
     environment:
       - NODE_ENV=production
-      - MONGODB_URL=mongodb://seo3_user:seo3_password@mongodb:27017/seo3_analytics?authSource=admin
+      - MONGODB_URL=mongodb://devlab_user:devlab_password@mongodb:27017/devlab_analytics?authSource=admin
       - KAFKA_BROKERS=kafka:9092
     depends_on:
       - mongodb
       - kafka
     networks:
-      - seo3-network
+      - devlab-network
 
   recommendation-service:
     build:
       context: ./services/recommendation-service
       dockerfile: Dockerfile
-    container_name: seo3-recommendation-service
+    container_name: devlab-recommendation-service
     ports:
       - "3004:3004"
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://seo3_user:seo3_password@postgres:5432/seo3_db
+      - DATABASE_URL=postgresql://devlab_user:devlab_password@postgres:5432/devlab_db
       - KAFKA_BROKERS=kafka:9092
     depends_on:
       - postgres
       - kafka
     networks:
-      - seo3-network
+      - devlab-network
 
   notification-service:
     build:
       context: ./services/notification-service
       dockerfile: Dockerfile
-    container_name: seo3-notification-service
+    container_name: devlab-notification-service
     ports:
       - "3005:3005"
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://seo3_user:seo3_password@postgres:5432/seo3_db
+      - DATABASE_URL=postgresql://devlab_user:devlab_password@postgres:5432/devlab_db
       - KAFKA_BROKERS=kafka:9092
     depends_on:
       - postgres
       - kafka
     networks:
-      - seo3-network
+      - devlab-network
 
   nlp-service:
     build:
       context: ./services/nlp-service
       dockerfile: Dockerfile
-    container_name: seo3-nlp-service
+    container_name: devlab-nlp-service
     ports:
       - "8000:8000"
     environment:
-      - MONGODB_URL=mongodb://seo3_user:seo3_password@mongodb:27017/seo3_analytics?authSource=admin
+      - MONGODB_URL=mongodb://devlab_user:devlab_password@mongodb:27017/devlab_analytics?authSource=admin
       - KAFKA_BROKERS=kafka:9092
     depends_on:
       - mongodb
       - kafka
     networks:
-      - seo3-network
+      - devlab-network
 
   web-client:
     build:
       context: ./client/web
       dockerfile: Dockerfile
-    container_name: seo3-web-client
+    container_name: devlab-web-client
     ports:
       - "3010:3000"
     environment:
@@ -207,7 +207,7 @@ services:
     depends_on:
       - api-gateway
     networks:
-      - seo3-network
+      - devlab-network
 
 volumes:
   postgres_data:
@@ -215,5 +215,5 @@ volumes:
   redis_data:
 
 networks:
-  seo3-network:
+  devlab-network:
     driver: bridge

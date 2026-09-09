@@ -3,6 +3,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import {
+  format,
+  addDays,
+  setHours,
+  setMinutes,
+  isBefore,
+  startOfDay,
+} from "date-fns";
 import { Navbar } from "@/components/navbar";
 import api from "@/lib/api";
 import { RecommendationDetailPanel } from "@/components/recommendations/recommendation-detail-panel";
@@ -12,6 +20,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -22,8 +43,12 @@ import {
 } from "@/components/ui/dialog";
 import {
   ArrowLeft,
+  Calendar as CalendarIcon,
   CalendarClock,
   CircleAlert,
+  CircleCheck,
+  Clock,
+  Globe,
   Loader,
   MapPin,
   Send,
@@ -37,13 +62,15 @@ type MentorQueueRecommendation = RecommendationCase & {
   recommendation_type: "mentorship";
 };
 
-const toDateTimeLocalValue = (value?: string | null) => {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const offsetMs = date.getTimezoneOffset() * 60000;
-  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
-};
+// Generate 30-minute interval time slots for the dropdown (08:00 AM to 08:00 PM)
+const TIME_SLOTS = Array.from({ length: 25 }, (_, i) => {
+  const totalMinutes = 8 * 60 + i * 30; // Starts at 08:00
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const hStr = hours.toString().padStart(2, "0");
+  const mStr = minutes.toString().padStart(2, "0");
+  return `${hStr}:${mStr}`;
+});
 
 export default function TechLeadRecommendationDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -56,11 +83,25 @@ export default function TechLeadRecommendationDetailPage() {
   const [error, setError] = useState("");
   const [assigning, setAssigning] = useState(false);
   const [scheduling, setScheduling] = useState(false);
-  const [scheduledAt, setScheduledAt] = useState("");
+  const [ackLoading, setAckLoading] = useState(false);
+
+  // Scheduling State
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
+  const [selectedTime, setSelectedTime] = useState<string>("10:00");
   const [note, setNote] = useState("");
   const [schedulerOpen, setSchedulerOpen] = useState(false);
   const [mode, setMode] = useState<"remote" | "onsite">("remote");
   const [location, setLocation] = useState("");
+  const [userTimezone, setUserTimezone] = useState("");
+
+  useEffect(() => {
+    // Detect local timezone abbreviation or offset
+    try {
+      setUserTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    } catch {
+      setUserTimezone("Local Time");
+    }
+  }, []);
 
   const loadRecommendation = useCallback(async () => {
     try {
@@ -68,9 +109,17 @@ export default function TechLeadRecommendationDetailPage() {
         `/recommendations/${id}`,
       );
       setRecommendation(data);
-      setScheduledAt(
-        toDateTimeLocalValue(data.mentorship_session_scheduled_at),
-      );
+
+      if (data.mentorship_session_scheduled_at) {
+        const d = new Date(data.mentorship_session_scheduled_at);
+        setSelectedDate(d);
+        const hours = d.getHours().toString().padStart(2, "0");
+        const minutes = d.getMinutes().toString().padStart(2, "0");
+        setSelectedTime(`${hours}:${minutes}`);
+      } else {
+        setSelectedDate(addDays(new Date(), 1)); // Default to tomorrow
+      }
+
       setNote(data.mentorship_session_note || "");
       setMode(data.mentorship_session_mode === "onsite" ? "onsite" : "remote");
       setLocation(data.mentorship_session_location || "");
@@ -123,21 +172,26 @@ export default function TechLeadRecommendationDetailPage() {
 
   const scheduleSession = async () => {
     if (!recommendation) return;
-    if (!scheduledAt) {
-      setError("Choose a date and time for the mentoring session.");
+    if (!selectedDate) {
+      setError("Please choose a date for the mentoring session.");
       return;
     }
     if (mode === "onsite" && !location.trim()) {
       setError("Add where the on-site session takes place.");
       return;
     }
+
+    // Combine Date and Time
+    const [hours, minutes] = selectedTime.split(":").map(Number);
+    const finalDateTime = setMinutes(setHours(selectedDate, hours), minutes);
+
     setScheduling(true);
     setError("");
     try {
       const { data } = await api.post<MentorQueueRecommendation>(
         `/recommendations/${recommendation.id}/schedule-session`,
         {
-          scheduledAt: new Date(scheduledAt).toISOString(),
+          scheduledAt: finalDateTime.toISOString(),
           note: note.trim() || undefined,
           mode,
           location: mode === "onsite" ? location.trim() : undefined,
@@ -146,12 +200,6 @@ export default function TechLeadRecommendationDetailPage() {
       setRecommendation((previous) =>
         previous ? { ...previous, ...data } : data,
       );
-      setScheduledAt(
-        toDateTimeLocalValue(data.mentorship_session_scheduled_at),
-      );
-      setNote(data.mentorship_session_note || "");
-      setMode(data.mentorship_session_mode === "onsite" ? "onsite" : "remote");
-      setLocation(data.mentorship_session_location || "");
       setSchedulerOpen(false);
     } catch (requestError: any) {
       setError(
@@ -161,6 +209,30 @@ export default function TechLeadRecommendationDetailPage() {
       );
     } finally {
       setScheduling(false);
+    }
+  };
+
+  const markCompleted = async () => {
+    if (!recommendation) return;
+    setAckLoading(true);
+    setError("");
+    try {
+      const { data } = await api.post<MentorQueueRecommendation>(
+        `/recommendations/${recommendation.id}/acknowledge`,
+      );
+      if (data) {
+        setRecommendation((previous) =>
+          previous ? { ...previous, ...data } : data,
+        );
+      }
+    } catch (requestError: any) {
+      setError(
+        requestError?.response?.data?.message ||
+          requestError?.message ||
+          "Failed to update recommendation status",
+      );
+    } finally {
+      setAckLoading(false);
     }
   };
 
@@ -213,7 +285,6 @@ export default function TechLeadRecommendationDetailPage() {
       <Navbar />
 
       <main className="mx-auto max-w-6xl px-4 py-8 lg:px-8">
-        {/* The panel header carries the title, so this stays a breadcrumb. */}
         <div className="mb-4">
           <Link
             href="/dashboard/tech_lead/recommendations"
@@ -224,7 +295,6 @@ export default function TechLeadRecommendationDetailPage() {
           </Link>
         </div>
 
-        {/* Global Error Banner */}
         {error && (
           <Alert variant="destructive" className="mb-6 shadow-sm">
             <CircleAlert className="h-4 w-4" />
@@ -232,9 +302,28 @@ export default function TechLeadRecommendationDetailPage() {
           </Alert>
         )}
 
-        {/* One cohesive report; the mentoring action closes it. */}
         <RecommendationDetailPanel
           recommendation={recommendation}
+          actions={
+            claimedByMe ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="gap-2"
+                disabled={recommendation.status === "completed" || ackLoading}
+                onClick={markCompleted}
+              >
+                {ackLoading ? (
+                  <Loader className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CircleCheck className="h-4 w-4" />
+                )}
+                {recommendation.status === "completed"
+                  ? "Completed"
+                  : "Mark completed"}
+              </Button>
+            ) : undefined
+          }
           primaryActionNote={
             unclaimed
               ? "Claim this case to schedule a session and become the developer's mentor."
@@ -286,51 +375,50 @@ export default function TechLeadRecommendationDetailPage() {
         />
       </main>
 
-      {/* ---------------------------- Session scheduler ---------------------------- */}
+      {/* ---------------------------- Enhanced Session Scheduler Modal ---------------------------- */}
       <Dialog open={schedulerOpen} onOpenChange={setSchedulerOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg p-6">
           <DialogHeader>
-            <DialogTitle>
+            <DialogTitle className="text-xl">
               {recommendation.mentorship_session_scheduled_at
                 ? "Reschedule mentoring session"
                 : "Schedule mentoring session"}
             </DialogTitle>
             <DialogDescription>
               {recommendation.contributor_login
-                ? `@${recommendation.contributor_login} is emailed the details as soon as you confirm.`
-                : "The developer is emailed the details as soon as you confirm."}
+                ? `@${recommendation.contributor_login} will receive a calendar invite once confirmed.`
+                : "The developer will receive a calendar invite once confirmed."}
             </DialogDescription>
           </DialogHeader>
 
           <form
-            className="space-y-5"
-            onSubmit={(event) => {
-              event.preventDefault();
+            className="mt-2 space-y-5"
+            onSubmit={(e) => {
+              e.preventDefault();
               scheduleSession();
             }}
           >
-            {/* --------------------------- Modality --------------------------- */}
+            {/* Modality Picker */}
             <fieldset className="space-y-2">
-              <legend className="text-sm font-medium">How will you meet?</legend>
-              <div className="grid grid-cols-2 gap-2">
-                {(
-                  [
-                    {
-                      value: "remote" as const,
-                      label: "Remote",
-                      hint: "Teams link generated",
-                      icon: Video,
-                    },
-                    {
-                      value: "onsite" as const,
-                      label: "On-site",
-                      hint: "Meet in person",
-                      icon: MapPin,
-                    },
-                  ]
-                ).map((option) => {
+              <legend className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Meeting Format
+              </legend>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  {
+                    value: "remote" as const,
+                    label: "Remote",
+                    hint: "Auto-generated Teams link",
+                    icon: Video,
+                  },
+                  {
+                    value: "onsite" as const,
+                    label: "On-site",
+                    hint: "In-person location",
+                    icon: MapPin,
+                  },
+                ].map((option) => {
                   const active = mode === option.value;
-
                   return (
                     <button
                       key={option.value}
@@ -340,27 +428,27 @@ export default function TechLeadRecommendationDetailPage() {
                       disabled={scheduling}
                       onClick={() => setMode(option.value)}
                       className={cn(
-                        "flex items-start gap-3 rounded-xl border p-3.5 text-left transition-all",
+                        "flex items-start gap-3 rounded-xl border p-3 text-left transition-all",
                         active
-                          ? "border-primary/45 bg-primary/[0.07] ring-1 ring-primary/15"
-                          : "border-border/60 bg-muted/15 hover:border-primary/30 hover:bg-muted/30",
+                          ? "border-primary bg-primary/5 ring-1 ring-primary"
+                          : "border-border/60 bg-card hover:border-border hover:bg-accent/50",
                       )}
                     >
                       <span
                         className={cn(
-                          "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+                          "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
                           active
-                            ? "bg-primary/15 text-primary"
-                            : "bg-background text-muted-foreground ring-1 ring-border/60",
+                            ? "bg-primary/10 text-primary"
+                            : "bg-muted text-muted-foreground",
                         )}
                       >
                         <option.icon className="h-4 w-4" />
                       </span>
                       <span className="min-w-0">
-                        <span className="block text-sm font-semibold">
+                        <span className="block text-sm font-medium">
                           {option.label}
                         </span>
-                        <span className="mt-0.5 block text-xs text-muted-foreground">
+                        <span className="block text-xs text-muted-foreground">
                           {option.hint}
                         </span>
                       </span>
@@ -370,59 +458,143 @@ export default function TechLeadRecommendationDetailPage() {
               </div>
             </fieldset>
 
-            <div className="space-y-2">
-              <Label htmlFor="session-date">Date and time</Label>
-              <Input
-                id="session-date"
-                type="datetime-local"
-                value={scheduledAt}
-                onChange={(event) => setScheduledAt(event.target.value)}
-                disabled={scheduling}
-                required
-              />
+            {/* Redesigned Date and Time Picker Section */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Date & Time
+                </Label>
+                {userTimezone && (
+                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                    <Globe className="h-3 w-3" />
+                    {userTimezone}
+                  </span>
+                )}
+              </div>
+
+              {/* Quick Date Presets */}
+              <div className="flex gap-2">
+                {[
+                  { label: "Today", days: 0 },
+                  { label: "Tomorrow", days: 1 },
+                  { label: "Next Week", days: 7 },
+                ].map((preset) => (
+                  <Button
+                    key={preset.label}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() =>
+                      setSelectedDate(addDays(new Date(), preset.days))
+                    }
+                  >
+                    {preset.label}
+                  </Button>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {/* Calendar Popover */}
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !selectedDate && "text-muted-foreground",
+                      )}
+                      disabled={scheduling}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
+                      {selectedDate ? (
+                        format(selectedDate, "PPP")
+                      ) : (
+                        <span>Pick a date</span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={selectedDate}
+                      onSelect={setSelectedDate}
+                      disabled={(date) =>
+                        isBefore(date, startOfDay(new Date()))
+                      }
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+
+                {/* Time Selector Dropdown */}
+                <Select
+                  value={selectedTime}
+                  onValueChange={setSelectedTime}
+                  disabled={scheduling}
+                >
+                  <SelectTrigger className="w-full">
+                    <Clock className="mr-2 h-4 w-4 text-muted-foreground" />
+                    <SelectValue placeholder="Select time" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-56">
+                    {TIME_SLOTS.map((slot) => (
+                      <SelectItem key={slot} value={slot}>
+                        {slot}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
-            {/* Location only matters for on-site sessions. */}
+            {/* Location or Meeting Link Notice */}
             {mode === "onsite" ? (
-              <div className="space-y-2">
-                <Label htmlFor="session-location">Where</Label>
+              <div className="space-y-1.5">
+                <Label
+                  htmlFor="session-location"
+                  className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                >
+                  Location / Room
+                </Label>
                 <Input
                   id="session-location"
                   value={location}
-                  onChange={(event) => setLocation(event.target.value)}
+                  onChange={(e) => setLocation(e.target.value)}
                   placeholder="e.g. Floor 3, Meeting room B"
                   disabled={scheduling}
                   required
                 />
-                <p className="text-xs text-muted-foreground">
-                  Included in the invitation email.
-                </p>
               </div>
             ) : (
-              <div className="flex items-start gap-2.5 rounded-xl border border-border/60 bg-muted/20 p-3.5">
+              <div className="flex items-start gap-2.5 rounded-lg border border-border/60 bg-muted/30 p-3">
                 <Video className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                <p className="text-xs leading-5 text-muted-foreground">
-                  A Microsoft Teams meeting is created automatically and the
-                  join link goes out with the invitation. If Teams is not
-                  configured on this environment, the session is still booked
-                  and the email says you will share a link.
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  A Teams calendar invite with video details will be generated
+                  automatically upon scheduling.
                 </p>
               </div>
             )}
 
-            <div className="space-y-2">
-              <Label htmlFor="session-note">Agenda</Label>
+            {/* Agenda Notes */}
+            <div className="space-y-1.5">
+              <Label
+                htmlFor="session-note"
+                className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+              >
+                Agenda & Notes
+              </Label>
               <Textarea
                 id="session-note"
                 value={note}
-                onChange={(event) => setNote(event.target.value)}
-                placeholder="What you plan to cover — shown to the developer in the invite."
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Outline what you plan to review during this session..."
                 disabled={scheduling}
                 rows={3}
               />
             </div>
 
-            <DialogFooter className="gap-2 sm:gap-2">
+            <DialogFooter className="gap-2 sm:gap-0">
               <Button
                 type="button"
                 variant="outline"

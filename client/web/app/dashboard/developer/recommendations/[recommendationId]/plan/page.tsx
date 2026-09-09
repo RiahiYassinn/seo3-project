@@ -203,35 +203,6 @@ export default function DeveloperRecommendationPlanPage() {
     });
   };
 
-  const acknowledgeRecommendation = async () => {
-    if (!recommendation) return;
-
-    setAckLoading(true);
-    setError("");
-
-    try {
-      const { data } = await api.post<RecommendationCase>(
-        `/recommendations/${recommendation.id}/acknowledge`,
-      );
-
-      if (data) {
-        setRecommendations((current) =>
-          current.map((item) =>
-            item.id === recommendation.id ? { ...item, ...data } : item,
-          ),
-        );
-      }
-    } catch (requestError: any) {
-      setError(
-        requestError?.response?.data?.message ||
-          requestError?.message ||
-          "Failed to update recommendation status",
-      );
-    } finally {
-      setAckLoading(false);
-    }
-  };
-
   if (!hasHydrated || loading) {
     return (
       <div className="min-h-screen bg-background">
@@ -282,8 +253,7 @@ export default function DeveloperRecommendationPlanPage() {
   const isMentorship = recommendation.recommendation_type === "mentorship";
   const isCompleted = recommendation.status === "completed";
   const quizPassed = Boolean(quizState?.passed);
-  const isOnsiteSession =
-    recommendation.mentorship_session_mode === "onsite";
+  const isOnsiteSession = recommendation.mentorship_session_mode === "onsite";
   const repoName =
     repositories[recommendation.repository_id] ||
     recommendation.context_snapshot?.repoName ||
@@ -368,8 +338,8 @@ export default function DeveloperRecommendationPlanPage() {
                   </p>
                   {remainingHours > 0 ? (
                     <p className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
-                      <Timer className="h-3.5 w-3.5" />
-                      ~{remainingHours}h remaining
+                      <Timer className="h-3.5 w-3.5" />~{remainingHours}h
+                      remaining
                     </p>
                   ) : null}
                 </div>
@@ -709,44 +679,6 @@ export default function DeveloperRecommendationPlanPage() {
                 </CardContent>
               </Card>
             ) : null}
-
-            <Card className="border-border/60 bg-background/85 shadow-sm">
-              <CardContent className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="font-semibold">
-                    {isCompleted
-                      ? "This recommendation is complete"
-                      : completedCount === steps.length && steps.length > 0
-                        ? "All steps done — close it out"
-                        : "Finished everything?"}
-                  </p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {isCompleted
-                      ? "It stays in your history and no longer appears as open work."
-                      : isMentorship
-                        ? "Marking it complete updates your recommendations feed."
-                        : "You can close it manually instead of taking the quiz."}
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  size={isMentorship ? "lg" : "default"}
-                  className="gap-2 sm:shrink-0"
-                  variant={
-                    isCompleted || !isMentorship ? "outline" : "default"
-                  }
-                  disabled={isCompleted || ackLoading}
-                  onClick={acknowledgeRecommendation}
-                >
-                  {ackLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <CircleCheck className="h-4 w-4" />
-                  )}
-                  {isCompleted ? "Completed" : "Mark as completed"}
-                </Button>
-              </CardContent>
-            </Card>
           </div>
         ) : null}
       </main>

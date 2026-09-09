@@ -1,7 +1,7 @@
 {
   "name": "developer-service",
   "version": "1.0.0",
-  "description": "Developer microservice for SEO3 Platform",
+  "description": "Developer microservice for devlab Platform",
   "main": "dist/main.js",
   "scripts": {
     "build": "nest build",

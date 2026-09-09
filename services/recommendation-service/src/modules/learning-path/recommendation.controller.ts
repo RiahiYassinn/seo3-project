@@ -217,11 +217,17 @@ export class RecommendationController {
   @Post(":recommendationId/acknowledge")
   async acknowledgeRecommendation(
     @Param("recommendationId") recommendationId: string,
-    @Body() body: { developerId: string; contributorLogin?: string },
+    @Body()
+    body: {
+      requesterId: string;
+      requesterRole?: string;
+      contributorLogin?: string;
+    },
   ) {
     return this.recommendationService.acknowledgeRecommendation(
       recommendationId,
-      body.developerId,
+      body.requesterId,
+      body.requesterRole,
       body.contributorLogin,
     );
   }

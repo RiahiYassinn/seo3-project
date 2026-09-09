@@ -434,7 +434,14 @@ export default function DeveloperRecommendationsPage() {
         : new Date(right.created_at).getTime() -
           new Date(left.created_at).getTime(),
     );
-  }, [recommendations, repositories, search, sortMode, statusFilter, typeFilter]);
+  }, [
+    recommendations,
+    repositories,
+    search,
+    sortMode,
+    statusFilter,
+    typeFilter,
+  ]);
 
   const filtersActive =
     statusFilter !== "all" || typeFilter !== "all" || search.trim() !== "";
@@ -606,8 +613,8 @@ export default function DeveloperRecommendationsPage() {
                     disabled={linking}
                   />
                   <p className="text-xs text-muted-foreground">
-                    A personal access token with read access to the
-                    repositories you contribute to.
+                    A personal access token with read access to the repositories
+                    you contribute to.
                   </p>
                 </div>
                 <Button type="submit" className="gap-2" disabled={linking}>
@@ -1001,25 +1008,6 @@ export default function DeveloperRecommendationsPage() {
                                       : "Find a mentor"}
                               </Button>
                             ) : null}
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              className="gap-2"
-                              disabled={
-                                isCompleted ||
-                                ackLoadingId === recommendation.id
-                              }
-                              onClick={() =>
-                                acknowledgeRecommendation(recommendation.id)
-                              }
-                            >
-                              {ackLoadingId === recommendation.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <CircleCheck className="h-4 w-4" />
-                              )}
-                              {isCompleted ? "Completed" : "Mark done"}
-                            </Button>
                           </div>
                         </div>
                       </CardContent>

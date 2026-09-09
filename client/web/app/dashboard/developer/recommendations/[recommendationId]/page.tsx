@@ -3,13 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import {
-  ArrowLeft,
-  ArrowRight,
-  CircleCheck,
-  Loader2,
-  Sparkles,
-} from "lucide-react";
+import { ArrowLeft, ArrowRight, Sparkles } from "lucide-react";
 import { Navbar } from "@/components/navbar";
 import { RecommendationDetailPanel } from "@/components/recommendations/recommendation-detail-panel";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -37,7 +31,6 @@ export default function DeveloperRecommendationDetailPage() {
     [],
   );
   const [repositories, setRepositories] = useState<Record<string, string>>({});
-  const [ackLoading, setAckLoading] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -136,35 +129,6 @@ export default function DeveloperRecommendationDetailPage() {
     };
   }, [recommendation, recommendationId]);
 
-  const acknowledgeRecommendation = async () => {
-    if (!recommendation) return;
-
-    setAckLoading(true);
-    setError("");
-
-    try {
-      const { data } = await api.post<RecommendationCase>(
-        `/recommendations/${recommendation.id}/acknowledge`,
-      );
-
-      if (data) {
-        setRecommendations((current) =>
-          current.map((item) =>
-            item.id === recommendation.id ? { ...item, ...data } : item,
-          ),
-        );
-      }
-    } catch (requestError: any) {
-      setError(
-        requestError?.response?.data?.message ||
-          requestError?.message ||
-          "Failed to update recommendation status",
-      );
-    } finally {
-      setAckLoading(false);
-    }
-  };
-
   if (!hasHydrated || loading) {
     return (
       <div className="min-h-screen bg-background">
@@ -226,24 +190,6 @@ export default function DeveloperRecommendationDetailPage() {
           <RecommendationDetailPanel
             recommendation={recommendation}
             repositoryName={repositories[recommendation.repository_id]}
-            actions={
-              <Button
-                type="button"
-                variant="outline"
-                className="gap-2"
-                disabled={recommendation.status === "completed" || ackLoading}
-                onClick={acknowledgeRecommendation}
-              >
-                {ackLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <CircleCheck className="h-4 w-4" />
-                )}
-                {recommendation.status === "completed"
-                  ? "Completed"
-                  : "Mark completed"}
-              </Button>
-            }
             primaryActionNote={developerCta.note}
             primaryAction={
               <Button asChild size="lg" className="group gap-2">

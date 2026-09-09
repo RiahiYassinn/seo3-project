@@ -1,7 +1,7 @@
 {
   "name": "api-gateway",
   "version": "1.0.0",
-  "description": "NestJS API Gateway for SEO3 Platform",
+  "description": "NestJS API Gateway for devlab Platform",
   "main": "dist/main.js",
   "scripts": {
     "build": "nest build",

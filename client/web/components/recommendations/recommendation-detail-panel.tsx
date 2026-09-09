@@ -107,26 +107,6 @@ function Metric({
   );
 }
 
-/** Compact labelled row used inside plan steps. */
-function StepFacet({
-  label,
-  value,
-  icon: Icon,
-}: {
-  label: string;
-  value: string;
-  icon: typeof Target;
-}) {
-  return (
-    <div className="flex gap-2.5">
-      <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-      <p className="text-sm leading-6 text-muted-foreground">
-        <span className="font-medium text-foreground">{label}:</span> {value}
-      </p>
-    </div>
-  );
-}
-
 /** Numbered heading for a section of the report. */
 function SectionHeading({
   index,
@@ -177,7 +157,6 @@ export function RecommendationDetailPanel({
     recommendation.recommendation_type === "learning_path"
       ? evidence?.retrievedCoursesByGap || []
       : [];
-  const learningSteps = recommendation.learning_path?.steps || [];
   const docsReview = recommendation.docs_review || null;
   const scheduledSession = recommendation.mentorship_session_scheduled_at
     ? new Date(recommendation.mentorship_session_scheduled_at)
@@ -189,8 +168,7 @@ export function RecommendationDetailPanel({
       })
     : null;
   const generatedAt = context?.generatedAt;
-  const isOnsiteSession =
-    recommendation.mentorship_session_mode === "onsite";
+  const isOnsiteSession = recommendation.mentorship_session_mode === "onsite";
   const band = priorityBand(recommendation.priority_score);
   const repoLabel =
     repositoryName || context?.repoName || recommendation.repository_id;
@@ -271,19 +249,9 @@ export function RecommendationDetailPanel({
       : "";
 
   const conclusionSentence =
-    recommendation.recommendation_type === "learning_path"
-      ? `So the plan below targets that gap directly — ${
-          learningSteps.length
-            ? `${learningSteps.length} step${learningSteps.length === 1 ? "" : "s"}`
-            : "a focused set of steps"
-        }${
-          typeof recommendation.learning_path?.estimatedTotalHours === "number"
-            ? `, about ${recommendation.learning_path.estimatedTotalHours} hours of work`
-            : ""
-        }.`
-      : recommendation.recommendation_type === "mentorship"
-        ? "The pattern is the kind that review comments rarely fix on their own, so this recommendation asks for direct mentoring rather than self-study."
-        : "The fastest correction here is documentation, so this recommendation is a short docs review rather than a full learning path.";
+    recommendation.recommendation_type === "mentorship"
+      ? "The pattern is the kind that review comments rarely fix on their own, so this recommendation asks for direct mentoring rather than self-study."
+      : "The fastest correction here is documentation, so this recommendation is a short docs review rather than a full learning path.";
 
   const rationale = [
     analysedSentence,
@@ -323,15 +291,10 @@ export function RecommendationDetailPanel({
   const showDocsReview =
     recommendation.recommendation_type === "docs_review" &&
     Boolean(docsReview?.checklist?.length);
-  const showPlan = showMentorship || showDocsReview || learningSteps.length > 0;
+  const showPlan = showMentorship || showDocsReview;
 
-  const planTitle = showMentorship
-    ? "Mentorship plan"
-    : showDocsReview
-      ? "Docs review plan"
-      : "Learning path";
+  const planTitle = showMentorship ? "Mentorship plan" : "Docs review plan";
 
-  // Only sections that actually render get a number and a jump link.
   const sections = [
     { id: "why", label: "Why this", show: true },
     { id: "gaps", label: "Gaps", show: gapCards.length > 0 },
@@ -535,7 +498,7 @@ export function RecommendationDetailPanel({
             </p>
 
             <div className="space-y-2">
-              {evidenceChain.map((step, index) => (
+              {evidenceChain.map((step) => (
                 <div
                   key={step.label}
                   className="flex items-center gap-3 rounded-xl border border-border/60 bg-muted/15 px-3.5 py-3"
@@ -551,7 +514,6 @@ export function RecommendationDetailPanel({
                       {step.value}
                     </p>
                   </div>
-                  {index < evidenceChain.length - 1 ? null : null}
                 </div>
               ))}
             </div>
@@ -668,26 +630,12 @@ export function RecommendationDetailPanel({
           <section id="plan" className="scroll-mt-32 p-6 md:p-8">
             <SectionHeading
               index={sectionNumber("plan")}
-              icon={showMentorship ? UserRound : showDocsReview ? FileText : BookOpen}
+              icon={showMentorship ? UserRound : FileText}
               title={planTitle}
               description={
                 showMentorship
                   ? "How the mentoring engagement is set up."
-                  : showDocsReview
-                    ? "Short, targeted documentation work."
-                    : "Ordered steps that close the gaps above."
-              }
-              aside={
-                learningSteps.length ? (
-                  <Badge variant="secondary">
-                    {learningSteps.length} step
-                    {learningSteps.length === 1 ? "" : "s"}
-                    {typeof recommendation.learning_path
-                      ?.estimatedTotalHours === "number"
-                      ? ` · ~${recommendation.learning_path.estimatedTotalHours}h`
-                      : ""}
-                  </Badge>
-                ) : null
+                  : "Short, targeted documentation work."
               }
             />
 
@@ -827,269 +775,28 @@ export function RecommendationDetailPanel({
                         <div>
                           <p className="font-medium">{resource.title}</p>
                           <p className="mt-1 text-sm text-muted-foreground">
-                            {resource.type || "resource"}
+                            {resource.type}
                           </p>
                         </div>
-                        <ArrowUpRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                        <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                       </a>
                     ))}
                   </div>
                 ) : null}
               </div>
             ) : null}
-
-            {/* Learning path timeline */}
-            {learningSteps.length ? (
-              <div>
-                {recommendation.learning_path?.overview ? (
-                  <p className="mb-5 rounded-xl border border-border/60 bg-muted/15 p-4 text-sm leading-6 text-muted-foreground">
-                    {recommendation.learning_path.overview}
-                  </p>
-                ) : null}
-
-                <ol className="relative space-y-4 border-l border-dashed border-primary/30 pl-6">
-                  {learningSteps.map((step, index) => (
-                    <li
-                      key={`${recommendation.id}-step-${step.order}`}
-                      className="relative"
-                    >
-                      <span className="absolute -left-[2.1rem] flex h-7 w-7 items-center justify-center rounded-full border-4 border-background bg-primary text-[11px] font-bold text-primary-foreground">
-                        {step.order ?? index + 1}
-                      </span>
-
-                      <div className="rounded-xl border border-border/60 bg-muted/15 p-4">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <h4 className="font-semibold">
-                            {step.title ||
-                              formatLabel(step.skill || `step_${step.order}`)}
-                          </h4>
-                          {typeof step.estimated_hours === "number" ? (
-                            <Badge variant="outline" className="shrink-0 gap-1">
-                              <Timer className="h-3 w-3" />
-                              {step.estimated_hours}h
-                            </Badge>
-                          ) : null}
-                        </div>
-
-                        <div className="mt-3 space-y-2">
-                          {step.goal ? (
-                            <StepFacet
-                              label="Goal"
-                              value={step.goal}
-                              icon={Target}
-                            />
-                          ) : null}
-                          {step.why_it_matters ? (
-                            <StepFacet
-                              label="Why it matters"
-                              value={step.why_it_matters}
-                              icon={Lightbulb}
-                            />
-                          ) : null}
-                          {step.practice_task ? (
-                            <StepFacet
-                              label="Practice"
-                              value={step.practice_task}
-                              icon={ClipboardCheck}
-                            />
-                          ) : null}
-                          {step.success_signal ? (
-                            <StepFacet
-                              label="Success signal"
-                              value={step.success_signal}
-                              icon={CheckCircle2}
-                            />
-                          ) : null}
-                        </div>
-
-                        {step.recommended_courses?.length ? (
-                          <div className="mt-4 space-y-2">
-                            <p className={labelMuted}>Recommended courses</p>
-                            {step.recommended_courses.map((course) => (
-                              <a
-                                key={`${recommendation.id}-${step.order}-${course.courseId}`}
-                                href={course.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-start justify-between gap-3 rounded-lg border border-border/60 bg-background p-3 transition-colors hover:border-primary/40"
-                              >
-                                <div className="min-w-0">
-                                  <p className="text-sm font-medium">
-                                    {course.title}
-                                  </p>
-                                  <p className="mt-0.5 text-xs text-muted-foreground">
-                                    {course.partner || "Coursera"} ·{" "}
-                                    {course.type || "course"}
-                                  </p>
-                                </div>
-                                <ArrowUpRight className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                              </a>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            ) : null}
-          </section>
-        ) : null}
-
-        {/* ------------------------------ Courses ------------------------------ */}
-        {retrievedCoursesByGap.length ? (
-          <section id="courses" className="scroll-mt-32 p-6 md:p-8">
-            <SectionHeading
-              index={sectionNumber("courses")}
-              icon={Layers3}
-              title="Course matches by gap"
-              description="Retrieved from the course library for each detected gap."
-            />
-            <div className="space-y-4">
-              {retrievedCoursesByGap.map((match) => (
-                <div key={`${recommendation.id}-${match.gapKey}`}>
-                  <div className="mb-2.5 flex items-center justify-between gap-3">
-                    <p className="font-medium">{match.gapLabel}</p>
-                    <Badge variant="secondary" className="shrink-0">
-                      {match.courses.length} course
-                      {match.courses.length === 1 ? "" : "s"}
-                    </Badge>
-                  </div>
-                  <div className="space-y-2.5">
-                    {match.courses.slice(0, 3).map((course) => (
-                      <a
-                        key={`${recommendation.id}-${match.gapKey}-${course.courseId}`}
-                        href={course.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block rounded-xl border border-border/60 bg-muted/15 p-4 transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md motion-reduce:hover:translate-y-0"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="font-medium">{course.title}</p>
-                            <p className="mt-1 text-sm text-muted-foreground">
-                              {course.partner || "Coursera"} ·{" "}
-                              {course.type || "course"}
-                              {typeof course.rating === "number"
-                                ? ` · ${course.rating.toFixed(1)} rating`
-                                : ""}
-                            </p>
-                          </div>
-                          <span className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-primary">
-                            View
-                            <ArrowUpRight className="h-4 w-4" />
-                          </span>
-                        </div>
-                        {course.description ? (
-                          <p className="mt-2 line-clamp-2 text-sm leading-6 text-muted-foreground">
-                            {course.description}
-                          </p>
-                        ) : null}
-                      </a>
-                    ))}
-                    {match.courses.length > 3 ? (
-                      <p className="text-xs text-muted-foreground">
-                        + {match.courses.length - 3} more course
-                        {match.courses.length - 3 === 1 ? "" : "s"} matched this
-                        gap
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        ) : null}
-
-        {/* -------------------------- Success criteria -------------------------- */}
-        {evidence?.successCriteria?.length ? (
-          <section id="success-criteria" className="scroll-mt-32 p-6 md:p-8">
-            <SectionHeading
-              index={sectionNumber("success-criteria")}
-              icon={CheckCircle2}
-              title="How you'll know it worked"
-              description="What should be true once this recommendation is done."
-            />
-            <div className="space-y-2.5">
-              {evidence.successCriteria.map((criterion, index) => (
-                <div
-                  key={`${recommendation.id}-criterion-${index}`}
-                  className="flex gap-3 rounded-xl border border-border/60 bg-muted/15 p-4"
-                >
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                  <p className="text-sm leading-6 text-muted-foreground">
-                    {criterion}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </section>
-        ) : null}
-
-        {/* ------------------------------ Context ------------------------------ */}
-        {showContextSignals ? (
-          <section id="context" className="scroll-mt-32 p-6 md:p-8">
-            <SectionHeading
-              index={sectionNumber("context")}
-              icon={GitBranch}
-              title="Context signals"
-              description="Strengths and recent activity picked up during analysis."
-            />
-            <div className="space-y-4">
-              {context?.strengths?.length ? (
-                <div>
-                  <p className={labelMuted}>Observed strengths</p>
-                  <div className="mt-2.5 space-y-2">
-                    {context.strengths.map((strength, index) => (
-                      <p
-                        key={`${recommendation.id}-strength-${index}`}
-                        className="rounded-xl border border-border/60 bg-muted/15 p-3 text-sm leading-6 text-muted-foreground"
-                      >
-                        {strength}
-                      </p>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-              {context?.commitTopics?.length ? (
-                <div>
-                  <p className={labelMuted}>Recent topics</p>
-                  <div className="mt-2.5 flex flex-wrap gap-2">
-                    {context.commitTopics.map((topic) => (
-                      <Badge
-                        key={`${recommendation.id}-topic-${topic}`}
-                        variant="outline"
-                      >
-                        {formatLabel(topic)}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </div>
           </section>
         ) : null}
       </div>
 
-      {/* ============================= Action zone ============================= */}
       {primaryAction ? (
-        <footer className="border-t border-border/60 bg-primary/[0.04] p-6 md:px-8">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <p className="font-semibold">
-                {recommendation.status === "completed"
-                  ? "This recommendation is complete"
-                  : "Ready to act on this?"}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {primaryActionNote ||
-                  "Everything above came from this contributor's own commits and reviews."}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2 sm:shrink-0">
-              {primaryAction}
-            </div>
-          </div>
+        <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-border/60 p-6 md:p-8">
+          {primaryActionNote ? (
+            <p className="text-xs text-muted-foreground">{primaryActionNote}</p>
+          ) : (
+            <div />
+          )}
+          {primaryAction}
         </footer>
       ) : null}
     </Card>

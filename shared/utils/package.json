@@ -1,7 +1,7 @@
 {
-  "name": "@seo3/utils",
+  "name": "@devlab/utils",
   "version": "1.0.0",
-  "description": "Shared utilities for SEO3 Platform",
+  "description": "Shared utilities for devlab Platform",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {

@@ -1,5 +1,5 @@
 {
-    "name": "seo3-developer-platform",
+    "name": "devlab-developer-platform",
     "version": "1.0.0",
     "description": "Microservices-based developer analytics and learning platform",
     "private": true,
@@ -19,18 +19,21 @@
         "dev:recommendation": "turbo run dev --filter=recommendation-service",
         "dev:notification": "turbo run dev --filter=notification-service",
         "dev:client": "turbo run dev --filter=web",
-        "ingest:courses": "docker exec -i seo3-mongodb mongoimport -u seo3_user -p seo3_password --authenticationDatabase admin --db seo3_analytics --collection course_catalog --file /dev/stdin --jsonArray < courses.json",
+        "ingest:courses": "docker exec -i devlab-mongodb mongoimport -u devlab_user -p devlab_password --authenticationDatabase admin --db devlab_analytics --collection course_catalog --file /dev/stdin --jsonArray < courses.json",
         "build": "turbo run build",
         "test": "turbo run test",
+        "test:cov": "turbo run test:cov",
+        "test:python": "python -m pytest -c services/nlp-service/pytest.ini services/nlp-service/tests",
+        "test:python:cov": "python -m pytest -c services/nlp-service/pytest.ini services/nlp-service/tests --cov --cov-config=services/nlp-service/.coveragerc --cov-report=xml:services/nlp-service/coverage.xml --cov-report=term-missing",
         "lint": "turbo run lint",
         "clean": "turbo run clean",
         "docker:up": "docker-compose up -d",
         "docker:down": "docker-compose down",
         "docker:logs": "docker-compose logs -f",
-        "docker:postgres": "docker logs -f seo3-postgres",
-        "docker:mongodb": "docker logs -f seo3-mongodb",
-        "docker:redis": "docker logs -f seo3-redis",
-        "docker:kafka": "docker logs -f seo3-kafka"
+        "docker:postgres": "docker logs -f devlab-postgres",
+        "docker:mongodb": "docker logs -f devlab-mongodb",
+        "docker:redis": "docker logs -f devlab-redis",
+        "docker:kafka": "docker logs -f devlab-kafka"
     },
     "devDependencies": {
         "@types/bcryptjs": "^2.4.6",

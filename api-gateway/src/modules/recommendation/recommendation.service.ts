@@ -236,13 +236,14 @@ export class RecommendationService {
 
   async acknowledgeRecommendation(
     recommendationId: string,
-    developerId: string,
+    requesterId: string,
+    requesterRole: string,
     contributorLogin?: string,
   ) {
     try {
       const response = await axios.post(
         `${this.baseUrl}/recommendations/${recommendationId}/acknowledge`,
-        { developerId, contributorLogin },
+        { requesterId, requesterRole, contributorLogin },
       );
       return response.data;
     } catch (error) {

@@ -2,22 +2,22 @@ version: '3.8'
 
 services:
   # PostgreSQL - Main application database
-  postgres:
+  postgres: 
     image: postgres:15-alpine
-    container_name: seo3-postgres
+    container_name: devlab-postgres
     environment:
-      POSTGRES_USER: seo3_user
-      POSTGRES_PASSWORD: seo3_password
-      POSTGRES_DB: seo3_db
+      POSTGRES_USER: devlab_user
+      POSTGRES_PASSWORD: devlab_password
+      POSTGRES_DB: devlab_db
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d
     networks:
-      - seo3-network
+      - devlab-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U seo3_user -d seo3_db"]
+      test: ["CMD-SHELL", "pg_isready -U devlab_user -d devlab_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -25,18 +25,18 @@ services:
   # MongoDB - NLP and Analytics data
   mongodb:
     image: mongo:6
-    container_name: seo3-mongodb
+    container_name: devlab-mongodb
     environment:
-      MONGO_INITDB_ROOT_USERNAME: seo3_user
-      MONGO_INITDB_ROOT_PASSWORD: seo3_password
-      MONGO_INITDB_DATABASE: seo3_analytics
+      MONGO_INITDB_ROOT_USERNAME: devlab_user
+      MONGO_INITDB_ROOT_PASSWORD: devlab_password
+      MONGO_INITDB_DATABASE: devlab_analytics
     ports:
       - "27017:27017"
     volumes:
       - mongodb_data:/data/db
       - ./infrastructure/mongodb/init:/docker-entrypoint-initdb.d
     networks:
-      - seo3-network
+      - devlab-network
     healthcheck:
       test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
       interval: 10s
@@ -46,13 +46,13 @@ services:
   # Redis - Cache and session management
   redis:
     image: redis:7-alpine
-    container_name: seo3-redis
+    container_name: devlab-redis
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
     networks:
-      - seo3-network
+      - devlab-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -63,21 +63,21 @@ services:
   # Apache Kafka - Message broker
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
-    container_name: seo3-zookeeper
+    container_name: devlab-zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
     ports:
       - "2181:2181"
     networks:
-      - seo3-network
+      - devlab-network
     volumes:
       - zookeeper_data:/var/lib/zookeeper/data
       - zookeeper_logs:/var/lib/zookeeper/log
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
-    container_name: seo3-kafka
+    container_name: devlab-kafka
     depends_on:
       - zookeeper
     ports:
@@ -92,7 +92,7 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     networks:
-      - seo3-network
+      - devlab-network
     volumes:
       - kafka_data:/var/lib/kafka/data
     healthcheck:
@@ -104,7 +104,7 @@ services:
   # Kafka UI for development
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
-    container_name: seo3-kafka-ui
+    container_name: devlab-kafka-ui
     depends_on:
       - kafka
     ports:
@@ -114,7 +114,85 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
       KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
     networks:
-      - seo3-network
+      - devlab-network
+
+  # ---------------------------------------------------------------------------
+  # Code quality. Behind the `sonar` profile, so a plain `docker compose up -d`
+  # still starts only the datastores the app needs.
+  #
+  #   docker compose --profile sonar up -d sonarqube   # http://localhost:9000
+  #   npm run test:cov && npm run test:python:cov      # produce the reports
+  #   docker compose --profile sonar run --rm sonar-scanner
+  #
+  # On Linux hosts SonarQube's embedded Elasticsearch needs
+  # `sysctl -w vm.max_map_count=262144`. Docker Desktop sets this already.
+  # ---------------------------------------------------------------------------
+  sonarqube-db:
+    image: postgres:15-alpine
+    container_name: devlab-sonarqube-db
+    profiles: [sonar]
+    environment:
+      POSTGRES_USER: sonar
+      POSTGRES_PASSWORD: sonar
+      POSTGRES_DB: sonar
+    volumes:
+      - sonarqube_db_data:/var/lib/postgresql/data
+    networks:
+      - devlab-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sonar -d sonar"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  sonarqube:
+    image: sonarqube:10-community
+    container_name: devlab-sonarqube
+    profiles: [sonar]
+    depends_on:
+      sonarqube-db:
+        condition: service_healthy
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://sonarqube-db:5432/sonar
+      SONAR_JDBC_USERNAME: sonar
+      SONAR_JDBC_PASSWORD: sonar
+    ports:
+      - "9000:9000"
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_extensions:/opt/sonarqube/extensions
+      - sonarqube_logs:/opt/sonarqube/logs
+    networks:
+      - devlab-network
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    healthcheck:
+      # First boot takes a couple of minutes while Elasticsearch initialises.
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9000/api/system/status | grep -q '\"status\":\"UP\"'"]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 60s
+
+  # One-shot scanner. Reads sonar-project.properties and whatever coverage
+  # reports the test runs already wrote; it does not run the tests itself.
+  sonar-scanner:
+    image: sonarsource/sonar-scanner-cli:latest
+    container_name: devlab-sonar-scanner
+    profiles: [sonar]
+    depends_on:
+      sonarqube:
+        condition: service_healthy
+    environment:
+      SONAR_HOST_URL: ${SONAR_HOST_URL:-http://sonarqube:9000}
+      SONAR_TOKEN: ${SONAR_TOKEN:-}
+    volumes:
+      - .:/usr/src
+      - sonar_scanner_cache:/opt/sonar-scanner/.sonar/cache
+    networks:
+      - devlab-network
 
 volumes:
   postgres_data:
@@ -123,7 +201,12 @@ volumes:
   zookeeper_data:
   zookeeper_logs:
   kafka_data:
+  sonarqube_db_data:
+  sonarqube_data:
+  sonarqube_extensions:
+  sonarqube_logs:
+  sonar_scanner_cache:
 
 networks:
-  seo3-network:
+  devlab-network:
     driver: bridge

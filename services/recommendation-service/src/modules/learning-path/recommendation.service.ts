@@ -643,15 +643,33 @@ export class RecommendationService implements OnModuleInit {
     this.logger.log(`Sent reminders for ${due.length} upcoming session(s)`);
     return { sent: due.length };
   }
+
+  /**
+   * Marks a recommendation completed. Developers acknowledge their own case
+   * (by user id or linked GitHub login); tech leads may only acknowledge a
+   * mentorship case they are the assigned mentor on; admins may acknowledge
+   * any recommendation.
+   */
   async acknowledgeRecommendation(
     recommendationId: string,
-    developerId: string,
+    requesterId: string,
+    requesterRole?: string,
     contributorLogin?: string,
   ) {
-    const recommendation = await this.findOwnRecommendation(recommendationId, {
-      developerId,
-      contributorLogin,
-    });
+    const normalizedRole = String(requesterRole || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[-\s]+/g, "_");
+
+    const recommendation =
+      normalizedRole === "admin"
+        ? await this.findAnyRecommendation(recommendationId)
+        : normalizedRole === "tech_lead"
+          ? await this.findMentorRecommendation(recommendationId, requesterId)
+          : await this.findOwnRecommendation(recommendationId, {
+              developerId: requesterId,
+              contributorLogin,
+            });
 
     recommendation.status = "completed";
     recommendation.outcomeStatus = "resolved";
@@ -662,6 +680,42 @@ export class RecommendationService implements OnModuleInit {
 
     const saved = await this.recommendationRepo.save(recommendation);
     return this.mapCase(saved);
+  }
+
+  /**
+   * A tech lead may only close out a mentorship case they were actually
+   * assigned to as mentor — mirrors the same check used to view/schedule it.
+   */
+  private async findMentorRecommendation(
+    recommendationId: string,
+    mentorId: string,
+  ) {
+    const recommendation = await this.recommendationRepo.findOne({
+      where: {
+        id: recommendationId,
+        recommendationType: "mentorship",
+        mentorId,
+      },
+    });
+
+    if (!recommendation) {
+      throw new BadRequestException("Recommendation not found");
+    }
+
+    return recommendation;
+  }
+
+  /** Admins act as ops for the whole system — no ownership check needed. */
+  private async findAnyRecommendation(recommendationId: string) {
+    const recommendation = await this.recommendationRepo.findOne({
+      where: { id: recommendationId },
+    });
+
+    if (!recommendation) {
+      throw new BadRequestException("Recommendation not found");
+    }
+
+    return recommendation;
   }
 
   /* ----------------------------- Validation quiz ----------------------------- */
